@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -424,6 +425,62 @@ func TestAuthenticationThrottleAndSessionRevocation(t *testing.T) {
 		f.call("POST", "/api/auth/login", map[string]string{"name": "absent", "password": "wrong", "code": "000000"}, 401, nil)
 	}
 	f.call("POST", "/api/auth/login", map[string]string{"name": "absent", "password": "wrong", "code": "000000"}, 429, nil)
+}
+
+func TestOverlappingRequestCannotRestoreRevokedSession(t *testing.T) {
+	for _, action := range []string{"logout", "revoke-sessions", "disable"} {
+		t.Run(action, func(t *testing.T) {
+			f := newFixture(t)
+			path := "/api/auth/" + action
+			var disabledID string
+			if action == "disable" {
+				var account struct {
+					User core.User `json:"user"`
+				}
+				f.call("POST", "/api/users", map[string]string{"name": "disable-fixture", "role": "viewer", "password": "disable fixture password"}, 201, &account)
+				disabledID = account.User.ID
+				path = "/api/users/" + disabledID + "/disable"
+			}
+			origin, e := url.Parse(f.web.URL)
+			if e != nil {
+				t.Fatal(e)
+			}
+			var cookie *http.Cookie
+			for _, c := range f.browser.Jar.Cookies(origin) {
+				if c.Name == "__Host-phoenix" {
+					cookie = c
+				}
+			}
+			if cookie == nil {
+				t.Fatal("fixture session cookie missing")
+			}
+			// Model a request that loaded the old cookie before revocation and
+			// reaches the idle-timeout commit only after revocation completes.
+			pending, e := f.s.Sessions.Load(context.Background(), cookie.Value)
+			if e != nil || f.s.Sessions.GetString(pending, "user") != f.user.ID {
+				t.Fatal("overlapping request did not load the authenticated session")
+			}
+			var result map[string]bool
+			f.call("POST", path, map[string]any{}, 200, &result)
+			if action == "disable" {
+				var active bool
+				if e = f.s.DB.QueryRow(`SELECT active FROM users WHERE id=?`, disabledID).Scan(&active); e != nil || active || !result["disabled"] {
+					t.Fatal("account disable did not complete successfully")
+				}
+			}
+			for _, current := range f.browser.Jar.Cookies(origin) {
+				if current.Name == cookie.Name {
+					t.Fatal("revocation did not clear the browser session cookie")
+				}
+			}
+			if _, _, e = f.s.Sessions.Commit(pending); e == nil {
+				t.Fatal("stale request restored a revoked session")
+			}
+			cookie.Path, cookie.Secure = "/", true
+			f.browser.Jar.SetCookies(origin, []*http.Cookie{cookie})
+			f.call("GET", "/api/session", nil, 401, nil)
+		})
+	}
 }
 
 func TestExpiryAndRunningCancellation(t *testing.T) {

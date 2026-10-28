@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"syscall"
 	"time"
+
+	"github.com/Narehood/Phoenix/internal/core"
 )
 
 type policy struct {
@@ -74,7 +76,11 @@ func main() {
 	cmd.Env = []string{"PATH=/usr/sbin:/usr/bin:/sbin:/bin", "LANG=C", "SYSTEMD_PAGER=cat"}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	if cmd.Run() != nil {
+	err := cmd.Run()
+	if ctx.Err() != nil {
+		os.Exit(core.HelperTimeoutExitCode)
+	}
+	if err != nil {
 		os.Exit(1)
 	}
 }

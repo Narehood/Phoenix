@@ -224,7 +224,7 @@ func (s *Server) WebHandler() http.Handler {
 	m.HandleFunc("POST /api/jobs/{job}/cancel", s.require("", false, s.cancelJob))
 	m.HandleFunc("GET /api/audit", s.require("", false, s.auditList))
 	m.HandleFunc("GET /api/canary", s.require("", false, s.canaryList))
-	m.HandleFunc("PUT /api/hosts/{host}/mappings", s.require("host.manage", false, s.setMappings))
+	m.HandleFunc("PUT /api/hosts/{host}/mappings", s.require("admin", false, s.setMappings))
 	m.HandleFunc("GET /api/canary/{source}/monitors/{monitor}/history", s.require("", false, s.canaryHistory))
 	m.HandleFunc("POST /enroll", endpoint(s.enroll))
 	files := http.FileServer(http.Dir(s.Config.WebDir))
@@ -346,7 +346,7 @@ func (s *Server) sweep() {
 	if e != nil {
 		return
 	}
-	_, e = tx.Exec(`DELETE FROM sessions WHERE expiry<?; DELETE FROM invitations WHERE expires<?; DELETE FROM samples WHERE collected<?; DELETE FROM jobs WHERE finished>0 AND finished<?; DELETE FROM audit WHERE at<?`, now, now-86400000, now-86400000, now-30*86400000, now-90*86400000)
+	_, e = tx.Exec(`DELETE FROM sessions WHERE expiry<?; DELETE FROM session_revocations WHERE expiry<?; DELETE FROM invitations WHERE expires<?; DELETE FROM samples WHERE collected<?; DELETE FROM jobs WHERE finished>0 AND finished<?; DELETE FROM audit WHERE at<?`, now, now, now-86400000, now-86400000, now-30*86400000, now-90*86400000)
 	if e == nil {
 		_ = tx.Commit()
 	}

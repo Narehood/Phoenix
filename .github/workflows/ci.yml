@@ -19,3 +19,14 @@ jobs:
         run: docker build --target validate --progress=plain .
       - name: Server image and React bundle
         run: docker build --target server --progress=plain -t phoenix:ci .
+      - name: Dashboard browser regression fixtures
+        run: python3 scripts/validate.py --timeout 120 -- node scripts/browser-fixtures.mjs
+      - name: Retain bounded browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phoenix-browser-evidence
+          path: .validation/browser-evidence/
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7

@@ -9,6 +9,7 @@ import (
 const Protocol = 1
 const Version = "0.1.0-dev"
 const OutputLimit = 64 * 1024
+const HelperTimeoutExitCode = 124
 const SampleLimit = 240
 
 type Host struct {

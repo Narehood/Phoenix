@@ -207,20 +207,20 @@ func (l *Linux) Execute(ctx context.Context, j core.Job) core.Result {
 	case "logs.read":
 		return command(ctx, "/usr/bin/journalctl", "--unit", j.Args.Service, "--lines=200", "--no-pager", "--output=short-iso", "--quiet")
 	case "service.restart":
-		r := command(ctx, "/usr/bin/sudo", "-n", "/usr/local/libexec/phoenix-helper", "restart", j.Args.Service, deadline)
-		if r.State == "timed_out" || r.State == "cancelled" {
-			r.State = "uncertain"
-		}
-		return r
+		return helperResult(command(ctx, "/usr/bin/sudo", "-n", "/usr/local/libexec/phoenix-helper", "restart", j.Args.Service, deadline))
 	case "host.reboot":
-		r := command(ctx, "/usr/bin/sudo", "-n", "/usr/local/libexec/phoenix-helper", "reboot", deadline)
+		r := helperResult(command(ctx, "/usr/bin/sudo", "-n", "/usr/local/libexec/phoenix-helper", "reboot", deadline))
 		if r.State == "succeeded" {
 			r.State = "accepted"
-		}
-		if r.State == "timed_out" || r.State == "cancelled" {
-			r.State = "uncertain"
 		}
 		return r
 	}
 	return core.Result{State: "failed", ExitCode: -1, Stderr: "Unsupported action"}
+}
+
+func helperResult(r core.Result) core.Result {
+	if r.State == "timed_out" || r.State == "cancelled" || r.ExitCode == core.HelperTimeoutExitCode {
+		r.State = "uncertain"
+	}
+	return r
 }

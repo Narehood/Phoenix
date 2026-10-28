@@ -524,6 +524,9 @@ func (s *Server) disableUser(w http.ResponseWriter, r *http.Request, u core.User
 	if e = tx.Commit(); e != nil {
 		return e
 	}
+	if e = s.Sessions.Destroy(r.Context()); e != nil {
+		return e
+	}
 	write(w, 200, map[string]bool{"disabled": true})
 	return nil
 }

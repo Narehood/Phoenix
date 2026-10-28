@@ -94,7 +94,7 @@ export type Observation = {
 export type Monitor = {
   monitor: { id: string; name: string; intervalMs: number; nodeIds: string[] };
   state: string;
-  observations: Observation[];
+  observations: Observation[] | null;
   maintenanceIds: string[];
   unknownNodes: number;
   configConflict: boolean;

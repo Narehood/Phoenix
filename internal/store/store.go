@@ -22,6 +22,10 @@ func Open(path string) (*sql.DB, error) {
  CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,name TEXT NOT NULL UNIQUE,role TEXT NOT NULL,password BLOB NOT NULL,totp TEXT NOT NULL,totp_step INTEGER NOT NULL DEFAULT 0,active INTEGER NOT NULL DEFAULT 1);
  CREATE TABLE IF NOT EXISTS grants(user_id TEXT NOT NULL REFERENCES users(id),scope_type TEXT NOT NULL,scope TEXT NOT NULL,action TEXT NOT NULL,PRIMARY KEY(user_id,scope_type,scope,action));
  CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY,data BLOB NOT NULL,expiry INTEGER NOT NULL);
+ CREATE TABLE IF NOT EXISTS session_revocations(token TEXT PRIMARY KEY,expiry INTEGER NOT NULL);
+ CREATE TRIGGER IF NOT EXISTS remember_session_revocation AFTER DELETE ON sessions BEGIN
+ INSERT OR REPLACE INTO session_revocations(token,expiry) VALUES(OLD.token,OLD.expiry+8*60*60*1000);
+ END;
  CREATE TABLE IF NOT EXISTS setup(id INTEGER PRIMARY KEY CHECK(id=1),token_hash TEXT NOT NULL,expires INTEGER NOT NULL,name TEXT NOT NULL DEFAULT '',password BLOB,totp TEXT NOT NULL DEFAULT '');
  CREATE TABLE IF NOT EXISTS hosts(id TEXT PRIMARY KEY,name TEXT NOT NULL,os TEXT NOT NULL DEFAULT '',os_version TEXT NOT NULL DEFAULT '',addresses TEXT NOT NULL DEFAULT '[]',tags TEXT NOT NULL DEFAULT '[]',groups_json TEXT NOT NULL DEFAULT '[]',agent_version TEXT NOT NULL DEFAULT '',last_contact INTEGER NOT NULL DEFAULT 0,revoked INTEGER NOT NULL DEFAULT 1,verified INTEGER NOT NULL DEFAULT 0,fingerprint TEXT NOT NULL DEFAULT '',serial TEXT NOT NULL DEFAULT '',generation INTEGER NOT NULL DEFAULT 0,boot_id TEXT NOT NULL DEFAULT '');
  CREATE TABLE IF NOT EXISTS invitations(hash TEXT PRIMARY KEY,host_id TEXT NOT NULL REFERENCES hosts(id),expires INTEGER NOT NULL,used INTEGER NOT NULL DEFAULT 0);
@@ -56,7 +60,16 @@ func (s *Sessions) Find(token string) ([]byte, bool, error) {
 	return b, err == nil, err
 }
 func (s *Sessions) Commit(token string, b []byte, expiry time.Time) error {
-	_, err := s.DB.Exec(`INSERT INTO sessions(token,data,expiry) VALUES(?,?,?) ON CONFLICT(token) DO UPDATE SET data=excluded.data,expiry=excluded.expiry`, token, b, expiry.UnixMilli())
+	// Deletions retain the token beyond the eight-hour maximum session lifetime.
+	// An overlapping request must not recreate a session after logout/revocation.
+	res, err := s.DB.Exec(`INSERT INTO sessions(token,data,expiry) SELECT ?,?,? WHERE NOT EXISTS(SELECT 1 FROM session_revocations WHERE token=?) ON CONFLICT(token) DO UPDATE SET data=excluded.data,expiry=excluded.expiry`, token, b, expiry.UnixMilli(), token)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err == nil && n == 0 {
+		return errors.New("session revoked")
+	}
 	return err
 }
 func (s *Sessions) Delete(token string) error {

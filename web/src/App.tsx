@@ -249,8 +249,47 @@ function Auth({ onLogin }: { onLogin: (u: User) => void }) {
 
 export function App() {
   const [user, setUser] = useState<User | null>(null),
-    [ready, setReady] = useState(false),
-    [hosts, setHosts] = useState<Host[]>([]),
+    [ready, setReady] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    api<{ user: User; csrfToken: string }>("/api/session")
+      .then((v) => {
+        if (alive) {
+          csrf(v.csrfToken);
+          setUser(v.user);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (alive) setReady(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  if (!ready)
+    return (
+      <main className="auth">
+        <p>Loading secure session…</p>
+      </main>
+    );
+  if (!user) return <Auth onLogin={setUser} />;
+  // Each authenticated mount owns its data; late responses from an unmounted
+  // session cannot populate a later account's dashboard.
+  return <Dashboard key={user.id} user={user} onLogout={() => setUser(null)} />;
+}
+
+function unavailableHost(h: Host): Host {
+  return {
+    ...h,
+    connectivity: h.revoked ? "revoked" : "unknown",
+    freshness: h.latest ? "stale" : "unknown",
+    resourceHealth: "unknown",
+  };
+}
+
+function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
+  const [hosts, setHosts] = useState<Host[]>([]),
     [canary, setCanary] = useState<Canary>({
       sources: [],
       mappings: [],
@@ -276,15 +315,6 @@ export function App() {
       expiresAt: number;
     } | null>(null),
     [busy, setBusy] = useState(false);
-  useEffect(() => {
-    api<{ user: User; csrfToken: string }>("/api/session")
-      .then((v) => {
-        csrf(v.csrfToken);
-        setUser(v.user);
-      })
-      .catch(() => {})
-      .finally(() => setReady(true));
-  }, []);
   async function refresh() {
     const [h, c, j, a] = await Promise.all([
       api<{ hosts: Host[] }>("/api/hosts"),
@@ -298,7 +328,6 @@ export function App() {
     setAudit(a);
   }
   useEffect(() => {
-    if (!user) return;
     let alive = true;
     let timer: ReturnType<typeof setTimeout>;
     async function poll() {
@@ -306,7 +335,21 @@ export function App() {
         await refresh();
         if (alive) setError("");
       } catch (e) {
-        if (alive) setError((e as Error).message);
+        if (alive) {
+          setError((e as Error).message);
+          setHosts((previous) => previous.map(unavailableHost));
+          setDetail(
+            (previous) =>
+              previous && { ...previous, host: unavailableHost(previous.host) },
+          );
+          setCanary((previous) => ({
+            ...previous,
+            sources: previous.sources.map((source) => ({
+              ...source,
+              freshness: source.collectedAt ? "stale" : "unknown",
+            })),
+          }));
+        }
       }
       if (alive) timer = setTimeout(poll, 5000);
     }
@@ -317,7 +360,7 @@ export function App() {
     };
   }, [user]);
   useEffect(() => {
-    if (!selected || !user) {
+    if (!selected) {
       setDetail(null);
       return;
     }
@@ -330,7 +373,18 @@ export function App() {
         );
         if (alive) setDetail(d);
       } catch (e) {
-        if (alive) setError((e as Error).message);
+        if (alive) {
+          setError((e as Error).message);
+          setDetail(
+            (previous) =>
+              previous && { ...previous, host: unavailableHost(previous.host) },
+          );
+          setHosts((previous) =>
+            previous.map((host) =>
+              host.id === selected ? unavailableHost(host) : host,
+            ),
+          );
+        }
       }
       if (alive) timer = setTimeout(poll, 5000);
     }
@@ -380,13 +434,6 @@ export function App() {
       localStorage.setItem("phoenix-theme", next);
     } catch {}
   }
-  if (!ready)
-    return (
-      <main className="auth">
-        <p>Loading secure session…</p>
-      </main>
-    );
-  if (!user) return <Auth onLogin={setUser} />;
   const current = detail?.host || hosts.find((h) => h.id === selected),
     reading = current?.latest;
   const filtered = hosts.filter((h) =>
@@ -481,7 +528,7 @@ export function App() {
                 void act(async () => {
                   await api("/api/auth/logout", "POST", {});
                   csrf("");
-                  setUser(null);
+                  onLogout();
                 })
               }
             >
@@ -1162,7 +1209,7 @@ export function App() {
                         </thead>
                         <tbody>
                           {s.monitors.flatMap((m) =>
-                            (m.observations.length
+                            (m.observations?.length
                               ? m.observations
                               : [null]
                             ).map((o, i) => (
@@ -1797,13 +1844,11 @@ function Access({ act }: { act: (fn: () => Promise<void>) => Promise<void> }) {
                 const f = field(e);
                 void act(async () => {
                   await api(`/api/users/${f.get("user")}/grants`, "PUT", {
-                    grants: f
-                      .getAll("actions")
-                      .map((action) => ({
-                        scopeType: f.get("scopeType"),
-                        scope: f.get("scope"),
-                        action,
-                      })),
+                    grants: f.getAll("actions").map((action) => ({
+                      scopeType: f.get("scopeType"),
+                      scope: f.get("scope"),
+                      action,
+                    })),
                   });
                 });
               }}

@@ -37,7 +37,7 @@ Implemented routes (v1):
 | POST `/api/jobs/{job}/cancel` | `jobs.cancel`; queued job cancels immediately, running job gets cancellation request |
 | GET `/api/audit` | Admin or `host.read` per target; newest 500; no credentials/outputs |
 | GET `/api/canary` | Admin inventory or mapped `host.read` views; no tokens or private monitor settings |
-| PUT `/api/hosts/{host}/mappings` | `host.manage`; `{mappings:[{sourceId,monitorId}]}`, at most 20 |
+| PUT `/api/hosts/{host}/mappings` | Admin + CSRF; `{mappings:[{sourceId,monitorId}]}`, at most 20 |
 | GET `/api/canary/{source}/monitors/{monitor}/history` | Mapped host read permission; bounded/throttled server-side viewer read |
 | POST `/enroll` | Authenticated server TLS, invitation, signed CSR and Linux metadata; no browser session required |
 | POST `/agent/exchange` | Agent listener, TLS 1.3 mTLS and current serial; one optional receipt, one optional reading, optional runningJob |

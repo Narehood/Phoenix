@@ -5,15 +5,18 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/Narehood/Phoenix/internal/canary"
 	"github.com/Narehood/Phoenix/internal/core"
+	"github.com/pquerna/otp/totp"
 )
 
 func TestCanarySourceIdentityMultipleMappingsAndOutage(t *testing.T) {
@@ -98,5 +101,49 @@ func TestCanarySourceIdentityMultipleMappingsAndOutage(t *testing.T) {
 	h, e := f.s.host(a.id)
 	if e != nil || h.Connectivity != "connected" {
 		t.Fatal("Canary outage changed independent agent connectivity")
+	}
+}
+
+func TestCanaryMappingRequiresAdministrator(t *testing.T) {
+	f := newFixture(t)
+	a := f.newAgent("Restricted mapping host")
+	overview := canary.Overview{Now: f.now.UnixMilli(), Monitors: []canary.MonitorView{{Monitor: canary.Monitor{ID: "private-monitor"}, State: "unknown"}}}
+	if _, e := f.s.DB.Exec(`INSERT INTO canary_sources(id,config,token,payload,collected) VALUES('source-a','{}','fixture-only',?,?)`, core.Encode(overview), f.now.UnixMilli()); e != nil {
+		t.Fatal(e)
+	}
+	var account struct {
+		User   core.User `json:"user"`
+		Secret string    `json:"secret"`
+	}
+	f.call("POST", "/api/users", map[string]string{"name": "mapping-operator", "role": "operator", "password": "mapping fixture password"}, 201, &account)
+	f.call("PUT", "/api/users/"+account.User.ID+"/grants", map[string]any{"grants": []core.Grant{{ScopeType: "host", Scope: a.id, Action: "host.read"}, {ScopeType: "host", Scope: a.id, Action: "host.manage"}}}, 200, nil)
+	jar, _ := cookiejar.New(nil)
+	operator := &http.Client{Transport: f.browser.Transport, Jar: jar, Timeout: 5 * time.Second}
+	code, e := totp.GenerateCode(account.Secret, f.now)
+	if e != nil {
+		t.Fatal(e)
+	}
+	var auth struct {
+		CSRF string `json:"csrfToken"`
+	}
+	f.request(operator, f.web.URL, "POST", "/api/auth/login", map[string]string{"name": account.User.Name, "password": "mapping fixture password", "code": code}, 200, &auth, "")
+	var out struct {
+		Sources []any `json:"sources"`
+	}
+	f.request(operator, f.web.URL, "GET", "/api/canary", nil, 200, &out, "")
+	if len(out.Sources) != 0 {
+		t.Fatal("unmapped private monitor was visible")
+	}
+	body := map[string]any{"mappings": []map[string]string{{"sourceId": "source-a", "monitorId": "private-monitor"}}}
+	f.request(operator, f.web.URL, "PUT", "/api/hosts/"+a.id+"/mappings", body, 403, nil, auth.CSRF)
+	f.request(operator, f.web.URL, "GET", "/api/canary/source-a/monitors/private-monitor/history", nil, 403, nil, "")
+	f.request(operator, f.web.URL, "GET", "/api/canary", nil, 200, &out, "")
+	if len(out.Sources) != 0 {
+		t.Fatal("operator mapping attempt granted private monitor visibility")
+	}
+	f.call("PUT", "/api/hosts/"+a.id+"/mappings", body, 200, nil)
+	f.request(operator, f.web.URL, "GET", "/api/canary", nil, 200, &out, "")
+	if len(out.Sources) != 1 {
+		t.Fatal("administrator-approved mapping was not visible to the host reader")
 	}
 }
