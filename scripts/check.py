@@ -30,6 +30,7 @@ elif mode in ('compile', 'vet'):
 elif mode == 'tests':
     if os.name == 'nt':
         sys.exit('Use Linux/container CI; Windows test executables are disabled.')
+    run([sys.executable, '-m', 'unittest', 'discover', '-s', 'scripts', '-p', 'test_validate.py'])
     run(['go', 'test', '-count=1', '-timeout=120s', './...'])
 elif mode == 'binaries':
     if os.name == 'nt':

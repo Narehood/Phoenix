@@ -4,6 +4,8 @@ Evidence is separated into compilation, fixture execution, actual Debian/systemd
 
 ## Recorded results
 
+On `1edab99e819a46ab71244954605b311b2871d426`, [run 40736500830](https://github.com/Narehood/Phoenix/actions/runs/40736500830) stopped inside the validation size sampler when Go removed a temporary directory between traversal and `lstat`. That interrupted run provides no new fixture or browser result. The sampler now skips only vanished directory entries while retaining directory/link/reparse exclusions and every storage limit; a deterministic Linux-only traversal regression runs before the Go fixtures.
+
 On `a7d72bd6c4691fbb4deec0eb5a2e1618a240f41b`, [Linux run 40733410803](https://github.com/Narehood/Phoenix/actions/runs/40733410803) passed the updated Go fixtures, including file permissions, pruned receipts, rate budgets and source capacity, plus vet/race and binary/image builds. Chrome startup succeeded; the browser harness then failed while reading the not-yet-created document body before its first assertion. The follow-up makes that initial DOM wait nullable. Browser-case execution remains a separate required gate.
 
 Subsequent bot-review follow-ups add fresh regressions for private database/WAL/SHM permissions, pruned receipt acknowledgement without blocking telemetry, separate history/authentication rate budgets and the retained Canary-source cap. Browser fixtures additionally check account-list failure, non-JSON upstream errors and expired-session sign-out. These follow-ups require the updated Linux check; compilation and source review alone do not establish their runtime results.

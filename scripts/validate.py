@@ -28,8 +28,17 @@ LOCK = SIBLING / '.canary/bounded-validation.lock' if SHARED else STATE / 'run.l
 
 def files(path):
     for base, dirs, names in os.walk(path, followlinks=False):
-        dirs[:] = [d for d in dirs if d != '.git' and not (Path(base) / d).is_symlink()
-                   and not getattr(os.lstat(Path(base) / d), 'st_file_attributes', 0) & 0x400]
+        retained = []
+        for name in dirs:
+            if name == '.git':
+                continue
+            try:
+                info = (Path(base) / name).lstat()
+            except FileNotFoundError:
+                continue
+            if stat.S_ISDIR(info.st_mode) and not getattr(info, 'st_file_attributes', 0) & 0x400:
+                retained.append(name)
+        dirs[:] = retained
         for name in names:
             p = Path(base) / name
             try:
