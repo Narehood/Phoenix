@@ -163,7 +163,7 @@ try {
   await send("Page.bringToFront", {}, sessionId);
   await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false }, sessionId);
   await send("Page.navigate", { url: `http://127.0.0.1:${server.address().port}/` }, sessionId);
-  await wait("document.body.innerText.includes('ADMIN-ONLY-HOST')");
+  await wait("document.body?.innerText.includes('ADMIN-ONLY-HOST')");
   await click("Access & accounts");
   await wait("document.querySelector('[role=alert]')?.innerText.includes('Fixture account list unavailable') && !!document.querySelector('select[name=user]')");
   assert.equal(await evaluate("document.querySelector('select[name=user]').checkValidity()"), false, "Empty account select allows grant submission");
