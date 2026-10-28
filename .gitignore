@@ -1,0 +1,17 @@
+.env*
+.validation/
+node_modules/
+web/dist/
+bin/
+*.db*
+*.sqlite*
+*.pem
+*.key
+*.token
+*.secret
+__pycache__/
+deploy/server.json
+deploy/agent.json
+deploy/helper.json
+**/identity.json
+**/identity.next

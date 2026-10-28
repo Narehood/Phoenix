@@ -1,0 +1,11 @@
+# Threat model
+
+Protected assets: host authority, agent keys, browser sessions, command output, Canary viewer credentials and audit history. Threats include a stolen invite, replayed request, revoked certificate on an existing TLS connection, malicious host metadata, unauthorized operator, compromised agent, CSRF, credential forwarding and crash-induced duplicate reboot.
+
+TLS 1.3 is mandatory on every implemented transport. Normal CA/hostname verification is always performed; configured pins add an identity check. A private CA certificate obtained through a trusted channel supports self-hosted installations. There is no verification bypass. Canary origins and resolved destination addresses are explicitly configured, redirects are refused, and tokens never reach browsers. Recoverable secrets use AES-GCM from Go's standard library with a separately retained key.
+
+Passwords use an established password-hashing library and privileged roles require TOTP from a maintained library. Browser sessions use an established session library, Secure/HttpOnly/SameSite cookies, expiry and revocation. Cookie mutations require a session CSRF token and the exact configured Origin. Privileged destructive operations require fresh password+MFA verification and target-specific confirmation. No WebSocket transport is used.
+
+Admin, operator and viewer are role ceilings, supplemented by explicit host/group and action grants. Viewers cannot access command output. Agents apply their own local action policy. Diagnostic actions are fixed executables/arguments; no shell interpolation or arbitrary command strings. Shell capability remains disabled and unimplemented. A root helper is installed separately with a root-owned allowlist; telemetry and the network agent run as an unprivileged account.
+
+Revocation blocks every subsequent request and dispatch and closes tracked connections. Any already executed operation cannot be undone. Root/server compromise and physical access are outside this application's isolation boundary. Audit records are durable, but a database/server administrator can tamper with them; external tamper-evident export is release work. Local helper review, supply-chain review and real Debian tests remain release requirements.
