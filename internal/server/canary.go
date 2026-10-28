@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -38,6 +39,11 @@ func (s *Server) LoadCanary() error {
 	if len(configs) > 16 {
 		return errors.New("too many Canary sources")
 	}
+	tx, e := s.DB.Begin()
+	if e != nil {
+		return e
+	}
+	defer tx.Rollback()
 	for _, c := range configs {
 		if !validIdentifier(c.ID) || c.TokenFile == "" {
 			return errors.New("invalid Canary source")
@@ -52,24 +58,26 @@ func (s *Server) LoadCanary() error {
 		}
 		c.TokenFile = ""
 		var previous string
-		_ = s.DB.QueryRow(`SELECT config FROM canary_sources WHERE id=?`, c.ID).Scan(&previous)
+		if e = tx.QueryRow(`SELECT config FROM canary_sources WHERE id=?`, c.ID).Scan(&previous); e != nil && e != sql.ErrNoRows {
+			return e
+		}
 		if previous != "" && previous != core.Encode(c) {
 			return errors.New("source ID config is immutable; assign a new source ID for a different origin or revision")
 		}
 		if previous == "" {
 			var count int
-			if e = s.DB.QueryRow(`SELECT COUNT(*) FROM canary_sources`).Scan(&count); e != nil {
+			if e = tx.QueryRow(`SELECT COUNT(*) FROM canary_sources`).Scan(&count); e != nil {
 				return e
 			}
 			if count >= 16 {
-				return errors.New("Canary source capacity reached (16 retained source IDs)")
+				return errors.New("canary source capacity reached (16 retained source IDs)")
 			}
 		}
-		if _, e = s.DB.Exec(`INSERT INTO canary_sources(id,config,token) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET token=excluded.token`, c.ID, core.Encode(c), s.Vault.Seal(token, "canary:"+c.ID)); e != nil {
+		if _, e = tx.Exec(`INSERT INTO canary_sources(id,config,token) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET token=excluded.token`, c.ID, core.Encode(c), s.Vault.Seal(token, "canary:"+c.ID)); e != nil {
 			return e
 		}
 	}
-	return nil
+	return tx.Commit()
 }
 func (s *Server) sources() ([]cachedSource, error) {
 	rows, e := s.DB.Query(`SELECT id,config,token,payload,collected,error FROM canary_sources ORDER BY id LIMIT 16`)
