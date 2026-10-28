@@ -2,6 +2,20 @@
 
 Evidence is separated into compilation, fixture execution, actual Debian/systemd operation and production release. A green fixture suite is not a production certification.
 
+## Recorded results
+
+On source `c438a6525380be0b44841d1c0d3f864b6001feb1`, [Linux validation run 40608518061](https://github.com/Narehood/Phoenix/actions/runs/40608518061) passed on 2026-10-28 UTC. The single GitHub check contains these sequential stages:
+
+- React/TypeScript production build.
+- CGO-enabled Go tests for all packages in a Debian 12/bookworm Linux amd64 container. Agent, Canary, security and server fixture packages all passed, including the five-host, certificate, permission, job, recovery and safe reboot cases below.
+- `go vet ./...` on the Linux target.
+- Race-detector execution of the agent, Canary, security and server fixture packages; all passed.
+- CGO-enabled server, agent and helper binary builds, followed by a successful Debian 13 server image build as `phoenix:ci` on the disposable runner. This image was built locally in CI; it was not published or deployed.
+
+The runner reported no storage-budget failure: cold module downloads were 33,807,244 bytes, the largest sampled command scratch was 195,974,219 bytes, retained compiler cache stayed below 256 MiB, and the external compiler cache stayed empty in CI. This evidence covers the named source checkpoint. Subsequent test-only additions explicitly exercise successful allowlisted restart dispatch, local deduplication and its confirmation/recent-authentication requirements; their status belongs to the corresponding later PR check. The earlier failed runs remain historical failures; their limits/assertions were not waived. In particular the original one-hour certificate tests remain, with a single issuance timestamp and additional validity-boundary regression cases fixing their failure.
+
+**Not run:** installation on an actual Debian/systemd host, actual procfs telemetry acceptance, privileged helper/service execution, a real reboot, browser/visual acceptance, deployed NetBird Canary compatibility and a full backup/restore drill. The Linux collector/helper were compiled; administrative execution in the passing suite used fixtures. Independent security/advisory review, signing, upgrades and long-duration/load acceptance remain release work. Inventory OS/version and address metadata are currently refreshed at enrollment; continuous inventory refresh is a follow-up.
+
 ## Bounded runner
 
 Run one command at a time through `python scripts/validate.py --timeout <seconds> -- <command>`. In this workstation checkout, it shares Canary's existing compiler cache **and lock**, keeps the default external cache below 16 MiB, trims the owned cache to 256 MiB, caps scratch at 512 MiB and combined repositories at 3 GiB, and preserves module/application data. Elsewhere it uses one owned `.validation/go-build` cache. It retains twelve small results and one 64 KiB log; temporary binaries/databases are removed. Peaks are sampled, not exact instantaneous measurements. No cache copies or persistent VMs are made.

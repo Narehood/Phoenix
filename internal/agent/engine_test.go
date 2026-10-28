@@ -153,3 +153,22 @@ func TestRebootFixtureDoesNotRebootHost(t *testing.T) {
 		t.Fatal("reboot fixture repeated")
 	}
 }
+
+func TestAllowlistedRestartFixtureDeduplicates(t *testing.T) {
+	p := &fixturePlatform{}
+	e := engineFixture(t, p)
+	j := fixtureJob("approved-restart")
+	j.Action = "service.restart"
+	j.Args = core.Args{Service: "fixture.service"}
+	if r := e.Run(context.Background(), j); r.State != "succeeded" || r.ExitCode != 0 {
+		t.Fatal("approved service restart fixture failed")
+	}
+	if r := e.Run(context.Background(), j); r.State != "succeeded" || p.calls.Load() != 1 {
+		t.Fatal("duplicate restart fixture executed more than once")
+	}
+	j.ID = "unapproved-restart"
+	j.Args.Service = "another.service"
+	if r := e.Run(context.Background(), j); r.State != "failed" || p.calls.Load() != 1 {
+		t.Fatal("restart escaped the local service allowlist")
+	}
+}

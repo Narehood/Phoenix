@@ -444,3 +444,24 @@ func (f *fixture) advance(d time.Duration) {
 	f.now = f.now.Add(d)
 	f.clockMu.Unlock()
 }
+
+func TestConfirmedRestartDispatchAndRecentAuthentication(t *testing.T) {
+	f := newFixture(t)
+	a := f.newAgent("Restart fixture")
+	body := map[string]any{"action": "service.restart", "args": core.Args{Service: "fixture.service"}}
+	f.call("POST", "/api/hosts/"+a.id+"/jobs", body, 400, nil)
+	j := f.job(a, "service.restart", core.Args{Service: "fixture.service"})
+	d := f.exchange(a, nil, nil, "")
+	if d.Job == nil || d.Job.ID != j.ID || d.Job.Action != "service.restart" || d.Job.Args.Service != "fixture.service" {
+		t.Fatal("approved restart was not dispatched with its exact typed target")
+	}
+	f.exchange(a, nil, []core.Receipt{{ID: j.ID, Result: core.Result{State: "succeeded", Stdout: "safe restart fixture", ExitCode: 0}}}, "")
+	var got core.Job
+	f.call("GET", "/api/jobs/"+j.ID, nil, 200, &got)
+	if got.State != "succeeded" || got.Result == nil || got.Result.ExitCode != 0 {
+		t.Fatal("restart fixture outcome was not persisted")
+	}
+	f.advance(6 * time.Minute)
+	body["confirm"] = a.id
+	f.call("POST", "/api/hosts/"+a.id+"/jobs", body, 403, nil)
+}
