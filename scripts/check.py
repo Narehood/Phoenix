@@ -19,7 +19,7 @@ if mode == 'format':
     sources = [str(p.relative_to(ROOT)) for parent in ('cmd', 'internal') for p in (ROOT / parent).rglob('*.go')]
     run(['gofmt', '-w', *sources])
 elif mode in ('compile', 'vet'):
-    env = dict(os.environ, GOOS='linux', GOARCH='amd64', CGO_ENABLED='0')
+    env = dict(os.environ, GOOS='linux', GOARCH='amd64', CGO_ENABLED='0' if os.name == 'nt' else os.environ.get('CGO_ENABLED', '1'))
     if mode == 'vet':
         run(['go', 'vet', './...'], env=env)
     else:

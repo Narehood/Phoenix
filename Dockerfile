@@ -7,6 +7,7 @@ COPY web/ ./
 RUN npm run build
 
 FROM golang:1.27.3-bookworm AS go-base
+ENV CGO_ENABLED=1
 RUN apt-get update && apt-get install -y --no-install-recommends python3 && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY --from=web /src/web/dist/ /src/web-dist/
@@ -24,7 +25,7 @@ RUN --network=none python3 scripts/validate.py --timeout 180 -- python3 scripts/
 RUN --network=none CGO_ENABLED=1 python3 scripts/validate.py --timeout 300 -- go test -race -count=1 -timeout=120s ./internal/agent ./internal/canary ./internal/security ./internal/server
 
 FROM validate AS binaries
-RUN CGO_ENABLED=0 python3 scripts/validate.py --timeout 300 -- python3 scripts/check.py binaries
+RUN python3 scripts/validate.py --timeout 300 -- python3 scripts/check.py binaries
 
 FROM scratch AS agent-artifacts
 COPY --from=binaries /src/bin/phoenix-agent /phoenix-agent

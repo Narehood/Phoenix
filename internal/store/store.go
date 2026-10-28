@@ -3,7 +3,7 @@ package store
 import (
 	"database/sql"
 	"errors"
-	_ "modernc.org/sqlite"
+	_ "github.com/mattn/go-sqlite3"
 	"os"
 	"path/filepath"
 	"time"
@@ -13,7 +13,7 @@ func Open(path string) (*sql.DB, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return nil, err
 	}
-	db, err := sql.Open("sqlite", path)
+	db, err := sql.Open("sqlite3", path)
 	if err != nil {
 		return nil, err
 	}

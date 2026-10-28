@@ -4,7 +4,7 @@ This is a development milestone for a single Linux server and Debian/systemd age
 
 ## Build and run the server
 
-Use Docker with Linux containers and Compose. The Dockerfile runs isolated fixture tests and vet/race gates before producing the server image. No `.env` loader or embedded defaults create accounts. The example hostname is a placeholder; use the actual DNS name clients will verify.
+Use Docker with Linux containers and Compose. The Dockerfile runs isolated fixture tests and vet/race gates before producing the server image. The embedded SQLite C engine requires CGO/GCC during the build; the supplied Debian build image provides them, and runtime images/agent hosts need compatible glibc. Do not build deployment binaries with `CGO_ENABLED=0`. No `.env` loader or embedded defaults create accounts. The example hostname is a placeholder; use the actual DNS name clients will verify.
 
 1. Copy `deploy/server.example.json` to `deploy/server.json`, set `origin` to the exact HTTPS browser origin, and keep the two data/identity paths as shown. Do not add a trailing slash. The identity volume retains the CA private key and credential encryption key separately from SQLite.
 2. Run `docker compose -f deploy/compose.yaml build`.

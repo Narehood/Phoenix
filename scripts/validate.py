@@ -108,11 +108,23 @@ def main():
         default_cache = Path(os.environ.get('LOCALAPPDATA', str(Path.home() / '.cache'))) / 'go-build'
         go_tool = shutil.which('go', path=env['PATH'])
         module_cache = Path(subprocess.check_output([go_tool, 'env', 'GOMODCACHE'], env=env, text=True).strip())
-        baseline_module = size(module_cache)
+        module_before = size(module_cache)
+        baseline_path = STATE / 'storage-baseline.json'
+        shared_baseline = SIBLING / '.canary/storage-policy-baseline.json'
+        if SHARED and shared_baseline.is_file():
+            baseline_module = json.loads(shared_baseline.read_text(encoding='utf-8'))['moduleBytes']
+        elif baseline_path.is_file():
+            baseline_module = json.loads(baseline_path.read_text(encoding='utf-8'))['moduleBytes']
+        else:
+            baseline_module = module_before
+            baseline_path.write_text(json.dumps({'moduleBytes': baseline_module}), encoding='utf-8')
+        if module_before > baseline_module + 256 * MIB:
+            sys.exit('Module cache exceeds its recorded growth budget; no files deleted.')
         if SHARED and size(default_cache) > 16 * MIB:
             sys.exit('Default external compiler cache exceeds 16 MiB; no files deleted.')
         logfile = scratch / 'output.log'
         peak = 0
+        module_check_at = started
         with logfile.open('wb') as out:
             proc = subprocess.Popen(command, cwd=ROOT, env=env, stdout=out, stderr=subprocess.STDOUT,
                                     start_new_session=os.name != 'nt')
@@ -128,6 +140,10 @@ def main():
                     reason = 'log output budget exceeded'
                 elif SHARED and size(default_cache) > 16 * MIB:
                     reason = 'unexpected external compiler-cache growth'
+                if time.monotonic() >= module_check_at:
+                    if size(module_cache) > baseline_module + 256 * MIB:
+                        reason = 'module cache exceeded its recorded growth budget'
+                    module_check_at = time.monotonic() + 10
                 if reason:
                     stop_tree(proc)
                     break
@@ -143,7 +159,8 @@ def main():
         trim_cache()
         result = dict(command=command, exit=proc.returncode, seconds=round(time.monotonic()-started, 2),
                       reason=reason, cache=str(CACHE), cacheBytes=size(CACHE), scratchPeakBytes=peak,
-                      moduleGrowthBytes=module_growth, externalCacheBytes=size(default_cache))
+                      moduleGrowthBytes=module_growth, moduleCommandGrowthBytes=size(module_cache)-module_before,
+                      externalCacheBytes=size(default_cache))
         results = STATE / 'results.jsonl'
         prior = results.read_text().splitlines()[-11:] if results.exists() else []
         results.write_text('\n'.join(prior + [json.dumps(result)]) + '\n')
