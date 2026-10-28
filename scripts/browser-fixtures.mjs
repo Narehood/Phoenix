@@ -91,7 +91,8 @@ await new Promise((done) => server.listen(0, "127.0.0.1", done));
 const chrome = spawn(chromePath, ["--headless", "--no-sandbox", "--disable-dev-shm-usage", "--disable-background-networking",
   "--disable-component-update", "--disable-sync", "--disable-extensions", "--no-first-run", "--no-default-browser-check",
   "--remote-debugging-pipe", `--user-data-dir=${join(scratch, "chrome-profile")}`, "about:blank"],
-  { stdio: ["ignore", "ignore", "pipe", "pipe", "pipe"] });
+  { stdio: ["ignore", "ignore", "pipe", "pipe", "pipe"],
+    env: { ...process.env, DBUS_SESSION_BUS_ADDRESS: "unix:path=/dev/null", DBUS_SYSTEM_BUS_ADDRESS: "unix:path=/dev/null" } });
 let sequence = 0, buffer = "", stderr = "";
 const pending = new Map();
 const errors = [];
@@ -115,7 +116,9 @@ chrome.stdio[4].on("data", (data) => {
 function send(method, params = {}, sessionId) {
   return new Promise((resolveCall, rejectCall) => {
     const id = ++sequence;
-    const timer = setTimeout(() => { pending.delete(id); rejectCall(new Error(`Chrome timed out: ${method}; ${stderr}`)); }, 10000);
+    // Cold Chrome startup on a disposable runner can outlast an ordinary RPC.
+    const timeout = method === "Browser.getVersion" ? 30000 : 10000;
+    const timer = setTimeout(() => { pending.delete(id); rejectCall(new Error(`Chrome timed out: ${method}; ${stderr}`)); }, timeout);
     pending.set(id, { resolve: (value) => { clearTimeout(timer); resolveCall(value); }, reject: (error) => { clearTimeout(timer); rejectCall(error); } });
     chrome.stdio[3].write(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }) + "\0");
   });
