@@ -1,0 +1,11 @@
+{
+  "dataDir": "/var/lib/phoenix",
+  "identityDir": "/var/lib/phoenix-identity",
+  "origin": "https://phoenix.example.net:8443",
+  "webListen": ":8443",
+  "agentListen": ":9443",
+  "webDir": "/usr/share/phoenix/web",
+  "tlsCert": "",
+  "tlsKey": "",
+  "canaryFile": ""
+}

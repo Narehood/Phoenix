@@ -1,0 +1,29 @@
+services:
+  phoenix:
+    build:
+      context: ..
+      target: server
+    image: phoenix:development
+    restart: unless-stopped
+    ports:
+      - "8443:8443"
+      - "9443:9443"
+    volumes:
+      - ./server.json:/etc/phoenix/server.json:ro
+      - phoenix-data:/var/lib/phoenix
+      - phoenix-identity:/var/lib/phoenix-identity
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: 512m
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+volumes:
+  phoenix-data:
+  phoenix-identity:

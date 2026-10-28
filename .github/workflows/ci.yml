@@ -1,0 +1,20 @@
+name: Phoenix Linux validation
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: phoenix-validation-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  debian-fixtures:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fixture, authorization, mTLS, job and race checks in Debian container
+        run: docker build --target validate --progress=plain .
+      - name: Server image and React bundle
+        run: docker build --target server --progress=plain -t phoenix:ci .
