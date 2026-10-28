@@ -47,3 +47,61 @@ func TestVaultContextAndCertificateIdentity(t *testing.T) {
 		t.Fatal("unsigned CSR accepted")
 	}
 }
+
+func TestCertificateValidityBoundaries(t *testing.T) {
+	ca, err := NewCA()
+	if err != nil {
+		t.Fatal(err)
+	}
+	csr, _, err := NewCSR()
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2030, time.January, 2, 3, 4, 5, 987654321, time.UTC)
+	issued := now.Truncate(time.Second)
+	for _, tc := range []struct {
+		name         string
+		ttl          time.Duration
+		caRemaining  time.Duration
+		wantLifetime time.Duration
+		wantError    bool
+	}{
+		{"exact one hour", time.Hour, 24 * time.Hour, time.Hour, false},
+		{"issuer expires in exactly one hour", 24 * time.Hour, time.Hour, time.Hour, false},
+		{"clipped to issuer expiry", 24 * time.Hour, 2 * time.Hour, 2 * time.Hour, false},
+		{"issuer has less than one hour", 24 * time.Hour, time.Hour - time.Second, 0, true},
+		{"requested lifetime below minimum", time.Hour - time.Nanosecond, 24 * time.Hour, 0, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			issuer := *ca.Certificate
+			issuer.NotBefore = issued.Add(-time.Hour)
+			issuer.NotAfter = issued.Add(tc.caRemaining)
+			bounded := *ca
+			bounded.Certificate = &issuer
+			encoded, _, expiry, err := bounded.signAt(csr, "fixture-host", tc.ttl, now)
+			if tc.wantError {
+				if err == nil {
+					t.Fatal("accepted a validity window below the minimum")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			block, _ := pem.Decode([]byte(encoded))
+			if block == nil {
+				t.Fatal("invalid certificate encoding")
+			}
+			cert, err := x509.ParseCertificate(block.Bytes)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !cert.NotAfter.Equal(issued.Add(tc.wantLifetime)) || expiry != cert.NotAfter.UnixMilli() {
+				t.Fatal("reported expiry differs from the encoded certificate validity")
+			}
+			if !cert.NotBefore.Equal(issued.Add(-time.Minute)) || cert.NotAfter.After(issuer.NotAfter) {
+				t.Fatal("certificate validity exceeds its issuance/issuer bounds")
+			}
+		})
+	}
+}

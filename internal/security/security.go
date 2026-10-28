@@ -151,6 +151,13 @@ func NewCSR() (string, []byte, error) {
 	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: der})), pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: k}), e
 }
 func (c *CA) Sign(csrPEM, host string, ttl time.Duration) (certPEM, serial string, expiry int64, err error) {
+	return c.signAt(csrPEM, host, ttl, time.Now())
+}
+
+func (c *CA) signAt(csrPEM, host string, ttl time.Duration, now time.Time) (certPEM, serial string, expiry int64, err error) {
+	// X.509 validity is encoded in whole seconds. Capture a single issuance
+	// instant so an exact one-hour lifetime remains valid at the boundary.
+	now = now.UTC().Truncate(time.Second)
 	b, _ := pem.Decode([]byte(csrPEM))
 	if b == nil {
 		return "", "", 0, errors.New("invalid CSR")
@@ -167,14 +174,15 @@ func (c *CA) Sign(csrPEM, host string, ttl time.Duration) (certPEM, serial strin
 		return "", "", 0, e
 	}
 	uri, _ := url.Parse("spiffe://phoenix/host/" + host)
-	expires := time.Now().Add(ttl)
+	expires := now.Add(ttl)
 	if expires.After(c.Certificate.NotAfter) {
 		expires = c.Certificate.NotAfter
 	}
-	if expires.Before(time.Now().Add(time.Hour)) {
-		return "", "", 0, errors.New("CA near expiry")
+	expires = expires.Truncate(time.Second)
+	if expires.Before(now.Add(time.Hour)) {
+		return "", "", 0, errors.New("certificate validity window is shorter than one hour")
 	}
-	t := &x509.Certificate{SerialNumber: n, Subject: pkix.Name{CommonName: host}, URIs: []*url.URL{uri}, NotBefore: time.Now().Add(-time.Minute), NotAfter: expires, KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}
+	t := &x509.Certificate{SerialNumber: n, Subject: pkix.Name{CommonName: host}, URIs: []*url.URL{uri}, NotBefore: now.Add(-time.Minute), NotAfter: expires, KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}
 	der, e := x509.CreateCertificate(rand.Reader, t, c.Certificate, csr.PublicKey, c.Key)
 	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})), n.String(), expires.UnixMilli(), e
 }
