@@ -23,6 +23,7 @@ import (
 	"github.com/Narehood/Phoenix/internal/core"
 	"github.com/Narehood/Phoenix/internal/security"
 	"github.com/pquerna/otp/totp"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type fixture struct {
@@ -521,4 +522,56 @@ func TestConfirmedRestartDispatchAndRecentAuthentication(t *testing.T) {
 	f.advance(6 * time.Minute)
 	body["confirm"] = a.id
 	f.call("POST", "/api/hosts/"+a.id+"/jobs", body, 403, nil)
+}
+
+func TestPrunedReceiptDoesNotBlockAgentExchange(t *testing.T) {
+	f := newFixture(t)
+	a := f.newAgent("Receipt retention fixture")
+	old := f.job(a, "diagnostic", core.Args{Diagnostic: "system.summary"})
+	f.exchange(a, nil, nil, "")
+	result := core.Result{State: "succeeded", ExitCode: 0}
+	f.exchange(a, nil, []core.Receipt{{ID: old.ID, Result: result}}, "")
+	// The agent missed the acknowledgement; only the disposable server record
+	// is removed, modeling normal job retention before its next reconnect.
+	if _, err := f.s.DB.Exec(`DELETE FROM jobs WHERE id=?`, old.ID); err != nil {
+		t.Fatal(err)
+	}
+	next := f.job(a, "diagnostic", core.Args{Diagnostic: "system.summary"})
+	f.advance(time.Second)
+	d := f.exchange(a, f.reading(false, "retention-boot"), []core.Receipt{{ID: old.ID, Result: result}}, "")
+	if len(d.Acknowledged) != 1 || d.Acknowledged[0] != old.ID || d.Job == nil || d.Job.ID != next.ID {
+		t.Fatal("pruned receipt blocked acknowledgement or subsequent dispatch")
+	}
+	h, err := f.s.host(a.id)
+	if err != nil || h.Latest == nil || h.LastContact != f.now.UnixMilli() {
+		t.Fatal("pruned receipt rolled back telemetry")
+	}
+	var count int
+	if err = f.s.DB.QueryRow(`SELECT COUNT(*) FROM audit WHERE job_id=? AND action='receipt.unmatched' AND state='ignored'`, old.ID).Scan(&count); err != nil || count != 1 {
+		t.Fatal("unmatched receipt was not audited")
+	}
+	never := f.job(a, "diagnostic", core.Args{Diagnostic: "system.summary"})
+	f.request(a.client, f.agents.URL, "POST", "/agent/exchange", core.Exchange{Protocol: core.Protocol, Receipts: []core.Receipt{{ID: never.ID, Result: result}}}, 409, nil, "")
+	for _, receipt := range []core.Receipt{{ID: "missing", Result: core.Result{State: "invalid"}}, {ID: strings.Repeat("x", 65), Result: result}} {
+		f.request(a.client, f.agents.URL, "POST", "/agent/exchange", core.Exchange{Protocol: core.Protocol, Receipts: []core.Receipt{receipt}}, 400, nil, "")
+	}
+}
+
+func TestHistoryAndAuthenticationRateBudgetsAreSeparate(t *testing.T) {
+	s := &Server{throttle: map[string]*attempt{}, Now: time.Now}
+	for i := 0; i < 10; i++ {
+		if !s.rateKey("history:fixture-user") {
+			t.Fatal("history budget rejected early")
+		}
+	}
+	if s.rateKey("history:fixture-user") {
+		t.Fatal("history budget is not bounded")
+	}
+	r := httptest.NewRequest("POST", "https://example.invalid/api/auth/login", nil)
+	if !s.rate(r) {
+		t.Fatal("history reads consumed the authentication budget")
+	}
+	if cost, err := bcrypt.Cost([]byte(dummyPasswordHash)); err != nil || cost != 12 {
+		t.Fatal("invalid-user bcrypt work does not match the account password cost")
+	}
 }

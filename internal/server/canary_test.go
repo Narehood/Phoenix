@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -145,5 +146,42 @@ func TestCanaryMappingRequiresAdministrator(t *testing.T) {
 	f.request(operator, f.web.URL, "GET", "/api/canary", nil, 200, &out, "")
 	if len(out.Sources) != 1 {
 		t.Fatal("administrator-approved mapping was not visible to the host reader")
+	}
+}
+
+func TestCanaryCapacityCountsRetainedSourceIDs(t *testing.T) {
+	f := newFixture(t)
+	dir := t.TempDir()
+	tokenFile := filepath.Join(dir, "viewer.token")
+	if err := os.WriteFile(tokenFile, []byte("fresh fixture viewer token at least 32 characters"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	c := canary.Config{ID: "over-capacity", Origin: "https://127.0.0.1", ExpectedNodeID: "fixture-node", ExpectedRevision: strings.Repeat("a", 40), AllowedIPs: []string{"127.0.0.1"}, TokenFile: tokenFile}
+	for i := 0; i < 16; i++ {
+		stored := c
+		stored.ID, stored.TokenFile = "source-"+strconv.Itoa(i), ""
+		if _, err := f.s.DB.Exec(`INSERT INTO canary_sources(id,config,token) VALUES(?,?,?)`, stored.ID, core.Encode(stored), "unused fixture token"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f.s.Config.CanaryFile = filepath.Join(dir, "canary.json")
+	writeConfig := func() {
+		t.Helper()
+		if err := os.WriteFile(f.s.Config.CanaryFile, []byte(core.Encode([]canary.Config{c})), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeConfig()
+	if err := f.s.LoadCanary(); err == nil || !strings.Contains(err.Error(), "capacity") {
+		t.Fatal("accepted a seventeenth retained source")
+	}
+	c.ID = "source-0"
+	writeConfig()
+	if err := f.s.LoadCanary(); err != nil {
+		t.Fatal("existing source credential update rejected at capacity:", err)
+	}
+	var count int
+	if err := f.s.DB.QueryRow(`SELECT COUNT(*) FROM canary_sources`).Scan(&count); err != nil || count != 16 {
+		t.Fatal("source capacity changed")
 	}
 }

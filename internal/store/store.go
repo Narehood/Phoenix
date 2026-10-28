@@ -13,6 +13,18 @@ func Open(path string) (*sql.DB, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return nil, err
 	}
+	// SQLite derives new WAL/SHM permissions from the main file's mode.
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return nil, err
+	}
+	if err = f.Chmod(0600); err != nil {
+		f.Close()
+		return nil, err
+	}
+	if err = f.Close(); err != nil {
+		return nil, err
+	}
 	db, err := sql.Open("sqlite3", path)
 	if err != nil {
 		return nil, err
@@ -39,10 +51,6 @@ func Open(path string) (*sql.DB, error) {
  CREATE TABLE IF NOT EXISTS agent_jobs(id TEXT PRIMARY KEY,state TEXT NOT NULL,result TEXT,created INTEGER NOT NULL);
  `)
 	if err != nil {
-		db.Close()
-		return nil, err
-	}
-	if err = os.Chmod(path, 0600); err != nil {
 		db.Close()
 		return nil, err
 	}

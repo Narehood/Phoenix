@@ -48,17 +48,25 @@ function installFixture() {
       maintenance: [], monitors: [{ monitor: { id: "unobserved", name: "Unobserved fixture monitor", intervalMs: 30000, nodeIds: [] },
         state: "unknown", observations: null, maintenanceIds: [], unknownNodes: 1, configConflict: false }] }],
   };
-  const control = window.fixture = { role: "admin", offline: false, holdHosts: false, releaseHosts: null };
+  const control = window.fixture = { role: "admin", offline: false, htmlFailure: false, logoutFailure: 0, grantWrites: 0, holdHosts: false, releaseHosts: null };
   const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
   window.fetch = async (input) => {
     const path = new URL(typeof input === "string" ? input : input.url, location.href).pathname;
     if (path === "/api/auth/status") return json({ setupRequired: false });
-    if (path === "/api/auth/logout") { control.role = "signedout"; return json({ signedOut: true }); }
+    if (path === "/api/auth/logout") {
+      if (control.logoutFailure === 401) { control.role = "signedout"; return json({ error: "sign in required" }, 401); }
+      if (control.logoutFailure) return json({ error: "Fixture sign-out unavailable" }, control.logoutFailure);
+      control.role = "signedout";
+      return json({ signedOut: true });
+    }
     if (path === "/api/auth/login") { control.role = "viewer"; return json({ user: user("viewer"), csrfToken: "viewer-fixture-csrf" }); }
+    if (control.htmlFailure) return new Response("<html>Fixture upstream failure</html>", { status: 502 });
     if (control.offline) throw new TypeError("Fixture dashboard connection unavailable");
     if (control.role === "signedout") return json({ error: "sign in required" }, 401);
     const admin = control.role === "admin";
     if (path === "/api/session") return json({ user: user(control.role), csrfToken: "fixture-csrf" });
+    if (path === "/api/users") return json({ error: "Fixture account list unavailable" }, 503);
+    if (/^\/api\/users\/.*\/grants$/.test(path)) { control.grantWrites++; return json({ error: "Unexpected fixture grant write" }, 400); }
     if (path === "/api/hosts") {
       const snapshot = { hosts: admin ? [privateHost, viewerHost] : [viewerHost] };
       if (admin && control.holdHosts) {
@@ -156,6 +164,14 @@ try {
   await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false }, sessionId);
   await send("Page.navigate", { url: `http://127.0.0.1:${server.address().port}/` }, sessionId);
   await wait("document.body.innerText.includes('ADMIN-ONLY-HOST')");
+  await click("Access & accounts");
+  await wait("document.querySelector('[role=alert]')?.innerText.includes('Fixture account list unavailable') && !!document.querySelector('select[name=user]')");
+  assert.equal(await evaluate("document.querySelector('select[name=user]').checkValidity()"), false, "Empty account select allows grant submission");
+  await evaluate(`(() => { const form = document.querySelector('select[name=user]').closest('form'); form.querySelector('input[name=scope]').value = 'private-host'; form.requestSubmit(); })()`);
+  assert.equal(await evaluate("window.fixture.grantWrites"), 0, "Empty account selection sent a grant write");
+  await capture("04-account-list-error");
+  await evaluate("document.querySelector('[aria-label=\"Dismiss error\"]')?.click()");
+  console.log("PASS failed account loading reports an error and blocks empty grant submission");
   await click("Uptime Canary");
   await wait("document.querySelector('tbody')?.innerText.includes('Unobserved fixture monitor') && document.querySelector('tbody').innerText.includes('Unknown')");
   await capture("01-null-observations");
@@ -167,16 +183,23 @@ try {
   await evaluate("window.fixture.offline = true");
   await wait("!!document.querySelector('[role=alert]') && document.querySelectorAll('.metrics .chip.good').length === 0 && [...document.querySelectorAll('.metrics .chip')].some(c => c.textContent.includes('stale'))");
   await capture("02-disconnected-dashboard");
+  await evaluate("window.fixture.offline = false; window.fixture.htmlFailure = true");
+  await wait("document.querySelector('[role=alert]')?.innerText.includes('Request failed (502)')");
   await click("Uptime Canary");
   await wait("[...document.querySelectorAll('h2')].some(h => h.textContent.includes('fixture-source') && h.textContent.includes('stale')) && document.querySelectorAll('.chip.good').length === 0");
   console.log("PASS failed polling invalidates cached host and Canary health");
 
-  await evaluate("window.fixture.offline = false");
+  await evaluate("window.fixture.htmlFailure = false; window.fixture.offline = false");
   await click("Fleet overview");
   await click("ADMIN-ONLY-HOST");
   await wait("document.querySelectorAll('.metrics .chip.good').length >= 3");
   await evaluate("window.fixture.holdHosts = true");
   await wait("typeof window.fixture.releaseHosts === 'function'");
+  await evaluate("window.fixture.logoutFailure = 503");
+  await click("Sign out");
+  await wait("document.querySelector('[role=alert]')?.innerText.includes('Fixture sign-out unavailable')");
+  assert.equal(await evaluate("document.body.innerText.includes('ADMIN-ONLY-PROCESS')"), true, "Unknown remote logout was silently presented as complete");
+  await evaluate("window.fixture.logoutFailure = 0");
   await click("Sign out");
   await wait("!!document.querySelector('input[name=code]')");
   await evaluate(`(() => { for (const [name, value] of Object.entries({name:'viewer-fixture',password:'fixture password',code:'123456'})) document.querySelector('input[name='+name+']').value = value; document.querySelector('form').requestSubmit(); })()`);
@@ -187,9 +210,13 @@ try {
   assert.equal(await evaluate("document.querySelector('h1').textContent.trim()"), "Fleet overview", "Previous account view survived logout");
   await capture("03-restricted-viewer");
   console.log("PASS account changes clear private detail/view state and ignore a late old-account response");
+  await evaluate("window.fixture.logoutFailure = 401");
+  await click("Sign out");
+  await wait("!!document.querySelector('input[name=code]') && !document.body.innerText.includes('Viewer fixture host')");
+  console.log("PASS expired session sign-out returns to authentication; unconfirmed server failures remain visible");
   assert.deepEqual(errors, [], "Uncaught browser exceptions");
-  writeFileSync(join(evidence, "results.json"), JSON.stringify({ status: "passed", browser: version.product, screenshots, cases: 3 }, null, 2));
-  console.log(`Browser fixture proof: ${version.product}; three bounded screenshots`);
+  writeFileSync(join(evidence, "results.json"), JSON.stringify({ status: "passed", browser: version.product, screenshots, cases: 4 }, null, 2));
+  console.log(`Browser fixture proof: ${version.product}; four bounded screenshots`);
 } finally {
   await send("Browser.close").catch(() => {});
   if (chrome.exitCode === null) chrome.kill("SIGKILL");

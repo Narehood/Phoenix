@@ -21,12 +21,18 @@ var validName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9 _.-]{0,79}$`)
 var validService = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.@-]{0,100}\.service$`)
 var actions = map[string]bool{"host.read": true, "host.manage": true, "diagnostic": true, "service.restart": true, "services.inspect": true, "logs.read": true, "host.reboot": true, "jobs.output": true, "jobs.cancel": true}
 
+// Synthetic bcrypt record: only its cost is used, never its comparison result.
+const dummyPasswordHash = "$2a$12$XajjQvNhvvRt5GSeFk1xFeyqRrsxkhBkUiQeg0dt.wU1qD4aFDcga"
+
 func passwordOK(p string) bool { return len(p) >= 14 && len(p) <= 72 }
 func (s *Server) rate(r *http.Request) bool {
 	ip, _, e := net.SplitHostPort(r.RemoteAddr)
 	if e != nil {
 		ip = r.RemoteAddr
 	}
+	return s.rateKey("auth:" + ip)
+}
+func (s *Server) rateKey(key string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := s.Now()
@@ -35,13 +41,13 @@ func (s *Server) rate(r *http.Request) bool {
 			delete(s.throttle, k)
 		}
 	}
-	a := s.throttle[ip]
+	a := s.throttle[key]
 	if a == nil {
 		if len(s.throttle) >= 1024 {
 			return false
 		}
 		a = &attempt{until: now.Add(5 * time.Minute)}
-		s.throttle[ip] = a
+		s.throttle[key] = a
 	}
 	a.count++
 	return a.count <= 10
@@ -192,6 +198,7 @@ func (s *Server) authenticate(name, password, code string) (core.User, error) {
 	var last int64
 	e := s.DB.QueryRow(`SELECT id,name,role,password,totp,totp_step,active FROM users WHERE name=?`, name).Scan(&u.ID, &u.Name, &u.Role, &hash, &encrypted, &last, &u.Active)
 	if e != nil || !u.Active {
+		_ = bcrypt.CompareHashAndPassword([]byte(dummyPasswordHash), []byte(password))
 		return u, fail(401, "invalid credentials")
 	}
 	if bcrypt.CompareHashAndPassword(hash, []byte(password)) != nil {

@@ -1,5 +1,7 @@
 # Canary evidence and deployment gate
 
+The sixteen-source limit counts retained source IDs, including older deployment revisions. Credential refresh for an existing ID remains allowed at capacity; a new ID is refused rather than silently omitted from polling. Automatic source retirement is not implemented.
+
 Inspected read-only on 2026-10-27: local Canary checkout `3bb63a5f6a3c721ce4ccb0c0667de1d1dc65b974`, `docs/api.md`, `docs/transport-tls.md`, `packages/shared/src/index.ts`, and `apps/node-go/internal/canary/{api,types,views,history_api}.go`.
 
 Verified source contracts: `GET /api/overview`, `GET /api/monitors`, `GET /api/monitors/:id/history?limit=100` with `Authorization: Bearer <account token>`. Overview has `node`, optional `build`, `now`, `monitors`, `nodes`, `maintenance` and `user.role`. MonitorView contains `monitor`, `state`, `observations`, `unknownNodes`, `configConflict` and optional `maintenanceIds`. Observations retain `monitorId`, `nodeId`, `state`, `checkedAt`, latency and message. History is local to the queried node and bounded to 1–1000 records. `/healthz` proves only application liveness. No authenticated event webhook contract was assumed.

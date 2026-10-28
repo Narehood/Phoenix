@@ -105,3 +105,14 @@ func TestCertificateValidityBoundaries(t *testing.T) {
 		})
 	}
 }
+
+func TestClientTLSPinSyntax(t *testing.T) {
+	for _, pin := range []string{strings.Repeat("A", 64), strings.Repeat("g", 64), "short"} {
+		if _, err := ClientTLS(nil, pin); err == nil {
+			t.Fatal("invalid pin passed configuration validation")
+		}
+	}
+	if _, err := ClientTLS(nil, strings.Repeat("a", 64)); err != nil {
+		t.Fatal(err)
+	}
+}

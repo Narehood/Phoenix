@@ -56,6 +56,15 @@ func (s *Server) LoadCanary() error {
 		if previous != "" && previous != core.Encode(c) {
 			return errors.New("source ID config is immutable; assign a new source ID for a different origin or revision")
 		}
+		if previous == "" {
+			var count int
+			if e = s.DB.QueryRow(`SELECT COUNT(*) FROM canary_sources`).Scan(&count); e != nil {
+				return e
+			}
+			if count >= 16 {
+				return errors.New("Canary source capacity reached (16 retained source IDs)")
+			}
+		}
 		if _, e = s.DB.Exec(`INSERT INTO canary_sources(id,config,token) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET token=excluded.token`, c.ID, core.Encode(c), s.Vault.Seal(token, "canary:"+c.ID)); e != nil {
 			return e
 		}
@@ -306,7 +315,7 @@ func (s *Server) canaryHistory(w http.ResponseWriter, r *http.Request, u core.Us
 	if !visible {
 		return fail(403, "mapped host permission required")
 	}
-	if !s.rate(r) {
+	if !s.rateKey("history:" + u.ID) {
 		return fail(429, "history reads throttled")
 	}
 	sources, e := s.sources()

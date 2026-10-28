@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { api, csrf } from "./api";
+import { api, csrf, ApiError } from "./api";
 import type { Audit, Canary, Host, Job, Reading, User, Monitor } from "./types";
 
 const stamp = (n: number) => (n ? new Date(n).toLocaleString() : "Never");
@@ -526,7 +526,14 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
             <button
               onClick={() =>
                 void act(async () => {
-                  await api("/api/auth/logout", "POST", {});
+                  try {
+                    await api("/api/auth/logout", "POST", {});
+                  } catch (error) {
+                    // An expired/revoked server session is already signed out.
+                    // Other failures must stay visible: remote logout is unknown.
+                    if (!(error instanceof ApiError) || error.status !== 401)
+                      throw error;
+                  }
                   csrf("");
                   onLogout();
                 })
@@ -733,7 +740,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                                 : "Unknown"}
                               <small>
                                 Received per second
-                                {h.freshness !== "fresh" ? " ? last known" : ""}
+                                {h.freshness !== "fresh" ? " · last known" : ""}
                               </small>
                             </td>
                             <td>
@@ -775,7 +782,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                     <h1>{current.name}</h1>
                     <p className="muted">
                       {!current.verified
-                        ? "Identity verification pending ? "
+                        ? "Identity verification pending · "
                         : ""}
                       {current.osVersion} · {current.addresses.join(", ")} ·{" "}
                       {current.connectionMethod}
@@ -1759,7 +1766,7 @@ function Access({ act }: { act: (fn: () => Promise<void>) => Promise<void> }) {
   const [users, setUsers] = useState<User[]>([]),
     [secret, setSecret] = useState("");
   useEffect(() => {
-    void api<User[]>("/api/users").then(setUsers);
+    void act(async () => setUsers(await api<User[]>("/api/users")));
   }, []);
   return (
     <>
@@ -1855,7 +1862,7 @@ function Access({ act }: { act: (fn: () => Promise<void>) => Promise<void> }) {
             >
               <label>
                 Account
-                <select name="user">
+                <select name="user" required>
                   {users
                     .filter((u) => u.role !== "admin")
                     .map((u) => (

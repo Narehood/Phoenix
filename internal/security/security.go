@@ -18,6 +18,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -219,7 +220,7 @@ func ClientTLS(caPEM []byte, pin string) (*tls.Config, error) {
 	}
 	t := &tls.Config{MinVersion: tls.VersionTLS13, RootCAs: roots}
 	if pin != "" {
-		if len(pin) != 64 {
+		if len(pin) != 64 || strings.ToLower(pin) != pin {
 			return nil, errors.New("pin must be SHA256 lowercase hex")
 		}
 		if _, e := hex.DecodeString(pin); e != nil {

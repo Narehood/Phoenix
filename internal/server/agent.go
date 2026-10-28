@@ -97,7 +97,7 @@ func (s *Server) exchange(w http.ResponseWriter, r *http.Request) error {
 		return fail(400, "invalid telemetry")
 	}
 	for _, v := range b.Receipts {
-		if !validResult(v.Result) {
+		if len(v.ID) == 0 || len(v.ID) > 64 || !validResult(v.Result) {
 			return fail(400, "invalid job result")
 		}
 	}
@@ -143,8 +143,17 @@ func (s *Server) exchange(w http.ResponseWriter, r *http.Request) error {
 	}
 	for _, receipt := range b.Receipts {
 		j, e := scanJob(tx.QueryRow(`SELECT `+jobColumns+` FROM jobs WHERE id=? AND host_id=?`, receipt.ID, host))
+		if e == sql.ErrNoRows {
+			// A retained agent receipt can outlive the server's job retention.
+			// Acknowledge it without trusting its result or blocking telemetry.
+			if e = s.audit(tx, "agent:"+host, host, "receipt.unmatched", receipt.ID, "ignored"); e != nil {
+				return e
+			}
+			out.Acknowledged = append(out.Acknowledged, receipt.ID)
+			continue
+		}
 		if e != nil {
-			return fail(409, "unknown job receipt")
+			return e
 		}
 		if j.DispatchedAt == 0 {
 			return fail(409, "job was never dispatched")
