@@ -1,0 +1,37 @@
+/* Phoenix theme tokens. Names match Uptime Canary's dashboard tokens so its patterns port directly;
+   neutrals are a touch warmer, the UI accent stays Canary blue, and brand hues are reserved for identity
+   (logo, active-nav marker), never for status. Mode follows :root[data-mode], set before first paint. */
+:root {
+  color-scheme: light;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "Cascadia Mono", "Segoe UI Mono", Menlo, Consolas, monospace;
+  --page: #f4f2ee; --surface: #fdfcfa; --surface-2: #f2efea; --surface-3: #e9e5de;
+  --text-1: #0d0b0a; --text-2: #55514c; --text-3: #6d6862; --tick: #8b8680;
+  --grid: #e3dfd8; --axis: #c5c0b6; --border: rgba(13, 11, 10, .10); --border-2: rgba(13, 11, 10, .18);
+  --accent: #2a78d6; --accent-text: #1c5cab; --accent-btn: #256abf; --accent-wash: rgba(42, 120, 214, .10);
+  --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b; --neutral: #8b8680;
+  --warn-edge: #a86f00; --serious-edge: #b5532c; --critical-text: #a32a2a;
+  --good-wash: rgba(12, 163, 12, .11); --warning-wash: rgba(250, 178, 25, .18); --serious-wash: rgba(236, 131, 90, .17);
+  --critical-wash: rgba(208, 59, 59, .10); --neutral-wash: rgba(139, 134, 128, .13);
+  --ink: #171412; --ink-text: #c6c0b6; --ink-text-1: #f2efea; --ink-muted: #a59f95;
+  --phoenix: #ffb020; --phoenix-flame: #f4731c; --ember: #d4421a; --phoenix-core: #ffd23f; /* core = Canary yellow */
+  --phoenix-text: #a24f08; --phoenix-wash: rgba(255, 176, 32, .14);
+  --tip-bg: #1e1b19; --tip-fg: #f2efea; --tip-2: #c6c0b6;
+  --radius: 14px; --radius-md: 11px; --radius-sm: 8px;
+  --shadow: 0 1px 2px rgba(13, 11, 10, .06), 0 12px 32px -14px rgba(13, 11, 10, .28);
+  background: var(--page);
+}
+:root[data-mode="dark"] {
+  color-scheme: dark;
+  --page: #0e0d0c; --surface: #1b1917; --surface-2: #23211e; --surface-3: #2d2a27;
+  --text-1: #f2efea; --text-2: #c6c0b6; --text-3: #a59f95;
+  --grid: #2d2a27; --axis: #3a3632; --border: rgba(255, 255, 255, .10); --border-2: rgba(255, 255, 255, .18);
+  --accent: #3987e5; --accent-text: #6da7ec; --accent-wash: rgba(57, 135, 229, .14);
+  --warn-edge: #fab219; --serious-edge: #ec835a; --critical-text: #f08a8a;
+  --good-wash: rgba(12, 163, 12, .16); --warning-wash: rgba(250, 178, 25, .13); --serious-wash: rgba(236, 131, 90, .15);
+  --critical-wash: rgba(208, 59, 59, .20); --neutral-wash: rgba(139, 134, 128, .16);
+  --ink: #12100f;
+  --phoenix-text: #ffb54a; --phoenix-wash: rgba(255, 176, 32, .16);
+  --tip-bg: #2d2a27;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 12px 32px -14px rgba(0, 0, 0, .8);
+}

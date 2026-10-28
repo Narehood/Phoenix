@@ -1,0 +1,28 @@
+[Unit]
+Description=Phoenix outbound management agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=phoenix-agent
+Group=phoenix-agent
+ExecStart=/usr/local/bin/phoenix-agent run -config /etc/phoenix/agent.json
+Restart=on-failure
+RestartSec=15
+StateDirectory=phoenix-agent
+StateDirectoryMode=0700
+UMask=0077
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+ReadWritePaths=/var/lib/phoenix-agent
+MemoryMax=128M
+TasksMax=64
+# sudo is restricted to the root-owned helper below. NoNewPrivileges cannot
+# be enabled while using that separately reviewed sudo boundary.
+
+[Install]
+WantedBy=multi-user.target

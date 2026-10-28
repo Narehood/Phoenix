@@ -1,0 +1,8 @@
+{
+  "serverOrigin": "https://phoenix.example.net:8443",
+  "agentOrigin": "https://phoenix.example.net:9443",
+  "caFile": "/etc/phoenix/trusted-server-ca.pem",
+  "pin": "",
+  "stateDir": "/var/lib/phoenix-agent",
+  "policy": {"restartServices": ["phoenix-acceptance.service"], "logServices": ["phoenix-acceptance.service"], "allowReboot": false}
+}

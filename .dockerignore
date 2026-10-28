@@ -1,0 +1,13 @@
+.git
+.validation
+.env*
+**/node_modules
+**/dist
+bin
+*.db*
+*.sqlite*
+*.pem
+*.key
+*.secret
+*.token
+__pycache__
