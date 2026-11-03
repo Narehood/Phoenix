@@ -12,7 +12,7 @@ The implemented slice includes administrator setup with mandatory TOTP, revocabl
 
 Canary remains independent. Its source contracts were inspected; the user's NetBird-protected deployment and running build are unverified. Live integration requires a trusted, reachable **node API** origin and dedicated viewer account. Nothing changes Canary or contacts notification destinations.
 
-Planned dashboard scope also includes GitHub repository health: repository inventory, PR/review and CI status, vulnerability reports and dependency updates. This integration is **not implemented**; its requirements and acceptance work are tracked in [the milestone](docs/milestone.md#github-repository-health--planned).
+The Projects dashboard provides an empty-by-default registry for operator-supplied projects, explicit project grants, revision-safe editing, archive/restore and bounded audit history. Its read-only GitHub.com connector shows repository metadata, PR checks/review observations, recent default-branch push CI, Dependabot alerts and recognized dependency-update PRs. Administrators connect their own repositories with server-encrypted credentials; missing permissions, stale data and truncated coverage remain explicit. This is not a complete package-version inventory and cannot update dependencies or deploy. Wiki/content editors and release workflows remain planned. [Project maintenance](docs/project-maintenance.md), [GitHub setup and limits](docs/github.md), [remaining milestone](docs/milestone.md#github-repository-health--planned).
 
 - [Architecture](docs/architecture.md) and [threat model](docs/threat-model.md)
 - [HTTP and agent protocol](docs/protocol.md)

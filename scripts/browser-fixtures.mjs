@@ -48,10 +48,101 @@ function installFixture() {
       maintenance: [], monitors: [{ monitor: { id: "unobserved", name: "Unobserved fixture monitor", intervalMs: 30000, nodeIds: [] },
         state: "unknown", observations: null, maintenanceIds: [], unknownNodes: 1, configConflict: false }] }],
   };
-  const control = window.fixture = { role: "admin", offline: false, htmlFailure: false, logoutFailure: 0, grantWrites: 0, holdHosts: false, releaseHosts: null };
+  const control = window.fixture = { role: "admin", offline: false, htmlFailure: false, logoutFailure: 0, grantWrites: 0, holdHosts: false, releaseHosts: null,
+    // Project, GitHub and grant stores start empty: nothing is preseeded in the product.
+    usersFail: true, recent: true, githubFail: false, syncStatus: 429, projects: {}, events: {}, githubViews: {}, githubPuts: [],
+    grantStore: {
+      "operator-fixture": [{ scopeType: "host", scope: "viewer-host", action: "host.read" }, { scopeType: "project", scope: "fixture-project", action: "project.read" }],
+      "viewer-fixture": [{ scopeType: "host", scope: "viewer-host", action: "host.read" }],
+    },
+    lastGrantPut: null, shared: ["fixture-project"], requests: [], hold: new Set(), holds: {} };
   const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
-  window.fetch = async (input) => {
-    const path = new URL(typeof input === "string" ? input : input.url, location.href).pathname;
+  const recentRequired = () => json({ error: "recent password and MFA required" }, 403);
+  const allModules = ["documentation", "dependencies", "content", "releases", "operations"];
+  const permissionsFor = () => control.role === "admin" ? ["project.read", "project.manage", "github.read", "github.sync"] : ["project.read"];
+  const visible = (id) => !!control.projects[id] && (control.role === "admin" || control.shared.includes(id));
+  const record = (id, action) => (control.events[id] ||= []).unshift({ at: Date.now(), actor: `${control.role}-fixture`, action, revision: control.projects[id].revision });
+  const notConfigured = { configured: false, repository: "", enabled: false, revision: 0, state: "not_configured", freshness: "unknown", error: "", lastAttemptAt: 0, collectedAt: 0, nextAttemptAt: 0, snapshot: null };
+  const iso = new Date(now).toISOString();
+  const snapshot = (repo) => ({
+    repository: { fullName: repo, url: `https://github.com/${repo}`, private: true, archived: false, defaultBranch: "main", pushedAt: iso },
+    pulls: { state: "ok", truncated: false, items: [
+      { number: 7, title: "Bump fixture-lib from 1.0.0 to 1.0.1", url: `https://github.com/${repo}/pull/7`, author: "dependabot[bot]", draft: false, updatedAt: iso, dependencyUpdate: true, updateKind: "security_or_version_unclassified", mergeable: "mergeable", reviewState: "approval_observed", checks: "passing_observed" },
+      { number: 8, title: "Fixture feature change", url: `https://github.com/${repo}/pull/8`, author: "fixture-dev", draft: false, updatedAt: iso, dependencyUpdate: false, updateKind: "", mergeable: "unknown", reviewState: "no_current_approval", checks: "pending" },
+    ] },
+    defaultBranchCI: { state: "ok", truncated: false, items: [{ name: "CI", url: `https://github.com/${repo}/actions/runs/1`, status: "completed", conclusion: "success", sha: "a".repeat(40) }] },
+    alerts: { state: "ok", truncated: false, items: [] },
+    codeScanning: "unsupported", secretScanning: "unsupported", dependencyCoverage: "update_prs_and_dependabot_alerts_only",
+  });
+  control.freshView = (repo) => ({ configured: true, repository: repo, enabled: true, revision: 1, state: "fresh", freshness: "fresh", error: "", lastAttemptAt: Date.now(), collectedAt: Date.now(), nextAttemptAt: Date.now() - 1000, snapshot: snapshot(repo) });
+  control.retainedView = (repo) => {
+    const view = control.freshView(repo);
+    view.state = "rate_limited"; view.freshness = "stale"; view.error = "rate_limited"; view.collectedAt = Date.now() - 3600000;
+    view.snapshot.defaultBranchCI = { state: "permission_denied", truncated: false, items: [] };
+    view.snapshot.alerts = { state: "ok", truncated: true, items: [{ number: 3, package: "fixture-lib", ecosystem: "npm", severity: "high", summary: "Fixture advisory", fixedIn: "1.0.1", url: `https://github.com/${repo}/security/dependabot/3` }] };
+    return view;
+  };
+  control.seedProject = (id, name, modules = []) => {
+    control.projects[id] = { id, name, description: "", modules, archived: false, revision: 1, createdAt: now, updatedAt: now };
+    record(id, "project.create");
+  };
+  control.externalEdit = (id) => {
+    const p = control.projects[id];
+    Object.assign(p, { description: "Changed elsewhere", revision: p.revision + 1, updatedAt: Date.now() });
+    record(id, "project.update");
+  };
+  function projectRoute(method, path, body) {
+    const m = path.match(/^\/api\/projects\/([^/]+)(\/capabilities|\/audit|\/github|\/github\/sync)?$/);
+    const id = m && decodeURIComponent(m[1]), sub = m?.[2] || "";
+    if (!m || !visible(id)) return json({ error: "project not found" }, 404);
+    const p = control.projects[id], perms = permissionsFor();
+    if (!sub && method === "GET") return json(p);
+    if (!sub && method === "PUT") {
+      if (!control.recent) return recentRequired();
+      if (!perms.includes("project.manage")) return json({ error: "project management forbidden" }, 403);
+      if (body.revision !== p.revision) return json({ error: "project changed; reload before saving" }, 409);
+      Object.assign(p, { name: body.name, description: body.description, modules: body.modules || [], archived: body.archived, revision: p.revision + 1, updatedAt: Date.now() });
+      record(id, "project.update");
+      return json(p);
+    }
+    if (sub === "/capabilities") return json({ contractVersion: 1, projectId: id, revision: p.revision, permissions: perms, modules: allModules.map((module) => {
+      const enabled = p.modules.includes(module);
+      let state = enabled ? "unsupported" : "disabled", reason = enabled ? "connector_not_implemented" : "module_disabled";
+      if (enabled && module === "dependencies") {
+        const view = control.githubViews[id];
+        [state, reason] = !perms.includes("github.read") ? ["permission_denied", "github_read_required"] : view ? [view.state, "github_read_only"] : ["not_configured", "github_not_configured"];
+      }
+      if (p.archived) [state, reason] = ["disabled", "project_archived"];
+      return { id: module, enabled, state, reason, actions: [] };
+    }) });
+    if (sub === "/audit") return json({ events: control.events[id] || [] });
+    if (!perms.includes("github.read")) return json({ error: "GitHub access forbidden" }, 403);
+    if (sub === "/github" && method === "GET") {
+      if (control.githubFail) throw new TypeError("Fixture GitHub view unavailable");
+      return json(control.githubViews[id] || notConfigured);
+    }
+    if (sub === "/github" && method === "PUT") {
+      if (control.role !== "admin") return json({ error: "administrator required" }, 403);
+      if (!control.recent) return recentRequired();
+      const current = control.githubViews[id] || notConfigured;
+      if (body.revision !== current.revision) return json({ error: "GitHub configuration changed; reload before saving" }, 409);
+      control.githubPuts.push({ repository: body.repository, enabled: body.enabled, revision: body.revision, tokenLength: body.token.length });
+      control.githubViews[id] = { ...notConfigured, configured: true, repository: body.repository, enabled: body.enabled, revision: current.revision + 1, state: "pending" };
+      record(id, "github.configure");
+      return json({ configured: true, revision: current.revision + 1 });
+    }
+    if (sub === "/github/sync" && method === "POST") return control.syncStatus === 202 ? json({ scheduled: true }, 202) : json({ error: "GitHub refresh is cooling down; check nextAttemptAt" }, 429);
+    return json({ error: "unexpected fixture request" }, 404);
+  }
+  window.fetch = async (input, init = {}) => {
+    const url = new URL(typeof input === "string" ? input : input.url, location.href);
+    const path = url.pathname, method = init.method || "GET";
+    control.requests.push({ role: control.role, method, path, search: url.search });
+    const respond = () => route(path, method, init.body ? JSON.parse(init.body) : undefined);
+    if (control.hold.delete(path)) return new Promise((done) => { control.holds[path] = () => { delete control.holds[path]; done(respond()); }; });
+    return respond();
+  };
+  async function route(path, method, body) {
     if (path === "/api/auth/status") return json({ setupRequired: false });
     if (path === "/api/auth/logout") {
       if (control.logoutFailure === 401) { control.role = "signedout"; return json({ error: "sign in required" }, 401); }
@@ -65,8 +156,27 @@ function installFixture() {
     if (control.role === "signedout") return json({ error: "sign in required" }, 401);
     const admin = control.role === "admin";
     if (path === "/api/session") return json({ user: user(control.role), csrfToken: "fixture-csrf" });
-    if (path === "/api/users") return json({ error: "Fixture account list unavailable" }, 503);
-    if (/^\/api\/users\/.*\/grants$/.test(path)) { control.grantWrites++; return json({ error: "Unexpected fixture grant write" }, 400); }
+    if (path === "/api/users") return control.usersFail ? json({ error: "Fixture account list unavailable" }, 503)
+      : json([user("admin"), user("operator"), user("viewer"), { id: "unreadable-fixture", name: "unreadable-fixture", role: "operator", active: true }]);
+    const grants = path.match(/^\/api\/users\/([^/]+)\/grants$/);
+    if (grants && method === "GET") return grants[1] === "unreadable-fixture" ? json({ error: "Fixture grant read unavailable" }, 500) : json({ grants: control.grantStore[grants[1]] || [] });
+    if (grants) {
+      control.grantWrites++;
+      if (method !== "PUT" || !control.recent) return recentRequired();
+      control.lastGrantPut = { user: grants[1], ...body };
+      control.grantStore[grants[1]] = body.grants;
+      return json({});
+    }
+    if (path === "/api/projects" && method === "GET") return json({ projects: Object.values(control.projects).filter((p) => visible(p.id)).sort((a, b) => a.id.localeCompare(b.id)) });
+    if (path === "/api/projects" && method === "POST") {
+      if (!admin) return json({ error: "administrator required" }, 403);
+      if (!control.recent) return recentRequired();
+      if (control.projects[body.id]) return json({ error: "project ID already registered" }, 409);
+      control.projects[body.id] = { id: body.id, name: body.name, description: body.description, modules: body.modules || [], archived: false, revision: 1, createdAt: Date.now(), updatedAt: Date.now() };
+      record(body.id, "project.create");
+      return json(control.projects[body.id], 201);
+    }
+    if (path.startsWith("/api/projects/")) return projectRoute(method, path, body);
     if (path === "/api/hosts") {
       const snapshot = { hosts: admin ? [privateHost, viewerHost] : [viewerHost] };
       if (admin && control.holdHosts) {
@@ -151,6 +261,14 @@ try {
   };
   const click = (text) => evaluate(`(() => { const button = [...document.querySelectorAll('button')].find(b => b.textContent.trim().startsWith(${JSON.stringify(text)})); if (!button) throw Error('Missing fixture button'); button.click(); })()`);
   const screenshots = [];
+  let cases = 0;
+  const pass = (name) => { cases++; console.log(`PASS ${name}`); };
+  const sleep = (ms) => evaluate(`new Promise(done => setTimeout(done, ${ms}))`);
+  // React controlled inputs need the native setter plus an input/change event.
+  const setValue = (selector, value) => evaluate(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) throw Error('Missing fixture field'); const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : el instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype; Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, ${JSON.stringify(value)}); el.dispatchEvent(new Event(el instanceof HTMLSelectElement ? 'change' : 'input', { bubbles: true })); })()`);
+  const submit = (label) => evaluate(`document.querySelector('form[aria-label=${JSON.stringify(label)}]').requestSubmit()`);
+  const goodChips = "document.querySelectorAll('.github .chip.good').length";
+  const token = "FIXTURE-ONLY-TOKEN-0123456789abcdef";
   const capture = async (name) => {
     const { data } = await send("Page.captureScreenshot", { format: "png" }, sessionId);
     const png = Buffer.from(data, "base64");
@@ -171,11 +289,11 @@ try {
   assert.equal(await evaluate("window.fixture.grantWrites"), 0, "Empty account selection sent a grant write");
   await capture("04-account-list-error");
   await evaluate("document.querySelector('[aria-label=\"Dismiss error\"]')?.click()");
-  console.log("PASS failed account loading reports an error and blocks empty grant submission");
+  pass("failed account loading reports an error and blocks empty grant submission");
   await click("Uptime Canary");
   await wait("document.querySelector('tbody')?.innerText.includes('Unobserved fixture monitor') && document.querySelector('tbody').innerText.includes('Unknown')");
   await capture("01-null-observations");
-  console.log("PASS null Canary observations render an unknown row without crashing");
+  pass("null Canary observations render an unknown row without crashing");
 
   await click("Fleet overview");
   await click("ADMIN-ONLY-HOST");
@@ -187,9 +305,112 @@ try {
   await wait("document.querySelector('[role=alert]')?.innerText.includes('Request failed (502)')");
   await click("Uptime Canary");
   await wait("[...document.querySelectorAll('h2')].some(h => h.textContent.includes('fixture-source') && h.textContent.includes('stale')) && document.querySelectorAll('.chip.good').length === 0");
-  console.log("PASS failed polling invalidates cached host and Canary health");
+  pass("failed polling invalidates cached host and Canary health");
 
   await evaluate("window.fixture.htmlFailure = false; window.fixture.offline = false");
+
+  // Projects: empty inventory, administrator registration and metadata conflicts.
+  await click("Projects");
+  await wait("document.body.innerText.includes('No projects yet') && !document.querySelector('table')");
+  await capture("05-projects-empty");
+  await click("Register a project");
+  await setValue("input[name=projectId]", "fixture-project");
+  await setValue("input[name=projectName]", "Fixture project");
+  await setValue("textarea[name=projectDescription]", "Temporary browser fixture");
+  await evaluate(`document.querySelector('form[aria-label="Register a project"] input[value=dependencies]').click()`);
+  await submit("Register a project");
+  await wait(`document.querySelector('h1')?.textContent.includes('Fixture project') && !!document.querySelector('form[aria-label="Project metadata"]')`);
+  assert.deepEqual(await evaluate("window.fixture.projects['fixture-project'].modules"), ["dependencies"]);
+  pass("empty project inventory allows administrator registration with explicit modules");
+
+  await setValue("input[name=editName]", "Fixture project renamed");
+  await evaluate("window.fixture.externalEdit('fixture-project')");
+  await submit("Project metadata");
+  await wait("document.querySelector('.notice.conflict')?.innerText.includes('saved by someone else') && document.querySelector('input[name=editName]').value === 'Fixture project renamed'");
+  assert.equal(await evaluate("window.fixture.projects['fixture-project'].name"), "Fixture project", "Stale metadata save overwrote a newer revision");
+  assert.equal(await evaluate("[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Save metadata').disabled"), true, "Save stays enabled during an unresolved conflict");
+  await capture("06-project-conflict");
+  await click("Keep my edits on revision");
+  await submit("Project metadata");
+  await wait("window.fixture.projects['fixture-project'].name === 'Fixture project renamed' && window.fixture.projects['fixture-project'].revision === 3 && document.querySelector('h1').textContent.includes('renamed')");
+  pass("stale metadata saves reload as a conflict, keep unsaved input and save only after explicit resolution");
+
+  // GitHub source: a recent-authentication failure keeps input; success clears the token everywhere.
+  await wait(`document.body.innerText.includes('No repository is connected') && !!document.querySelector('form[aria-label="GitHub source settings"] fieldset:not([disabled])')`);
+  await evaluate("window.fixture.recent = false");
+  await setValue("input[name=repository]", "fixture-owner/fixture-repo");
+  await setValue("input[data-secret=github-token]", token);
+  await submit("GitHub source settings");
+  await wait(`[...document.querySelectorAll('.settings [role=alert]')].some(a => a.innerText.includes('recent password and MFA') && a.innerText.includes('Verify identity')) && document.querySelector('input[data-secret=github-token]').value === ${JSON.stringify(token)}`);
+  assert.equal(await evaluate("window.fixture.githubPuts.length"), 0);
+  await evaluate("window.fixture.recent = true");
+  await submit("GitHub source settings");
+  await wait("window.fixture.githubPuts.length === 1 && document.querySelector('input[data-secret=github-token]').value === '' && document.body.innerText.includes('Saved source revision 1')");
+  assert.deepEqual(await evaluate("window.fixture.githubPuts[0]"), { repository: "fixture-owner/fixture-repo", enabled: true, revision: 0, tokenLength: token.length });
+  assert.equal(await evaluate(`(() => { const t = ${JSON.stringify(token)}; const stores = [localStorage, sessionStorage].flatMap(s => Object.keys(s).map(k => k + s.getItem(k))); return window.fixture.requests.some(r => (r.path + r.search).includes(t)) || stores.some(v => v.includes(t)) || document.documentElement.outerHTML.includes(t) || location.href.includes(t); })()`), false, "GitHub token leaked into a URL, storage or the document");
+  pass("GitHub setup is recent-MFA gated, keeps input on failure and clears the token without URL or storage exposure");
+
+  await evaluate("window.fixture.githubViews['fixture-project'] = window.fixture.freshView('fixture-owner/fixture-repo')");
+  await wait(`${goodChips} >= 3 && document.body.innerText.includes('Bump fixture-lib') && document.body.innerText.includes('Dependency update PRs') && !document.body.innerText.includes('Retained observation')`);
+  await capture("07-github-fresh");
+  await evaluate("window.fixture.githubFail = true");
+  await wait(`document.body.innerText.includes('Polling failed') && ${goodChips} === 0`);
+  pass("a failed GitHub poll invalidates previously healthy observations");
+  await evaluate("window.fixture.githubFail = false; window.fixture.githubViews['fixture-project'] = window.fixture.retainedView('fixture-owner/fixture-repo')");
+  await wait(`document.body.innerText.includes('Retained observation') && document.body.innerText.includes('Workflow runs could not be read') && document.body.innerText.includes('Truncated') && document.body.innerText.includes('not a package-version inventory') && !document.body.innerText.includes('Polling failed') && ${goodChips} === 0`);
+  assert.equal(await evaluate("[...document.querySelectorAll('.github .metric')].find(m => m.innerText.includes('Open Dependabot alerts')).innerText.includes('1+')"), true, "Truncated alerts rendered as a complete count");
+  await capture("08-github-retained");
+  await click("Request refresh");
+  await wait("document.body.innerText.includes('Refresh is cooling down')");
+  assert.ok(await evaluate("window.fixture.requests.some(r => r.method === 'POST' && r.path === '/api/projects/fixture-project/github/sync')"));
+  pass("retained, partial, unreadable and truncated GitHub data stay explicit; refresh cooldown is reported");
+
+  // A late response for a previously opened project cannot populate another project.
+  await evaluate("window.fixture.seedProject('alpha-project', 'ALPHA-ONLY-PROJECT', ['dependencies']); window.fixture.githubViews['alpha-project'] = window.fixture.freshView('alpha-owner/ALPHA-ONLY-REPO'); window.fixture.hold.add('/api/projects/alpha-project/github')");
+  await click("← All projects");
+  await wait("document.body.innerText.includes('ALPHA-ONLY-PROJECT')");
+  await click("ALPHA-ONLY-PROJECT");
+  await wait("typeof window.fixture.holds['/api/projects/alpha-project/github'] === 'function'");
+  await click("← All projects");
+  await wait("document.body.innerText.includes('Fixture project renamed')");
+  await click("Fixture project renamed");
+  await wait("document.querySelector('h1')?.textContent.includes('Fixture project renamed') && document.body.innerText.includes('fixture-owner/fixture-repo')");
+  await evaluate("window.fixture.holds['/api/projects/alpha-project/github']()");
+  await sleep(300);
+  assert.equal(await evaluate("document.body.innerText.includes('ALPHA-ONLY')"), false, "A late response leaked another project's data");
+  pass("project detail and GitHub responses are scoped to their project mount");
+
+  // Grants: load before editing, ignore late responses for another account, block on load failure, preserve host + project grants.
+  await evaluate("window.fixture.usersFail = false");
+  await click("Fleet overview");
+  await click("Access & accounts");
+  await wait("[...document.querySelectorAll('select[name=user] option')].some(o => o.value === 'operator-fixture')");
+  await evaluate("window.fixture.hold.add('/api/users/operator-fixture/grants')");
+  await setValue("select[name=user]", "operator-fixture");
+  await wait("typeof window.fixture.holds['/api/users/operator-fixture/grants'] === 'function'");
+  await setValue("select[name=user]", "viewer-fixture");
+  await wait(`!!document.querySelector('[data-grant="host:viewer-host:host.read"]')`);
+  await evaluate("window.fixture.holds['/api/users/operator-fixture/grants']()");
+  await sleep(300);
+  assert.equal(await evaluate(`!!document.querySelector('[data-grant="project:fixture-project:project.read"]')`), false, "A late grant response replaced the selected account's grants");
+  await setValue("select[name=user]", "unreadable-fixture");
+  await wait("[...document.querySelectorAll('[role=alert]')].some(a => a.innerText.includes('Current grants could not be loaded')) && [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Replace grants').disabled");
+  await setValue("select[name=user]", "operator-fixture");
+  await wait(`!!document.querySelector('[data-grant="host:viewer-host:host.read"]') && !!document.querySelector('[data-grant="project:fixture-project:project.read"]')`);
+  await setValue("select[name=scopeType]", "project");
+  await setValue("select[name=projectScope]", "fixture-project");
+  await evaluate(`document.querySelector('.check-grid input[value="github.read"]').click()`);
+  await click("Add to working set");
+  await wait(`!!document.querySelector('[data-grant="project:fixture-project:github.read"]')`);
+  await evaluate("window.confirm = () => true");
+  await click("Replace grants");
+  await wait("!!window.fixture.lastGrantPut");
+  const written = await evaluate("window.fixture.lastGrantPut");
+  assert.equal(written.user, "operator-fixture");
+  assert.deepEqual(written.grants.map((g) => `${g.scopeType}:${g.scope}:${g.action}`).sort(),
+    ["host:viewer-host:host.read", "project:fixture-project:github.read", "project:fixture-project:project.read"], "Grant replacement dropped an existing host or project grant");
+  await capture("09-grant-editor");
+  pass("grant editing loads the complete set first, preserves host and project grants and ignores stale account responses");
   await click("Fleet overview");
   await click("ADMIN-ONLY-HOST");
   await wait("document.querySelectorAll('.metrics .chip.good').length >= 3");
@@ -209,14 +430,21 @@ try {
   assert.equal(await evaluate("document.body.innerText.includes('ADMIN-ONLY')"), false, "Previous account data survived logout or a late response");
   assert.equal(await evaluate("document.querySelector('h1').textContent.trim()"), "Fleet overview", "Previous account view survived logout");
   await capture("03-restricted-viewer");
-  console.log("PASS account changes clear private detail/view state and ignore a late old-account response");
+  pass("account changes clear private detail/view state and ignore a late old-account response");
+  await click("Projects");
+  await wait("document.body.innerText.includes('Fixture project renamed') && !document.body.innerText.includes('ALPHA-ONLY') && !document.body.innerText.includes('Register a project')");
+  await click("Fixture project renamed");
+  await wait("document.body.innerText.includes('GitHub read permission required') && document.body.innerText.includes('Read only') && !document.querySelector('form[aria-label=\"Project metadata\"]')");
+  assert.equal(await evaluate("window.fixture.requests.some(r => r.role === 'viewer' && r.path.endsWith('/github'))"), false, "GitHub data requested without github.read");
+  assert.equal(await evaluate("document.body.innerText.includes('fixture-owner/fixture-repo')"), false, "Previous account's GitHub data visible to viewer");
+  pass("viewer project access honors capabilities: no registration, editing or GitHub reads without github.read");
   await evaluate("window.fixture.logoutFailure = 401");
   await click("Sign out");
   await wait("!!document.querySelector('input[name=code]') && !document.body.innerText.includes('Viewer fixture host')");
-  console.log("PASS expired session sign-out returns to authentication; unconfirmed server failures remain visible");
+  pass("expired session sign-out returns to authentication; unconfirmed server failures remain visible");
   assert.deepEqual(errors, [], "Uncaught browser exceptions");
-  writeFileSync(join(evidence, "results.json"), JSON.stringify({ status: "passed", browser: version.product, screenshots, cases: 4 }, null, 2));
-  console.log(`Browser fixture proof: ${version.product}; four bounded screenshots`);
+  writeFileSync(join(evidence, "results.json"), JSON.stringify({ status: "passed", browser: version.product, screenshots, cases }, null, 2));
+  console.log(`Browser fixture proof: ${version.product}; ${cases} cases; ${screenshots.length} bounded screenshots`);
 } finally {
   await send("Browser.close").catch(() => {});
   if (chrome.exitCode === null) chrome.kill("SIGKILL");

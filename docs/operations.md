@@ -2,6 +2,24 @@
 
 This is a development milestone for a single Linux server and Debian/systemd agents. Run the fixture/container gates before installing it on infrastructure. No production deployment, live Debian helper operation or workstation administrative operation was performed during development. Windows and SSH are unimplemented.
 
+## Register projects and connect GitHub
+
+After installation, open **Projects** and register your own project with the
+dependencies module selected. Open its GitHub settings, enter `owner/repository`
+and a repository-scoped read-only token, and save. If prompted, use **Verify
+identity** to refresh password/MFA authentication, then retry the preserved form.
+The server collects in the background; the view reports pending, last collection,
+freshness, source errors and the next allowed attempt. Refresh respects the
+15-minute source cooldown. No live projects or credentials are supplied by the
+repository. [Token permissions and exact coverage](github.md).
+
+Use Access & accounts to load a user's current grants and add explicit project
+read plus GitHub read grants while preserving intended host access. Operators
+may separately receive project management and GitHub refresh grants. Archive a
+project or disable its source to stop collection. Disconnect removes Phoenix's
+credential and observations; revoke the token at GitHub when retiring it.
+Credentials require the existing retained vault key during backup/restore.
+
 ## Build and run the server
 
 Use Docker with Linux containers and Compose. The Dockerfile runs isolated fixture tests and vet/race gates before producing the server image. The embedded SQLite C engine requires CGO/GCC during the build; the supplied Debian build image provides them, and runtime images/agent hosts need compatible glibc. Do not build deployment binaries with `CGO_ENABLED=0`. No `.env` loader or embedded defaults create accounts. The example hostname is a placeholder; use the actual DNS name clients will verify.

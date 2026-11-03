@@ -4,6 +4,37 @@ Evidence is separated into compilation, fixture execution, actual Debian/systemd
 
 ## Recorded results
 
+**Project/GitHub working slice, 2026-11-03:** source now includes the project UI,
+revision-conflict handling, mixed-scope grant editing and read-only GitHub
+collection/settings. Local guarded Linux cross-compilation passed with the new
+GitHub client/server fixtures. Opus 5.5 High implemented the interface and added
+Linux browser cases for registration, conflicts, source setup, stale/truncated
+observations, permission handling and late-response isolation. Runtime/race and
+browser execution for this slice are pending the PR's Linux CI. No live project
+or GitHub credential is configured, and no deployed integration is claimed.
+
+The final local source check also passed Linux-targeted `go vet` and the
+TypeScript/Vite production build through the guarded runner. Sol-loop completed
+two rounds with GPT-6.1 Sol at xhigh and approved the behavior diff. Its sole
+finding, S1, was fixed by retaining a monotonically increasing empty source
+revision after disconnect, preventing stale browser PUT/DELETE requests from
+mutating a reconnected repository. Reconnect/capacity regressions cross-compile;
+their execution remains part of Linux CI. Reviewer usage was not exposed.
+
+**Earlier foundation-only check, 2026-11-03 (before GitHub/frontend):** the empty
+project registry, explicit project scopes, revision/archive handling, bounded
+project audit and capability contract passed Linux amd64 test-package
+cross-compilation and Linux-targeted `go vet ./...` through the guarded runner.
+Compilation took 40.48 seconds; vet took 20.23 seconds. The largest sampled scratch
+was 33,167,261 bytes, idle compiler cache remained below 256 MiB, and the external
+compiler cache stayed at 14,702 bytes. No runtime test executable ran. New fixtures
+cover lifecycle/persistence, stale saves, host/project isolation, viewer ceilings,
+permission revocation, request security, metadata validation and storage bounds.
+They require the updated Linux CI fixture/race stages; Docker is unavailable in
+this workstation checkout. Live GitHub reads, real-host and production acceptance
+remain unrun. The backend contract and
+frontend handoff are in [project maintenance](project-maintenance.md).
+
 Canary configuration loading now uses one transaction, so a rejected over-capacity configuration leaves retained sources unchanged. The capacity fixture starts with fifteen IDs, rejects two new IDs without consuming a slot, then retries with the second ID and verifies existing-source credential refresh at capacity. This regression requires the updated Linux check; local cross-compilation is not a runtime pass.
 
 On `1edab99e819a46ab71244954605b311b2871d426`, [run 40736500830](https://github.com/Narehood/Phoenix/actions/runs/40736500830) stopped inside the validation size sampler when Go removed a temporary directory between traversal and `lstat`. That interrupted run provides no new fixture or browser result. The sampler now skips only vanished directory entries while retaining directory/link/reparse exclusions and every storage limit; a deterministic Linux-only traversal regression runs before the Go fixtures.
