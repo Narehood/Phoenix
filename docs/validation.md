@@ -4,6 +4,32 @@ Evidence is separated into compilation, fixture execution, actual Debian/systemd
 
 ## Recorded results
 
+**Validated project/GitHub source checkpoint:** on
+`095b2a844800ab3ec9844bce0ab5e35c2adf1cc6`, [Linux run 41699709962](https://github.com/Narehood/Phoenix/actions/runs/41699709962)
+passed all Debian CGO fixtures, Linux vet, all race packages (including both
+complementary server batches), server/agent/helper binaries, the server image
+and React bundle, and 13 browser regression cases in Chrome/156.0.8078.47.
+The run retains nine bounded screenshots for seven days. The new project/GitHub
+race batch took 31.031 seconds; the remaining server batch took 75.509 seconds,
+both within the original 120-second per-package deadline. The largest sampled
+scratch was 174,505,342 bytes, idle compiler cache remained below 256 MiB, module
+downloads were 33,807,244 bytes and the external compiler cache stayed empty.
+
+Browser cases cover registration, metadata conflicts, recent-MFA-gated source
+setup without token exposure, stale/partial/truncated observations, cooldowns,
+mixed host/project grants and late-response/account isolation, alongside the
+existing fleet/Canary regressions. They exercise the built interface against
+temporary API fixtures; Go fixtures separately execute the real server APIs and
+collector against temporary sources. This does not establish live GitHub
+compatibility, full manual browser acceptance, real Debian/systemd operation or
+production readiness. No real projects or credentials were configured.
+
+Sol-loop approved the core behavior in two rounds; the reconnect revision finding
+was fixed and re-reviewed. Both subsequent CodeRabbit findings (table rendering
+and recent-CI window classification) were fixed, acknowledged and resolved. The
+follow-up regression passed in this checkpoint. CodeRabbit's later review limit
+is advisory and is not treated as an approval. Reviewer token usage was not exposed.
+
 On `a97da8c5535208b71e8be3f97b26d448209dbff6`, [run 41698086281](https://github.com/Narehood/Phoenix/actions/runs/41698086281)
 passed all ordinary Debian CGO fixtures, including new project/GitHub tests, and
 Linux vet. Agent, Canary, GitHub and security race packages passed; the server

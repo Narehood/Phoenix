@@ -13,8 +13,8 @@ capability response, plus read-only GitHub collection and its dashboard. This is
 source implementation; runtime/browser evidence is tracked separately.
 [Contract](project-maintenance.md) and [GitHub coverage](github.md).
 
-- [ ] Linux fixture/race execution and project frontend acceptance for the foundation
-- [ ] Read-only GitHub health and dependency-update visibility: implemented, Linux/browser acceptance pending
+- [x] Linux project/GitHub fixtures and race execution; 13-case browser regression proof on `095b2a8` (full manual acceptance remains pending)
+- [x] Read-only GitHub.com health, Dependabot alerts and recognized update-PR visibility with explicit coverage limits
 - [ ] Searchable editable documentation, revisions, public/private access and recovery exports
 - [ ] Reusable content schemas and authorized application connectors
 - [ ] Dependency-update preparation and guided validation/release jobs
@@ -59,7 +59,8 @@ implemented. See [setup and source coverage](github.md). The checklist below
 retains the full roadmap and acceptance requirements: code/secret scanning,
 security-versus-routine PR classification, complete dependency inventory,
 cross-repository attention filtering and explicitly configured live acceptance
-remain follow-ups. Bounded fixtures and browser cases require Linux CI.
+remain follow-ups. Bounded fixtures, race checks and 13 browser cases passed on
+`095b2a8`; [exact evidence and limits](validation.md#recorded-results).
 
 - [ ] Repository inventory with owner/name, visibility, archived state, default branch, recent activity and links to GitHub
 - [ ] Open PRs with draft/review state, failing or pending checks, merge conflicts and age; distinguish PR checks from default-branch CI
