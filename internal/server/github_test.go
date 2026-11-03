@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Narehood/Phoenix/internal/core"
+	gh "github.com/Narehood/Phoenix/internal/github"
 	"github.com/pquerna/otp/totp"
 )
 
@@ -260,6 +261,22 @@ func TestGitHubDisconnectedRevisionCannotMutateReconnection(t *testing.T) {
 		if after.Repository != repo || after.Revision != reconnected.Revision || after.Token != reconnected.Token {
 			t.Fatal("stale tab mutated a reconnected source")
 		}
+	}
+}
+
+func TestGitHubRecentCIWindowDoesNotMeanPartial(t *testing.T) {
+	s := gh.Snapshot{Pulls: gh.Collection[gh.Pull]{State: "ok"}, DefaultBranchCI: gh.Collection[gh.Workflow]{State: "ok", Truncated: true}, Alerts: gh.Collection[gh.Alert]{State: "ok"}}
+	if githubPartial(s) || !s.DefaultBranchCI.Truncated {
+		t.Fatal("expected CI history window marked the source partial or lost its bound")
+	}
+	s.DefaultBranchCI.State = "permission_denied"
+	if !githubPartial(s) {
+		t.Fatal("unreadable recent CI window looked complete")
+	}
+	s.DefaultBranchCI.State = "ok"
+	s.Alerts.Truncated = true
+	if !githubPartial(s) {
+		t.Fatal("truncated active alerts looked complete")
 	}
 }
 

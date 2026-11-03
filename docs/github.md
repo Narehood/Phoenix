@@ -105,7 +105,9 @@ more results exist beyond the bound. The collector reads the ten most recently
 updated open PRs, 100 reviews/checks/statuses per PR, 20 recent default-branch
 push workflow runs and 50 open Dependabot alerts. It detects pagination and
 marks truncation rather than claiming completeness. It never follows upstream
-pagination URLs. Default-branch runs are recent history, not the currently
+pagination URLs. An otherwise readable recent-CI window does not make the whole
+source partial merely because older runs exist; its truncation flag stays visible.
+Default-branch runs are recent history, not the currently
 deployed version or a claim that every workflow passes.
 
 PR check summaries are `passing_observed`, `failing`, `pending`, `not_reported`,

@@ -109,7 +109,8 @@ func (s *Server) githubView(p core.Project, g githubSource) (githubView, error) 
 }
 
 func githubPartial(s gh.Snapshot) bool {
-	if s.Pulls.State != "ok" || s.Pulls.Truncated || s.DefaultBranchCI.State != "ok" || s.DefaultBranchCI.Truncated || s.Alerts.State != "ok" || s.Alerts.Truncated {
+	// CI is a recent-history window: older runs beyond that window are expected.
+	if s.Pulls.State != "ok" || s.Pulls.Truncated || s.DefaultBranchCI.State != "ok" || s.Alerts.State != "ok" || s.Alerts.Truncated {
 		return true
 	}
 	for _, p := range s.Pulls.Items {

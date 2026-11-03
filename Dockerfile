@@ -22,7 +22,11 @@ COPY internal/ internal/
 FROM go-base AS validate
 RUN --network=none python3 scripts/validate.py --timeout 300 -- python3 scripts/check.py tests
 RUN --network=none python3 scripts/validate.py --timeout 180 -- python3 scripts/check.py vet
-RUN --network=none CGO_ENABLED=1 python3 scripts/validate.py --timeout 300 -- go test -race -count=1 -timeout=120s ./internal/agent ./internal/canary ./internal/github ./internal/security ./internal/server
+RUN --network=none CGO_ENABLED=1 python3 scripts/validate.py --timeout 300 -- go test -race -count=1 -timeout=120s ./internal/agent ./internal/canary ./internal/github ./internal/security
+# Keep the bcrypt-heavy server fixtures in complementary sequential batches;
+# each retains the original per-package deadline and guarded storage budgets.
+RUN --network=none CGO_ENABLED=1 python3 scripts/validate.py --timeout 300 -- go test -race -count=1 -timeout=120s -run '^Test(GitHub|Project)' ./internal/server
+RUN --network=none CGO_ENABLED=1 python3 scripts/validate.py --timeout 300 -- go test -race -count=1 -timeout=120s -skip '^Test(GitHub|Project)' ./internal/server
 
 FROM validate AS binaries
 RUN python3 scripts/validate.py --timeout 300 -- python3 scripts/check.py binaries

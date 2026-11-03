@@ -4,6 +4,16 @@ Evidence is separated into compilation, fixture execution, actual Debian/systemd
 
 ## Recorded results
 
+On `a97da8c5535208b71e8be3f97b26d448209dbff6`, [run 41698086281](https://github.com/Narehood/Phoenix/actions/runs/41698086281)
+passed all ordinary Debian CGO fixtures, including new project/GitHub tests, and
+Linux vet. Agent, Canary, GitHub and security race packages passed; the server
+race package reached its 120-second suite deadline during the existing bcrypt
+authentication-throttle case. No assertion or data-race failure was reported.
+The expanded server suite now uses complementary sequential project/GitHub and
+remaining-server race batches, preserving the 120-second deadline, test set and
+guarded cache/scratch budgets. Binary/image and browser stages were not reached
+by that failed run; the updated head requires a new Linux result.
+
 **Project/GitHub working slice, 2026-11-03:** source now includes the project UI,
 revision-conflict handling, mixed-scope grant editing and read-only GitHub
 collection/settings. Local guarded Linux cross-compilation passed with the new
