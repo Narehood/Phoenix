@@ -36,16 +36,18 @@ type Config struct {
 	CanaryFile  string `json:"canaryFile"`
 }
 type Server struct {
-	DB          *sql.DB
-	Config      Config
-	CA          *security.CA
-	Vault       *security.Vault
-	Sessions    *scs.SessionManager
-	mu          sync.Mutex
-	connections map[net.Conn]string
-	throttle    map[string]*attempt
-	authGate    chan struct{}
-	Now         core.Clock
+	DB              *sql.DB
+	Config          Config
+	CA              *security.CA
+	Vault           *security.Vault
+	Sessions        *scs.SessionManager
+	mu              sync.Mutex
+	connections     map[net.Conn]string
+	throttle        map[string]*attempt
+	authGate        chan struct{}
+	Now             core.Clock
+	githubWake      chan struct{}
+	githubTransport http.RoundTripper
 }
 type attempt struct {
 	count int
@@ -92,6 +94,7 @@ func New(c Config) (*Server, error) {
 	sessions.Cookie.HttpOnly = true
 	sessions.Cookie.SameSite = http.SameSiteStrictMode
 	s := &Server{DB: db, Config: c, CA: ca, Vault: v, Sessions: sessions, connections: map[net.Conn]string{}, throttle: map[string]*attempt{}, authGate: make(chan struct{}, 2), Now: time.Now}
+	s.githubWake = make(chan struct{}, 1)
 	// Dispatched jobs might already have executed; never automatically requeue.
 	tx, e := db.Begin()
 	if e != nil {
@@ -217,12 +220,23 @@ func (s *Server) WebHandler() http.Handler {
 	m.HandleFunc("GET /api/users", s.require("admin", false, s.users))
 	m.HandleFunc("POST /api/users", s.require("admin", true, s.createUser))
 	m.HandleFunc("PUT /api/users/{user}/grants", s.require("admin", true, s.setGrants))
+	m.HandleFunc("GET /api/users/{user}/grants", s.require("admin", false, s.userGrants))
 	m.HandleFunc("POST /api/users/{user}/disable", s.require("admin", true, s.disableUser))
 	m.HandleFunc("GET /api/jobs", s.require("", false, s.listJobs))
 	m.HandleFunc("POST /api/hosts/{host}/jobs", s.require("", false, s.createJob))
 	m.HandleFunc("GET /api/jobs/{job}", s.require("", false, s.getJob))
 	m.HandleFunc("POST /api/jobs/{job}/cancel", s.require("", false, s.cancelJob))
 	m.HandleFunc("GET /api/audit", s.require("", false, s.auditList))
+	m.HandleFunc("GET /api/projects", s.require("", false, s.listProjects))
+	m.HandleFunc("POST /api/projects", s.require("admin", true, s.createProject))
+	m.HandleFunc("GET /api/projects/{project}", s.require("", false, s.projectDetail))
+	m.HandleFunc("PUT /api/projects/{project}", s.require("", true, s.updateProject))
+	m.HandleFunc("GET /api/projects/{project}/capabilities", s.require("", false, s.projectCapabilities))
+	m.HandleFunc("GET /api/projects/{project}/audit", s.require("", false, s.projectAudit))
+	m.HandleFunc("GET /api/projects/{project}/github", s.require("", false, s.getGitHub))
+	m.HandleFunc("PUT /api/projects/{project}/github", s.require("admin", true, s.configureGitHub))
+	m.HandleFunc("DELETE /api/projects/{project}/github", s.require("admin", true, s.deleteGitHub))
+	m.HandleFunc("POST /api/projects/{project}/github/sync", s.require("", false, s.syncGitHub))
 	m.HandleFunc("GET /api/canary", s.require("", false, s.canaryList))
 	m.HandleFunc("PUT /api/hosts/{host}/mappings", s.require("admin", false, s.setMappings))
 	m.HandleFunc("GET /api/canary/{source}/monitors/{monitor}/history", s.require("", false, s.canaryHistory))
@@ -292,6 +306,7 @@ func (s *Server) Serve(ctx context.Context) error {
 	go func() { errch <- agent.ListenAndServeTLS(s.Config.TLSCert, s.Config.TLSKey) }()
 	go s.maintenance(ctx)
 	go s.pollCanary(ctx)
+	go s.pollGitHub(ctx)
 	select {
 	case <-ctx.Done():
 	case e := <-errch:

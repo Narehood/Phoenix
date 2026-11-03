@@ -29,13 +29,21 @@ Implemented routes (v1):
 | POST `/api/hosts/{host}/approve` | Admin + recent; `{confirm:<host ID>,certificateFingerprint}`; trusted-channel comparison required |
 | POST `/api/hosts/{host}/revoke` | Admin + recent; `{confirm:<host ID>}` |
 | GET/POST `/api/users` | Admin; create requires recent and `{name,role,password}`; returns one-time MFA secret, no grants |
-| PUT `/api/users/{user}/grants` | Admin + recent; `{grants:[{scopeType:"host"|"group"|"all",scope,action}]}`; replace all grants; cannot change own/admin grants |
+| PUT `/api/users/{user}/grants` | Admin + recent; `{grants:[{scopeType,scope,action}]}` where `scopeType` is `host`, `group`, `all` or `project`; replace all grants; project scopes require registered IDs and project actions; cannot change own/admin grants |
+| GET `/api/users/{user}/grants` | Admin; complete current `{grants:[...]}` for safe mixed-scope editing |
 | POST `/api/users/{user}/disable` | Admin + recent; non-admin account only; revokes all sessions |
 | POST `/api/hosts/{host}/jobs` | `host.read` plus action, verified non-revoked identity; `{action,args,timeoutSeconds?,expiresSeconds?,confirm?}` |
 | GET `/api/jobs` | `host.read` per target; newest 200; no output |
 | GET `/api/jobs/{job}` | `host.read`; result included only with `jobs.output` |
 | POST `/api/jobs/{job}/cancel` | `jobs.cancel`; queued job cancels immediately, running job gets cancellation request |
 | GET `/api/audit` | Admin or `host.read` per target; newest 500; no credentials/outputs |
+| GET/POST `/api/projects` | Scoped registry list; registration requires admin + recent; empty by default |
+| GET/PUT `/api/projects/{project}` | Read requires `project.read`; full metadata replacement needs read + manage + recent and matching revision |
+| GET `/api/projects/{project}/capabilities` | Project read; maintenance contract v1, effective permissions and module/source availability |
+| GET `/api/projects/{project}/audit` | Project read; newest 100 metadata events |
+| GET `/api/projects/{project}/github` | Project read + `github.read`; bounded observations, freshness and sanitized errors |
+| PUT/DELETE `/api/projects/{project}/github` | Admin + recent; revision-checked source configuration/disconnection; credentials never returned |
+| POST `/api/projects/{project}/github/sync` | Project read + `github.read` + `github.sync`; schedules collection, cooldown enforced |
 | GET `/api/canary` | Admin inventory or mapped `host.read` views; no tokens or private monitor settings |
 | PUT `/api/hosts/{host}/mappings` | Admin + CSRF; `{mappings:[{sourceId,monitorId}]}`, at most 20 |
 | GET `/api/canary/{source}/monitors/{monitor}/history` | Mapped host read permission; bounded/throttled server-side viewer read |
@@ -44,6 +52,12 @@ Implemented routes (v1):
 | POST `/agent/renew` | Current non-revoked agent mTLS; `{csr}`; old serial retires immediately |
 
 Every cookie-authenticated mutation also requires exact Origin and `X-CSRF-Token`. Bodies are 256 KiB except exchange (1 MiB to allow JSON-escaped 64 KiB outputs plus telemetry). Request/response strings are plain untrusted content. Agents send one durable receipt at a time; acknowledgements retire transmission, while a bounded local tombstone remains.
+
+Project registration/update bodies have a tighter 8 KiB cap. Project scopes are
+independent of host/group/all grants. See [project maintenance](project-maintenance.md)
+for complete bodies, limits, revision/archive behavior and capability states.
+
+GitHub bodies, permissions, states and bounds are specified in [GitHub](github.md).
 
 Actions and arguments:
 

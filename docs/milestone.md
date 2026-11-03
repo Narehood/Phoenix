@@ -1,5 +1,32 @@
 # Milestone and product scope
 
+## Reusable project maintenance
+
+Requested on 2026-11-03 as an extension alongside the existing infrastructure scope.
+Operators supply their own projects and application-specific integrations; no
+personal projects, repositories or credentials are bundled. Routine workflows
+belong in web interfaces; documented recovery commands are acceptable.
+
+The implemented slice includes browser registration, revision-checked metadata,
+archive/restore, project-scoped grants, bounded audit history and a versioned
+capability response, plus read-only GitHub collection and its dashboard. This is
+source implementation; runtime/browser evidence is tracked separately.
+[Contract](project-maintenance.md) and [GitHub coverage](github.md).
+
+- [x] Linux project/GitHub fixtures and race execution; 13-case browser regression proof on `095b2a8` (full manual acceptance remains pending)
+- [x] Read-only GitHub.com health, Dependabot alerts and recognized update-PR visibility with explicit coverage limits
+- [ ] Searchable editable documentation, revisions, public/private access and recovery exports
+- [ ] Reusable content schemas and authorized application connectors
+- [ ] Dependency-update preparation and guided validation/release jobs
+- [ ] Backup/restore visibility, operational reminders and tested handover
+
+GitHub reads require explicit source configuration; other selected connectors
+remain unsupported. Publishing, package updates and release actions are not
+enabled by registration. Existing host/Canary
+acceptance and production release gates remain required.
+
+## Infrastructure milestone
+
 The full goal includes fleet inventory, telemetry, processes, services, bounded logs/history, durable approved commands, service management, explicit reboot, secure lifecycle enrollment, permissions, independent Canary status and GitHub repository health. Windows, additional transports, start/stop actions, broader diagnostics and GitHub integration follow the first Debian slice; they remain product scope.
 
 Implemented slice validated through the Linux fixtures on checkpoint `6fb3ce9`; the session-revocation, administrator-only mapping and helper-timeout regressions subsequently passed the fixture/race stages on `de67ade`. That run's browser stage failed during Chrome startup. Later changes require the current PR check; checkmarks below are not claims of actual-host or complete browser acceptance ([evidence](validation.md#recorded-results)):
@@ -26,7 +53,14 @@ Release gates: the pending acceptance above; independent security review; depend
 
 ## GitHub repository health — planned
 
-Requested on 2026-10-28. The dashboard should show the user's selected GitHub repositories and what needs attention across them. No GitHub collector, credentials flow, persistence, API or dashboard view is implemented yet.
+Requested on 2026-10-28. A bounded read-only GitHub.com collector, encrypted
+credentials flow, persistence, scoped APIs and project dashboard are now
+implemented. See [setup and source coverage](github.md). The checklist below
+retains the full roadmap and acceptance requirements: code/secret scanning,
+security-versus-routine PR classification, complete dependency inventory,
+cross-repository attention filtering and explicitly configured live acceptance
+remain follow-ups. Bounded fixtures, race checks and 13 browser cases passed on
+`095b2a8`; [exact evidence and limits](validation.md#recorded-results).
 
 - [ ] Repository inventory with owner/name, visibility, archived state, default branch, recent activity and links to GitHub
 - [ ] Open PRs with draft/review state, failing or pending checks, merge conflicts and age; distinguish PR checks from default-branch CI

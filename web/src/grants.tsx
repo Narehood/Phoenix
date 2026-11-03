@@ -1,0 +1,372 @@
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { api } from "./api";
+import type { Grant, Project, User } from "./types";
+import { ErrorNotice } from "./ui";
+
+const hostActions = [
+  "host.read",
+  "host.manage",
+  "diagnostic",
+  "services.inspect",
+  "logs.read",
+  "service.restart",
+  "host.reboot",
+  "jobs.output",
+  "jobs.cancel",
+];
+const projectActions = [
+  "project.read",
+  "project.manage",
+  "github.read",
+  "github.sync",
+];
+const viewerActions = ["host.read", "project.read", "github.read"];
+const grantLimit = 100;
+const key = (g: Grant) => `${g.scopeType}\u0000${g.scope}\u0000${g.action}`;
+
+type Load =
+  | { state: "idle" }
+  | { state: "loading" }
+  | { state: "failed"; error: unknown }
+  | { state: "loaded"; grants: Grant[] };
+
+/**
+ * Grant replacement is all-or-nothing on the server, so the complete current set
+ * is loaded first and edited as a whole. Mutation stays disabled until that load
+ * succeeds; responses for a previously selected account are discarded.
+ */
+export function GrantEditor({
+  users,
+  usersLoaded,
+  onVerify,
+}: {
+  users: User[];
+  usersLoaded: boolean;
+  onVerify: () => void;
+}) {
+  const [userId, setUserId] = useState(""),
+    [load, setLoad] = useState<Load>({ state: "idle" }),
+    [working, setWorking] = useState<Grant[]>([]),
+    [projects, setProjects] = useState<Project[] | null>(null),
+    [projectsError, setProjectsError] = useState(""),
+    [scopeType, setScopeType] = useState("host"),
+    [scope, setScope] = useState(""),
+    [actions, setActions] = useState<string[]>([]),
+    [error, setError] = useState<unknown>(null),
+    [notice, setNotice] = useState(""),
+    [busy, setBusy] = useState(false);
+  const current = useRef(""),
+    alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    api<{ projects: Project[] }>("/api/projects")
+      .then((v) => alive.current && setProjects(v.projects))
+      .catch((e) => alive.current && setProjectsError((e as Error).message));
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+  const account = users.find((u) => u.id === userId);
+  const viewer = account?.role === "viewer";
+
+  async function fetchGrants(id: string) {
+    current.current = id;
+    setLoad({ state: "loading" });
+    setWorking([]);
+    try {
+      const v = await api<{ grants: Grant[] | null }>(
+        `/api/users/${encodeURIComponent(id)}/grants`,
+      );
+      if (!alive.current || current.current !== id) return;
+      const grants = v.grants || [];
+      setLoad({ state: "loaded", grants });
+      setWorking(grants);
+    } catch (e) {
+      if (!alive.current || current.current !== id) return;
+      setLoad({ state: "failed", error: e });
+    }
+  }
+  function choose(id: string) {
+    setUserId(id);
+    setError(null);
+    setNotice("");
+    setActions([]);
+    if (!id) {
+      current.current = "";
+      setLoad({ state: "idle" });
+      setWorking([]);
+      return;
+    }
+    void fetchGrants(id);
+  }
+  // Drop a selection whose account disappeared from the list.
+  useEffect(() => {
+    if (userId && usersLoaded && !users.some((u) => u.id === userId))
+      choose("");
+  }, [users, usersLoaded]);
+
+  const loaded = load.state === "loaded" ? load.grants : null;
+  const saved = new Set((loaded || []).map(key)),
+    pending = new Set(working.map(key));
+  const added = working.filter((g) => !saved.has(key(g))).length,
+    removed = (loaded || []).filter((g) => !pending.has(key(g))).length;
+  const changed = added + removed > 0;
+  const available = scopeType === "project" ? projectActions : hostActions;
+
+  function addGrants() {
+    setError(null);
+    setNotice("");
+    const target = scopeType === "all" ? "*" : scope.trim();
+    if (!target) return setError(new Error("Choose a scope first."));
+    if (scopeType !== "project" && target.length > 80)
+      return setError(
+        new Error("Host IDs and group names are at most 80 characters."),
+      );
+    if (!actions.length)
+      return setError(new Error("Select at least one action."));
+    const additions = actions
+      .map((action) => ({ scopeType, scope: target, action }))
+      .filter((g) => !pending.has(key(g)));
+    if (working.length + additions.length > grantLimit)
+      return setError(
+        new Error(`An account can hold at most ${grantLimit} grants.`),
+      );
+    setWorking((w) => [...w, ...additions]);
+    setActions([]);
+  }
+
+  async function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const id = userId;
+    if (!id || !account || !loaded || !changed || busy) return;
+    if (
+      !window.confirm(
+        `Replace ALL grants for ${account.name}? The account will hold exactly ${working.length} grant(s): ${added} added, ${removed} removed.`,
+      )
+    )
+      return;
+    setBusy(true);
+    setError(null);
+    setNotice("");
+    try {
+      await api(`/api/users/${encodeURIComponent(id)}/grants`, "PUT", {
+        grants: working,
+      });
+      if (!alive.current || current.current !== id) return;
+      setNotice(`Grants replaced for ${account.name}.`);
+      await fetchGrants(id);
+    } catch (err) {
+      if (alive.current && current.current === id) setError(err);
+    } finally {
+      if (alive.current) setBusy(false);
+    }
+  }
+
+  const projectName = (id: string) => projects?.find((p) => p.id === id)?.name;
+  const sorted = [...working].sort((a, b) => key(a).localeCompare(key(b)));
+  return (
+    <form className="form grant-editor" onSubmit={submit} aria-busy={busy}>
+      <ErrorNotice
+        error={error}
+        onDismiss={() => setError(null)}
+        onVerify={onVerify}
+      />
+      {notice && <div className="notice">{notice}</div>}
+      <label>
+        Account
+        <select
+          name="user"
+          required
+          value={userId}
+          onChange={(e) => choose(e.target.value)}
+        >
+          <option value="">
+            {usersLoaded ? "Select an account" : "Accounts unavailable"}
+          </option>
+          {users.map((u) => (
+            <option key={u.id} value={u.id}>
+              {u.name} ({u.role})
+            </option>
+          ))}
+        </select>
+      </label>
+      {load.state === "loading" && (
+        <p className="muted" role="status">
+          Loading current grants…
+        </p>
+      )}
+      {load.state === "failed" && (
+        <div className="notice error" role="alert">
+          <span>
+            Current grants could not be loaded: {(load.error as Error).message}.
+            Replacement is disabled so existing grants cannot be overwritten
+            blindly.
+          </span>
+          <button type="button" onClick={() => void fetchGrants(userId)}>
+            Retry
+          </button>
+        </div>
+      )}
+      {loaded && (
+        <div className="grant-list">
+          <p className="muted">
+            {working.length} of at most {grantLimit} grants
+            {changed ? ` · ${added} added, ${removed} removed (unsaved)` : ""}
+          </p>
+          {!working.length ? (
+            <p className="muted">This account holds no grants.</p>
+          ) : (
+            <div className="table-scroll bounded">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Scope</th>
+                    <th>Action</th>
+                    <th>
+                      <span className="sr-only">Remove</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sorted.map((g) => (
+                    <tr
+                      key={key(g)}
+                      data-grant={`${g.scopeType}:${g.scope}:${g.action}`}
+                    >
+                      <td>
+                        <span className="tag">{g.scopeType}</span>{" "}
+                        <code>{g.scope}</code>
+                        {g.scopeType === "project" && (
+                          <small>
+                            {projectName(g.scope) ??
+                              (projects ? "Unregistered project" : "")}
+                          </small>
+                        )}
+                      </td>
+                      <td>
+                        <code>
+                          {g.action === "*" ? "* (all actions)" : g.action}
+                        </code>
+                        {!saved.has(key(g)) && <small>Added · unsaved</small>}
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          aria-label={`Remove ${g.action} on ${g.scopeType} ${g.scope}`}
+                          onClick={() =>
+                            setWorking((w) =>
+                              w.filter((x) => key(x) !== key(g)),
+                            )
+                          }
+                        >
+                          Remove
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+      <fieldset disabled={!loaded || busy}>
+        <legend>Add grants to the working set</legend>
+        <label>
+          Scope type
+          <select
+            name="scopeType"
+            value={scopeType}
+            onChange={(e) => {
+              setScopeType(e.target.value);
+              setScope("");
+              setActions([]);
+            }}
+          >
+            <option value="host">Host ID</option>
+            <option value="group">Group name</option>
+            <option value="all">All hosts (*)</option>
+            <option value="project" disabled={!projects?.length}>
+              Project
+            </option>
+          </select>
+          {projectsError && (
+            <small className="error">
+              Projects could not be loaded ({projectsError}); project scopes
+              cannot be added. Existing project grants are preserved.
+            </small>
+          )}
+          {projects && !projects.length && (
+            <small>Register a project before granting project access.</small>
+          )}
+        </label>
+        {scopeType === "project" ? (
+          <label>
+            Project
+            <select
+              name="projectScope"
+              value={scope}
+              onChange={(e) => setScope(e.target.value)}
+            >
+              <option value="">Select a project</option>
+              {(projects || []).map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name} ({p.id}){p.archived ? " · archived" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <label>
+            Host ID, group name or *
+            <input
+              name="scope"
+              autoComplete="off"
+              maxLength={80}
+              value={scopeType === "all" ? "*" : scope}
+              readOnly={scopeType === "all"}
+              onChange={(e) => setScope(e.target.value)}
+            />
+          </label>
+        )}
+        <div className="check-grid" role="group" aria-label="Actions">
+          {available.map((a) => {
+            const blocked = viewer && !viewerActions.includes(a);
+            return (
+              <label className="check" key={a}>
+                <input
+                  type="checkbox"
+                  value={a}
+                  disabled={blocked}
+                  checked={actions.includes(a)}
+                  onChange={(e) =>
+                    setActions((v) =>
+                      e.target.checked ? [...v, a] : v.filter((x) => x !== a),
+                    )
+                  }
+                />
+                {a}
+              </label>
+            );
+          })}
+        </div>
+        <small>
+          {scopeType === "project"
+            ? "project.manage does not include read, and neither registry permission grants private GitHub data. github.sync requires github.read."
+            : "Host, group and all-host grants confer no project access."}
+          {viewer && " Viewers are limited to read actions."}
+        </small>
+        <button type="button" onClick={addGrants}>
+          Add to working set
+        </button>
+      </fieldset>
+      <small>
+        Saving replaces every grant this account holds with the list above,
+        including host and project grants.
+      </small>
+      <button className="primary" disabled={!loaded || !changed || busy}>
+        {busy ? "Working…" : "Replace grants"}
+      </button>
+    </form>
+  );
+}

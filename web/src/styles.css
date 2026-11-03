@@ -755,6 +755,101 @@ footer {
 .skip:focus {
   top: 10px;
 }
+/* Projects, GitHub health and grant editing. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.check.inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.check-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}
+.project-description {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 8px 16px;
+  margin: 0;
+  font-size: 12px;
+}
+.facts dt {
+  color: var(--text-3);
+  font-weight: 600;
+}
+.facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.notice.conflict,
+.notice.retained {
+  background: var(--warning-wash);
+  border-color: var(--warn-edge);
+}
+.notice.conflict table {
+  white-space: normal;
+  margin: 10px 0;
+  background: var(--surface);
+}
+tr.changed td {
+  background: var(--warning-wash);
+}
+td.wrap-cell {
+  white-space: normal;
+  min-width: 240px;
+  overflow-wrap: anywhere;
+}
+.github > .metrics,
+.github > .notice,
+.github > .coverage-note {
+  margin-left: 20px;
+  margin-right: 20px;
+}
+.github > .notice,
+.github > .metrics {
+  margin-bottom: 20px;
+}
+.github > .panel-body:empty {
+  display: none;
+}
+.coverage-note {
+  font-size: 11px;
+  margin-top: 0;
+}
+.section {
+  border-top: 1px solid var(--border);
+}
+.section h3,
+.subhead {
+  margin-top: 0;
+}
+.subhead {
+  font-size: 12px;
+  color: var(--text-2);
+  margin: 16px 0 8px;
+}
+.section .table-scroll {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+.grant-editor {
+  max-width: none;
+}
 @media (min-width: 1650px) {
   td {
     padding: 18px 22px;

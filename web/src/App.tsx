@@ -1,8 +1,10 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { api, csrf, ApiError } from "./api";
 import type { Audit, Canary, Host, Job, Reading, User, Monitor } from "./types";
+import { Empty, Form, Metric, Tone, field, stamp } from "./ui";
+import { Projects } from "./projects";
+import { GrantEditor } from "./grants";
 
-const stamp = (n: number) => (n ? new Date(n).toLocaleString() : "Never");
 const bytes = (n: number) =>
   n >= 2 ** 30
     ? `${(n / 2 ** 30).toFixed(1)} GiB`
@@ -16,15 +18,6 @@ const list = (s: string) =>
     .split(",")
     .map((v) => v.trim())
     .filter(Boolean);
-function Tone({ value }: { value: string }) {
-  return (
-    <span
-      className={`chip ${["up", "connected", "fresh", "normal", "succeeded", "completed"].includes(value) ? "good" : ["down", "failed", "revoked", "denied"].includes(value) ? "bad" : ["stale", "uncertain", "warning", "timed_out"].includes(value) ? "warn" : "neutral"}`}
-    >
-      <span aria-hidden="true">●</span> {value.replaceAll("_", " ")}
-    </span>
-  );
-}
 function monitorState(m: Monitor) {
   const observations = m.observations || [];
   const fresh = observations.filter(
@@ -42,50 +35,6 @@ function monitorState(m: Monitor) {
   )
     return "unknown";
   return m.state;
-}
-function Empty({ children }: { children: ReactNode }) {
-  return <div className="empty">{children}</div>;
-}
-function Metric({
-  label,
-  value,
-  detail,
-}: {
-  label: string;
-  value: ReactNode;
-  detail?: string;
-}) {
-  return (
-    <div className="metric">
-      <span>{label}</span>
-      <strong>{value}</strong>
-      {detail && <small>{detail}</small>}
-    </div>
-  );
-}
-function Form({
-  children,
-  onSubmit,
-  submit = "Save",
-  busy = false,
-}: {
-  children: ReactNode;
-  onSubmit: (e: FormEvent<HTMLFormElement>) => void;
-  submit?: string;
-  busy?: boolean;
-}) {
-  return (
-    <form onSubmit={onSubmit} className="form">
-      {children}
-      <button className="primary" disabled={busy}>
-        {busy ? "Working…" : submit}
-      </button>
-    </form>
-  );
-}
-function field(e: FormEvent<HTMLFormElement>) {
-  e.preventDefault();
-  return new FormData(e.currentTarget);
 }
 
 function Auth({ onLogin }: { onLogin: (u: User) => void }) {
@@ -495,6 +444,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
             ["jobs", "Remote jobs"],
             ["activity", "Activity & audit"],
             ["canary", "Uptime Canary"],
+            ["projects", "Projects"],
             ...(user.role === "admin" ? [["access", "Access & accounts"]] : []),
           ].map(([key, label]) => (
             <button
@@ -554,7 +504,9 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                 ? current?.name || "Host"
                 : view === "fleet"
                   ? "Fleet overview"
-                  : view}
+                  : view === "projects"
+                    ? "Projects"
+                    : view}
             </span>
           </span>
           <button onClick={() => setModal("auth")}>Verify identity</button>
@@ -1262,7 +1214,12 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
               )}
             </>
           )}
-          {view === "access" && user.role === "admin" && <Access act={act} />}
+          {view === "projects" && (
+            <Projects user={user} onVerify={() => setModal("auth")} />
+          )}
+          {view === "access" && user.role === "admin" && (
+            <Access act={act} onVerify={() => setModal("auth")} />
+          )}
         </main>
         <footer>
           Phoenix{" "}
@@ -1762,11 +1719,21 @@ function MappingForm({
     </Form>
   );
 }
-function Access({ act }: { act: (fn: () => Promise<void>) => Promise<void> }) {
+function Access({
+  act,
+  onVerify,
+}: {
+  act: (fn: () => Promise<void>) => Promise<void>;
+  onVerify: () => void;
+}) {
   const [users, setUsers] = useState<User[]>([]),
+    [usersLoaded, setUsersLoaded] = useState(false),
     [secret, setSecret] = useState("");
   useEffect(() => {
-    void act(async () => setUsers(await api<User[]>("/api/users")));
+    void act(async () => {
+      setUsers(await api<User[]>("/api/users"));
+      setUsersLoaded(true);
+    });
   }, []);
   return (
     <>
@@ -1775,8 +1742,8 @@ function Access({ act }: { act: (fn: () => Promise<void>) => Promise<void> }) {
           <p className="eyebrow">LEAST PRIVILEGE</p>
           <h1>Access & accounts</h1>
           <p className="muted">
-            Roles set the ceiling. Host, group and action grants determine
-            access. New accounts start with no grants.
+            Roles set the ceiling. Host, group, project and action grants
+            determine access. New accounts start with no grants.
           </p>
         </div>
       </div>
@@ -1802,6 +1769,7 @@ function Access({ act }: { act: (fn: () => Promise<void>) => Promise<void> }) {
                   );
                   setSecret(v.secret);
                   setUsers(await api<User[]>("/api/users"));
+                  setUsersLoaded(true);
                 });
               }}
             >
@@ -1842,71 +1810,15 @@ function Access({ act }: { act: (fn: () => Promise<void>) => Promise<void> }) {
         </section>
         <section className="panel">
           <div className="panel-heading">
-            <h2>Replace account grants</h2>
+            <h2>Account grants</h2>
+            <span className="muted">Loaded before editing · max 100</span>
           </div>
           <div className="panel-body">
-            <Form
-              submit="Replace grants"
-              onSubmit={(e) => {
-                const f = field(e);
-                void act(async () => {
-                  await api(`/api/users/${f.get("user")}/grants`, "PUT", {
-                    grants: f.getAll("actions").map((action) => ({
-                      scopeType: f.get("scopeType"),
-                      scope: f.get("scope"),
-                      action,
-                    })),
-                  });
-                });
-              }}
-            >
-              <label>
-                Account
-                <select name="user" required>
-                  {users
-                    .filter((u) => u.role !== "admin")
-                    .map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.name} ({u.role})
-                      </option>
-                    ))}
-                </select>
-              </label>
-              <label>
-                Scope
-                <select name="scopeType">
-                  <option value="host">Host ID</option>
-                  <option value="group">Group name</option>
-                  <option value="all">All hosts (use *)</option>
-                </select>
-              </label>
-              <label>
-                Host ID, group name or *<input name="scope" required />
-              </label>
-              <fieldset>
-                <legend>Allowed actions</legend>
-                {[
-                  "host.read",
-                  "host.manage",
-                  "diagnostic",
-                  "services.inspect",
-                  "logs.read",
-                  "service.restart",
-                  "host.reboot",
-                  "jobs.output",
-                  "jobs.cancel",
-                ].map((a) => (
-                  <label className="check" key={a}>
-                    <input type="checkbox" name="actions" value={a} />
-                    {a}
-                  </label>
-                ))}
-              </fieldset>
-              <small>
-                This replaces all existing grants for this account. Viewer roles
-                are restricted to host.read.
-              </small>
-            </Form>
+            <GrantEditor
+              users={users.filter((u) => u.role !== "admin")}
+              usersLoaded={usersLoaded}
+              onVerify={onVerify}
+            />
           </div>
         </section>
       </div>

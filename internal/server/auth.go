@@ -456,6 +456,34 @@ func (s *Server) createUser(w http.ResponseWriter, r *http.Request, u core.User)
 	write(w, 201, map[string]any{"user": core.User{ID: id, Name: b.Name, Role: b.Role, Active: true}, "secret": key.Secret(), "note": "Share through a trusted channel. Account has no host grants yet."})
 	return nil
 }
+func (s *Server) userGrants(w http.ResponseWriter, r *http.Request, u core.User) error {
+	var n int
+	if e := s.DB.QueryRow(`SELECT COUNT(*) FROM users WHERE id=?`, r.PathValue("user")).Scan(&n); e != nil {
+		return e
+	}
+	if n == 0 {
+		return fail(404, "user not found")
+	}
+	rows, e := s.DB.Query(`SELECT scope_type,scope,action FROM grants WHERE user_id=? ORDER BY scope_type,scope,action LIMIT 100`, r.PathValue("user"))
+	if e != nil {
+		return e
+	}
+	defer rows.Close()
+	out := []core.Grant{}
+	for rows.Next() {
+		var g core.Grant
+		if e = rows.Scan(&g.ScopeType, &g.Scope, &g.Action); e != nil {
+			return e
+		}
+		out = append(out, g)
+	}
+	if e = rows.Err(); e != nil {
+		return e
+	}
+	write(w, 200, map[string]any{"grants": out})
+	return nil
+}
+
 func (s *Server) setGrants(w http.ResponseWriter, r *http.Request, u core.User) error {
 	var b struct {
 		Grants []core.Grant `json:"grants"`
@@ -471,7 +499,11 @@ func (s *Server) setGrants(w http.ResponseWriter, r *http.Request, u core.User) 
 		return fail(400, "cannot replace your own administrator grants")
 	}
 	for _, g := range b.Grants {
-		if !(actions[g.Action] || g.Action == "*") || !(g.ScopeType == "host" || g.ScopeType == "group" || g.ScopeType == "all") || g.Scope == "" || len(g.Scope) > 80 || (g.ScopeType == "all" && g.Scope != "*") {
+		if g.ScopeType == "project" {
+			if !validProjectID.MatchString(g.Scope) || !(projectActions[g.Action] || g.Action == "*") {
+				return fail(400, "invalid project grant")
+			}
+		} else if !(actions[g.Action] || g.Action == "*") || !(g.ScopeType == "host" || g.ScopeType == "group" || g.ScopeType == "all") || g.Scope == "" || len(g.Scope) > 80 || (g.ScopeType == "all" && g.Scope != "*") {
 			return fail(400, "invalid grant")
 		}
 	}
@@ -486,6 +518,17 @@ func (s *Server) setGrants(w http.ResponseWriter, r *http.Request, u core.User) 
 	}
 	if role == "admin" {
 		return fail(403, "administrator grants are maintained offline")
+	}
+	for _, g := range b.Grants {
+		if g.ScopeType == "project" {
+			var n int
+			if e = tx.QueryRow(`SELECT COUNT(*) FROM projects WHERE id=?`, g.Scope).Scan(&n); e != nil {
+				return e
+			}
+			if n == 0 {
+				return fail(400, "project grant target not registered")
+			}
+		}
 	}
 	if _, e = tx.Exec(`DELETE FROM grants WHERE user_id=?`, id); e != nil {
 		return e

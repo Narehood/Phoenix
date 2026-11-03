@@ -1,5 +1,14 @@
 # Architecture
 
+The project-maintenance registry adds operator-supplied project metadata to the
+same SQLite database without changing host or Canary ownership. Project scopes
+are separate from host scopes; metadata and bounded project audit events commit
+atomically. Its versioned availability API reports selected connectors as
+unsupported except the read-only GitHub.com dependency-health collector. That
+collector polls independently with explicit permissions, encrypted credentials,
+fixed destinations and bounded storage; it dispatches no remote jobs. See the
+[maintenance contract](project-maintenance.md) for boundaries and planned modules.
+
 One Phoenix Go server owns a WAL-mode SQLite database and serves the built React dashboard over TLS 1.3. Separate retained identity files hold the agent CA and the encryption key; they must be backed up separately from SQLite. The server is the only writer. No queue broker or distributed database is required.
 
 SQLite uses the maintained `mattn/go-sqlite3` driver with its embedded C engine. Server and agent binaries require CGO at build time and Debian-compatible libc at runtime; the Linux Docker build supplies GCC. This avoids the larger generated libc dependency graph of the initially considered pure-Go driver and keeps cold module downloads within the 256 MiB growth budget. Windows CGO-disabled compilation only checks source types against the driver's stub; it is not a working database build. No runtime Windows support is claimed.

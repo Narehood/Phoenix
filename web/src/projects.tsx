@@ -1,0 +1,988 @@
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { api, ApiError } from "./api";
+import { GitHubPanel } from "./github";
+import type { Project, ProjectCapabilities, ProjectEvent, User } from "./types";
+import { Empty, ErrorNotice, Metric, Tone, stamp, type ToneName } from "./ui";
+
+export const moduleInfo: [string, string][] = [
+  ["documentation", "Documentation · connector not implemented"],
+  ["dependencies", "Dependencies · read-only GitHub health and update PRs"],
+  ["content", "Content · connector not implemented"],
+  ["releases", "Releases · connector not implemented"],
+  ["operations", "Operations · connector not implemented"],
+];
+const projectID = /^[a-z0-9][a-z0-9-]{0,63}$/;
+const projectName = /^[A-Za-z0-9][A-Za-z0-9 _.-]{0,79}$/;
+const forbiddenControl = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/;
+const pollMs = 30000;
+
+/** Mirrors the server's metadata rules so mistakes are caught before sending. */
+function metadataProblem(name: string, description: string) {
+  if (!projectName.test(name) || name.trim() !== name)
+    return "Names are 1–80 characters: letters, digits, space, '.', '_' or '-', starting with a letter or digit and without trailing spaces.";
+  if (new TextEncoder().encode(description).length > 2048)
+    return "Descriptions are at most 2,048 bytes.";
+  if (forbiddenControl.test(description))
+    return "Descriptions may contain newlines and tabs but no other control characters.";
+  return "";
+}
+
+function ModulePicker({
+  modules,
+  onChange,
+  disabled,
+}: {
+  modules: string[];
+  onChange: (m: string[]) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <fieldset disabled={disabled}>
+      <legend>Modules</legend>
+      {moduleInfo.map(([id, label]) => (
+        <label className="check" key={id}>
+          <input
+            type="checkbox"
+            value={id}
+            checked={modules.includes(id)}
+            onChange={(e) =>
+              onChange(
+                e.target.checked
+                  ? moduleInfo
+                      .map(([m]) => m)
+                      .filter((m) => m === id || modules.includes(m))
+                  : modules.filter((m) => m !== id),
+              )
+            }
+          />
+          {label}
+        </label>
+      ))}
+      <small>
+        Selected modules control availability. GitHub collection also requires
+        an enabled repository connection.
+      </small>
+    </fieldset>
+  );
+}
+
+export function Projects({
+  user,
+  onVerify,
+}: {
+  user: User;
+  onVerify: () => void;
+}) {
+  const [selected, setSelected] = useState("");
+  // Each project detail mount owns its data; a late response for one project
+  // cannot populate another project's view.
+  if (selected)
+    return (
+      <ProjectDetail
+        key={selected}
+        id={selected}
+        user={user}
+        onVerify={onVerify}
+        onBack={() => setSelected("")}
+      />
+    );
+  return <Inventory user={user} onVerify={onVerify} onOpen={setSelected} />;
+}
+
+function Inventory({
+  user,
+  onVerify,
+  onOpen,
+}: {
+  user: User;
+  onVerify: () => void;
+  onOpen: (id: string) => void;
+}) {
+  const [projects, setProjects] = useState<Project[] | null>(null),
+    [loadError, setLoadError] = useState<unknown>(null),
+    [registering, setRegistering] = useState(false),
+    [showArchived, setShowArchived] = useState(true);
+  useEffect(() => {
+    let alive = true;
+    let timer: ReturnType<typeof setTimeout>;
+    async function poll() {
+      try {
+        const v = await api<{ projects: Project[] | null }>("/api/projects");
+        if (alive) {
+          setProjects(v.projects || []);
+          setLoadError(null);
+        }
+      } catch (e) {
+        if (alive) setLoadError(e);
+      }
+      if (alive) timer = setTimeout(poll, pollMs);
+    }
+    void poll();
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, []);
+  const admin = user.role === "admin";
+  const visible = (projects || []).filter((p) => showArchived || !p.archived);
+  return (
+    <>
+      <div className="page-heading">
+        <div>
+          <p className="eyebrow">MAINTENANCE WORKSPACE</p>
+          <h1>Projects</h1>
+          <p className="muted">
+            Operator-registered projects. A project is not a host: registering
+            one does not enroll an agent or grant access to application data.
+          </p>
+        </div>
+        {admin && !registering && (
+          <button className="primary" onClick={() => setRegistering(true)}>
+            + Register a project
+          </button>
+        )}
+      </div>
+      {loadError ? (
+        <div className="notice error" role="alert">
+          <span>
+            Projects could not be loaded: {(loadError as Error).message}
+            {projects ? " · showing the last loaded inventory" : ""}
+          </span>
+        </div>
+      ) : null}
+      {admin && registering && (
+        <Register
+          onVerify={onVerify}
+          onCancel={() => setRegistering(false)}
+          onCreated={(p) => onOpen(p.id)}
+          full={(projects?.length || 0) >= 100}
+        />
+      )}
+      <section className="panel">
+        <div className="panel-heading">
+          <h2>
+            Inventory{" "}
+            <span className="count">{projects ? projects.length : "…"}</span>
+          </h2>
+          <label className="check inline">
+            <input
+              type="checkbox"
+              checked={showArchived}
+              onChange={(e) => setShowArchived(e.target.checked)}
+            />
+            Show archived
+          </label>
+        </div>
+        {!projects ? (
+          <Empty>
+            {loadError ? "Inventory unavailable." : "Loading projects…"}
+          </Empty>
+        ) : !projects.length ? (
+          <Empty>
+            <h3>No projects yet</h3>
+            <p>
+              {admin
+                ? "Register a project you maintain to track its availability, permissions and read-only repository health. Nothing is preconfigured."
+                : "No projects are shared with your account. An administrator can grant project access."}
+            </p>
+            {admin && !registering && (
+              <button onClick={() => setRegistering(true)}>
+                Register a project
+              </button>
+            )}
+          </Empty>
+        ) : !visible.length ? (
+          <Empty>All projects in view are archived.</Empty>
+        ) : (
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Project</th>
+                  <th>Status</th>
+                  <th>Modules</th>
+                  <th>Revision</th>
+                  <th>Updated</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visible.map((p) => (
+                  <tr key={p.id}>
+                    <td>
+                      <button
+                        className="text-link"
+                        onClick={() => onOpen(p.id)}
+                      >
+                        {p.name}
+                      </button>
+                      <small>
+                        <code>{p.id}</code>
+                      </small>
+                    </td>
+                    <td>
+                      {p.archived ? (
+                        <Tone value="archived" tone="neutral" />
+                      ) : (
+                        <Tone value="active" tone="neutral" />
+                      )}
+                    </td>
+                    <td>
+                      {p.modules.length ? (
+                        p.modules.map((m) => (
+                          <span className="tag" key={m}>
+                            {m}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="muted">None selected</span>
+                      )}
+                    </td>
+                    <td>{p.revision}</td>
+                    <td>{stamp(p.updatedAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+      <p className="footnote">
+        Capacity is 100 projects including archives. Project IDs are permanent
+        and cannot be deleted or reused.
+      </p>
+    </>
+  );
+}
+
+function Register({
+  onVerify,
+  onCancel,
+  onCreated,
+  full,
+}: {
+  onVerify: () => void;
+  onCancel: () => void;
+  onCreated: (p: Project) => void;
+  full: boolean;
+}) {
+  const [id, setId] = useState(""),
+    [name, setName] = useState(""),
+    [description, setDescription] = useState(""),
+    [modules, setModules] = useState<string[]>([]),
+    [error, setError] = useState<unknown>(null),
+    [busy, setBusy] = useState(false);
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+  async function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (busy) return;
+    if (!projectID.test(id))
+      return setError(
+        new Error(
+          "IDs use 1–64 lowercase letters, digits or '-', starting with a letter or digit.",
+        ),
+      );
+    const problem = metadataProblem(name, description);
+    if (problem) return setError(new Error(problem));
+    setBusy(true);
+    setError(null);
+    try {
+      const p = await api<Project>("/api/projects", "POST", {
+        id,
+        name,
+        description,
+        modules,
+      });
+      if (alive.current) onCreated(p);
+    } catch (err) {
+      if (alive.current) setError(err);
+    } finally {
+      if (alive.current) setBusy(false);
+    }
+  }
+  return (
+    <section className="panel">
+      <div className="panel-heading">
+        <h2>Register a project</h2>
+        <span className="muted">Administrator · recent verification</span>
+      </div>
+      <div className="panel-body">
+        <ErrorNotice
+          error={error}
+          onDismiss={() => setError(null)}
+          onVerify={onVerify}
+        />
+        {full && (
+          <p className="notice">
+            The inventory already holds 100 projects, including archives.
+            Registration will be refused.
+          </p>
+        )}
+        <form
+          className="form"
+          onSubmit={submit}
+          aria-label="Register a project"
+        >
+          <label>
+            Project ID (permanent)
+            <input
+              name="projectId"
+              value={id}
+              onChange={(e) => setId(e.target.value)}
+              required
+              maxLength={64}
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <small>
+              Lowercase letters, digits and '-'. Cannot be changed or reused.
+            </small>
+          </label>
+          <label>
+            Name
+            <input
+              name="projectName"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              maxLength={80}
+              autoComplete="off"
+            />
+          </label>
+          <label>
+            Description
+            <textarea
+              name="projectDescription"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={3}
+            />
+            <small>
+              Metadata only. Never paste credentials, commands or connection
+              URLs.
+            </small>
+          </label>
+          <ModulePicker modules={modules} onChange={setModules} />
+          <div className="button-row">
+            <button className="primary" disabled={busy}>
+              {busy ? "Working…" : "Register project"}
+            </button>
+            <button type="button" onClick={onCancel} disabled={busy}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      </div>
+    </section>
+  );
+}
+
+type Edit = {
+  baseline: Project;
+  name: string;
+  description: string;
+  modules: string[];
+};
+const fromProject = (p: Project): Edit => ({
+  baseline: p,
+  name: p.name,
+  description: p.description,
+  modules: [...p.modules],
+});
+const sameModules = (a: string[], b: string[]) =>
+  a.length === b.length && a.every((m) => b.includes(m));
+const isDirty = (e: Edit) =>
+  e.name !== e.baseline.name ||
+  e.description !== e.baseline.description ||
+  !sameModules(e.modules, e.baseline.modules);
+
+function capabilityTone(state: string, current: boolean): ToneName {
+  if (!current) return "neutral";
+  if (state === "fresh") return "good";
+  if (["stale", "partial", "pending", "rate_limited"].includes(state))
+    return "warn";
+  if (
+    ["disabled", "unsupported", "not_configured", "module_disabled"].includes(
+      state,
+    )
+  )
+    return "neutral";
+  return "bad";
+}
+
+function ProjectDetail({
+  id,
+  user,
+  onVerify,
+  onBack,
+}: {
+  id: string;
+  user: User;
+  onVerify: () => void;
+  onBack: () => void;
+}) {
+  const [project, setProject] = useState<Project | null>(null),
+    [caps, setCaps] = useState<ProjectCapabilities | null>(null),
+    [events, setEvents] = useState<ProjectEvent[] | null>(null),
+    [gone, setGone] = useState(false),
+    [loadError, setLoadError] = useState<unknown>(null),
+    [edit, setEdit] = useState<Edit | null>(null),
+    [conflict, setConflict] = useState<Project | null>(null),
+    [error, setError] = useState<unknown>(null),
+    [notice, setNotice] = useState(""),
+    [busy, setBusy] = useState(false);
+  const alive = useRef(true),
+    seq = useRef(0),
+    editRef = useRef<Edit | null>(null);
+  editRef.current = edit;
+  const path = `/api/projects/${encodeURIComponent(id)}`;
+
+  function adopt(p: Project) {
+    setProject(p);
+    const prev = editRef.current;
+    if (!prev || (prev.baseline.revision !== p.revision && !isDirty(prev))) {
+      setEdit(fromProject(p));
+      setConflict(null);
+    } else if (prev.baseline.revision !== p.revision) {
+      // Someone else saved while unsaved edits exist: surface, never overwrite.
+      setConflict(p);
+    }
+  }
+
+  async function load() {
+    const n = ++seq.current;
+    try {
+      const [p, c, a] = await Promise.all([
+        api<Project>(path),
+        api<ProjectCapabilities>(`${path}/capabilities`),
+        api<{ events: ProjectEvent[] | null }>(`${path}/audit`),
+      ]);
+      if (!alive.current || n !== seq.current) return;
+      adopt(p);
+      setCaps(c);
+      setEvents(a.events || []);
+      setLoadError(null);
+    } catch (e) {
+      if (!alive.current || n !== seq.current) return;
+      if (e instanceof ApiError && e.status === 404) {
+        // Absent and no-longer-readable are identical; drop everything retained.
+        setGone(true);
+        setProject(null);
+        setCaps(null);
+        setEvents(null);
+        setEdit(null);
+        setConflict(null);
+      }
+      setLoadError(e);
+    }
+  }
+  useEffect(() => {
+    alive.current = true;
+    let timer: ReturnType<typeof setTimeout>;
+    async function poll() {
+      await load();
+      if (alive.current) timer = setTimeout(poll, pollMs);
+    }
+    void poll();
+    return () => {
+      alive.current = false;
+      clearTimeout(timer);
+    };
+  }, []);
+
+  const permissions = caps?.permissions || [];
+  const canManage = permissions.includes("project.manage");
+  const capsCurrent = !!caps && !loadError;
+
+  async function put(
+    body: Omit<Project, "id" | "createdAt" | "updatedAt">,
+  ): Promise<Project> {
+    return api<Project>(path, "PUT", {
+      name: body.name,
+      description: body.description,
+      modules: body.modules,
+      archived: body.archived,
+      revision: body.revision,
+    });
+  }
+
+  async function save(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!edit || conflict || busy) return;
+    const problem = metadataProblem(edit.name, edit.description);
+    if (problem) return setError(new Error(problem));
+    setBusy(true);
+    setError(null);
+    setNotice("");
+    try {
+      const p = await put({
+        name: edit.name,
+        description: edit.description,
+        modules: edit.modules,
+        archived: edit.baseline.archived,
+        revision: edit.baseline.revision,
+      });
+      if (!alive.current) return;
+      setProject(p);
+      setEdit(fromProject(p));
+      setNotice(`Saved as revision ${p.revision}.`);
+      void load();
+    } catch (err) {
+      if (!alive.current) return;
+      if (err instanceof ApiError && err.status === 409) {
+        try {
+          const latest = await api<Project>(path);
+          if (!alive.current) return;
+          setProject(latest);
+          setConflict(latest);
+          setError(
+            new Error(
+              `This project changed to revision ${latest.revision} after you loaded it. Your edits were not saved and are kept below.`,
+            ),
+          );
+        } catch (reload) {
+          if (alive.current) setError(reload);
+        }
+      } else setError(err);
+    } finally {
+      if (alive.current) setBusy(false);
+    }
+  }
+
+  async function setArchived(archived: boolean) {
+    if (!project || busy) return;
+    if (
+      !window.confirm(
+        archived
+          ? `Archive ${project.name}? It stays readable to authorized accounts; all modules become disabled and GitHub collection stops until restored.`
+          : `Restore ${project.name}? Selected modules become available again.`,
+      )
+    )
+      return;
+    const before = project;
+    setBusy(true);
+    setError(null);
+    setNotice("");
+    try {
+      const p = await put({ ...before, archived });
+      if (!alive.current) return;
+      setProject(p);
+      // Only `archived` changed, so unsaved edits based on the prior revision
+      // stay valid against the new one.
+      setEdit((prev) =>
+        prev && prev.baseline.revision === before.revision
+          ? { ...prev, baseline: p }
+          : prev,
+      );
+      setNotice(archived ? "Project archived." : "Project restored.");
+      void load();
+    } catch (err) {
+      if (!alive.current) return;
+      if (err instanceof ApiError && err.status === 409) {
+        setError(
+          new Error(
+            "This project changed before the archive state was saved. It has been reloaded; review it and try again.",
+          ),
+        );
+        void load();
+      } else setError(err);
+    } finally {
+      if (alive.current) setBusy(false);
+    }
+  }
+
+  const back = (
+    <button className="text-link" onClick={onBack}>
+      ← All projects
+    </button>
+  );
+  if (gone)
+    return (
+      <>
+        <div className="page-heading">
+          <div>
+            {back}
+            <h1>Project unavailable</h1>
+          </div>
+        </div>
+        <section className="panel">
+          <Empty>
+            <h3>Project not found</h3>
+            <p>
+              It does not exist or your account can no longer read it. Retained
+              details were cleared.
+            </p>
+          </Empty>
+        </section>
+      </>
+    );
+  if (!project)
+    return (
+      <>
+        <div className="page-heading">
+          <div>
+            {back}
+            <h1>Project</h1>
+          </div>
+        </div>
+        {loadError ? (
+          <div className="notice error" role="alert">
+            <span>
+              Project could not be loaded: {(loadError as Error).message}
+            </span>
+          </div>
+        ) : (
+          <Empty>Loading project…</Empty>
+        )}
+      </>
+    );
+  const dirty = !!edit && isDirty(edit);
+  const differs = conflict &&
+    edit && {
+      name: conflict.name !== edit.name,
+      description: conflict.description !== edit.description,
+      modules: !sameModules(conflict.modules, edit.modules),
+      archived: conflict.archived !== edit.baseline.archived,
+    };
+  return (
+    <>
+      <div className="page-heading">
+        <div>
+          {back}
+          <h1>
+            {project.name}{" "}
+            {project.archived && <Tone value="archived" tone="neutral" />}
+          </h1>
+          <p className="muted project-description">
+            {project.description || "No description."}
+          </p>
+          <code>{project.id}</code>
+        </div>
+        {canManage && (
+          <div className="button-row">
+            {project.archived ? (
+              <button onClick={() => void setArchived(false)} disabled={busy}>
+                Restore project
+              </button>
+            ) : (
+              <button
+                className="danger"
+                onClick={() => void setArchived(true)}
+                disabled={busy}
+              >
+                Archive project
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+      <div aria-live="polite">
+        <ErrorNotice
+          error={error}
+          onDismiss={() => setError(null)}
+          onVerify={onVerify}
+        />
+        {loadError && !error ? (
+          <div className="notice error" role="alert">
+            <span>
+              Refresh failed: {(loadError as Error).message}. Showing the last
+              loaded details; module states below are not current.
+            </span>
+          </div>
+        ) : null}
+        {notice && <div className="notice">{notice}</div>}
+      </div>
+      <div className="metrics">
+        <Metric
+          label="Metadata revision"
+          value={project.revision}
+          detail={`Updated ${stamp(project.updatedAt)}`}
+        />
+        <Metric
+          label="Registered"
+          value={new Date(project.createdAt).toLocaleDateString()}
+          detail={stamp(project.createdAt)}
+        />
+        <Metric
+          label="Modules selected"
+          value={`${project.modules.length} / ${moduleInfo.length}`}
+          detail="Selection is intent, not a working connector"
+        />
+        <Metric
+          label="Your permissions"
+          value={caps ? permissions.length : "Unknown"}
+          detail={
+            caps ? permissions.join(", ") || "None" : "Capabilities unavailable"
+          }
+        />
+      </div>
+      <GitHubPanel
+        key={project.id}
+        project={project}
+        permissions={caps ? permissions : null}
+        admin={user.role === "admin"}
+        onVerify={onVerify}
+        onChanged={() => void load()}
+      />
+      <div className="two-columns">
+        <section className="panel">
+          <div className="panel-heading">
+            <h2>Metadata</h2>
+            <span className="muted">
+              {canManage
+                ? `Editing revision ${edit?.baseline.revision ?? project.revision}`
+                : "Read only"}
+            </span>
+          </div>
+          <div className="panel-body">
+            {!canManage || !edit ? (
+              <dl className="facts">
+                <dt>Name</dt>
+                <dd>{project.name}</dd>
+                <dt>Description</dt>
+                <dd className="project-description">
+                  {project.description || "None"}
+                </dd>
+                <dt>Modules</dt>
+                <dd>{project.modules.join(", ") || "None selected"}</dd>
+                {caps && (
+                  <>
+                    <dt>Access</dt>
+                    <dd>
+                      Your account can read this project but not manage it.
+                    </dd>
+                  </>
+                )}
+              </dl>
+            ) : (
+              <form
+                className="form"
+                onSubmit={save}
+                aria-label="Project metadata"
+              >
+                {conflict && differs && (
+                  <div className="notice conflict" role="alert">
+                    <b>
+                      Revision {conflict.revision} was saved by someone else.
+                    </b>
+                    <p>
+                      Your unsaved edits are based on revision{" "}
+                      {edit.baseline.revision}. Compare and choose how to
+                      continue; nothing is overwritten automatically.
+                    </p>
+                    <div className="table-scroll">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Field</th>
+                            <th>Saved (revision {conflict.revision})</th>
+                            <th>Your edits</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr className={differs.name ? "changed" : ""}>
+                            <td>Name</td>
+                            <td>{conflict.name}</td>
+                            <td>{edit.name}</td>
+                          </tr>
+                          <tr className={differs.description ? "changed" : ""}>
+                            <td>Description</td>
+                            <td className="project-description">
+                              {conflict.description || "None"}
+                            </td>
+                            <td className="project-description">
+                              {edit.description || "None"}
+                            </td>
+                          </tr>
+                          <tr className={differs.modules ? "changed" : ""}>
+                            <td>Modules</td>
+                            <td>{conflict.modules.join(", ") || "None"}</td>
+                            <td>{edit.modules.join(", ") || "None"}</td>
+                          </tr>
+                          <tr className={differs.archived ? "changed" : ""}>
+                            <td>Archived</td>
+                            <td>{conflict.archived ? "Yes" : "No"}</td>
+                            <td>{edit.baseline.archived ? "Yes" : "No"}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="button-row">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEdit({ ...edit, baseline: conflict });
+                          setConflict(null);
+                          setError(null);
+                        }}
+                      >
+                        Keep my edits on revision {conflict.revision}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEdit(fromProject(conflict));
+                          setConflict(null);
+                          setError(null);
+                        }}
+                      >
+                        Discard my edits
+                      </button>
+                    </div>
+                  </div>
+                )}
+                <label>
+                  Name
+                  <input
+                    name="editName"
+                    value={edit.name}
+                    onChange={(e) => setEdit({ ...edit, name: e.target.value })}
+                    required
+                    maxLength={80}
+                    autoComplete="off"
+                  />
+                </label>
+                <label>
+                  Description
+                  <textarea
+                    name="editDescription"
+                    value={edit.description}
+                    rows={4}
+                    onChange={(e) =>
+                      setEdit({ ...edit, description: e.target.value })
+                    }
+                  />
+                </label>
+                <ModulePicker
+                  modules={edit.modules}
+                  onChange={(modules) => setEdit({ ...edit, modules })}
+                />
+                <div className="button-row">
+                  <button
+                    className="primary"
+                    disabled={busy || !dirty || !!conflict}
+                  >
+                    {busy ? "Working…" : "Save metadata"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy || !dirty}
+                    onClick={() => {
+                      setEdit(fromProject(conflict || project));
+                      setConflict(null);
+                    }}
+                  >
+                    Reset
+                  </button>
+                </div>
+                <small>
+                  Saving requires recent password and MFA verification. A stale
+                  revision is rejected rather than overwriting another save.
+                </small>
+              </form>
+            )}
+          </div>
+        </section>
+        <section className="panel">
+          <div className="panel-heading">
+            <h2>Capabilities</h2>
+            <span className="muted">
+              {caps ? `Contract v${caps.contractVersion}` : "Unavailable"}
+            </span>
+          </div>
+          {!caps ? (
+            <Empty>Capabilities unavailable.</Empty>
+          ) : (
+            <div className="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Module</th>
+                    <th>Availability</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {caps.modules.map((m) => (
+                    <tr key={m.id}>
+                      <td>
+                        {m.id}
+                        <small>{m.enabled ? "Selected" : "Not selected"}</small>
+                      </td>
+                      <td>
+                        <Tone
+                          value={m.state}
+                          tone={capabilityTone(m.state, capsCurrent)}
+                        />
+                        <small>
+                          {m.reason.replaceAll("_", " ")}
+                          {!capsCurrent && " · last known, not current"}
+                        </small>
+                      </td>
+                      <td>
+                        {m.actions?.length ? (
+                          m.actions.join(", ")
+                        ) : (
+                          <span className="muted">None available</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div className="panel-body">
+            <p className="muted">
+              Effective permissions:{" "}
+              {caps
+                ? permissions.map((p) => (
+                    <span className="tag" key={p}>
+                      {p}
+                    </span>
+                  ))
+                : "unknown"}
+            </p>
+            <p className="muted">
+              No module can publish, deploy or write to an application or
+              repository. Unsupported modules are not working features.
+            </p>
+          </div>
+        </section>
+      </div>
+      <section className="panel">
+        <div className="panel-heading">
+          <h2>Project history</h2>
+          <span className="muted">
+            Newest 100 events · no prior field values
+          </span>
+        </div>
+        {!events ? (
+          <Empty>History unavailable.</Empty>
+        ) : !events.length ? (
+          <Empty>No project events recorded.</Empty>
+        ) : (
+          <ol className="timeline">
+            {events.map((a, i) => (
+              <li key={`${a.at}-${a.action}-${i}`}>
+                <span className="timeline-dot" />
+                <div>
+                  <strong>{a.action}</strong>{" "}
+                  <span className="tag">revision {a.revision}</span>
+                  <small>
+                    {stamp(a.at)} · actor {a.actor.slice(0, 12)}
+                  </small>
+                </div>
+              </li>
+            ))}
+          </ol>
+        )}
+      </section>
+    </>
+  );
+}

@@ -49,6 +49,13 @@ func Open(path string) (*sql.DB, error) {
  CREATE TABLE IF NOT EXISTS canary_sources(id TEXT PRIMARY KEY,config TEXT NOT NULL,token TEXT NOT NULL,payload TEXT NOT NULL DEFAULT '{}',collected INTEGER NOT NULL DEFAULT 0,error TEXT NOT NULL DEFAULT 'not_polled');
  CREATE TABLE IF NOT EXISTS mappings(host_id TEXT NOT NULL REFERENCES hosts(id),source_id TEXT NOT NULL REFERENCES canary_sources(id),monitor_id TEXT NOT NULL,PRIMARY KEY(host_id,source_id,monitor_id));
  CREATE TABLE IF NOT EXISTS agent_jobs(id TEXT PRIMARY KEY,state TEXT NOT NULL,result TEXT,created INTEGER NOT NULL);
+ CREATE TABLE IF NOT EXISTS projects(id TEXT PRIMARY KEY,name TEXT NOT NULL,description TEXT NOT NULL DEFAULT '',modules TEXT NOT NULL DEFAULT '[]',archived INTEGER NOT NULL DEFAULT 0,revision INTEGER NOT NULL DEFAULT 1,created INTEGER NOT NULL,updated INTEGER NOT NULL);
+ CREATE TABLE IF NOT EXISTS project_audit(id INTEGER PRIMARY KEY AUTOINCREMENT,at INTEGER NOT NULL,actor TEXT NOT NULL REFERENCES users(id),project_id TEXT NOT NULL REFERENCES projects(id),action TEXT NOT NULL,revision INTEGER NOT NULL);
+ CREATE INDEX IF NOT EXISTS project_audit_project ON project_audit(project_id,id);
+ CREATE TABLE IF NOT EXISTS github_sources(project_id TEXT PRIMARY KEY REFERENCES projects(id),repository TEXT NOT NULL,token TEXT NOT NULL,enabled INTEGER NOT NULL DEFAULT 1,revision INTEGER NOT NULL DEFAULT 1,payload TEXT NOT NULL DEFAULT '',error TEXT NOT NULL DEFAULT '',attempt INTEGER NOT NULL DEFAULT 0,collected INTEGER NOT NULL DEFAULT 0,next_attempt INTEGER NOT NULL DEFAULT 0);
+ CREATE TRIGGER IF NOT EXISTS bound_project_audit AFTER INSERT ON project_audit BEGIN
+ DELETE FROM project_audit WHERE project_id=NEW.project_id AND id NOT IN(SELECT id FROM project_audit WHERE project_id=NEW.project_id ORDER BY id DESC LIMIT 100);
+ END;
  `)
 	if err != nil {
 		db.Close()

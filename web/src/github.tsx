@@ -1,0 +1,966 @@
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
+import { api, ApiError } from "./api";
+import type {
+  Collection,
+  DependabotAlert,
+  GitHubView,
+  Project,
+  PullRequest,
+  WorkflowRun,
+} from "./types";
+import { Empty, ErrorNotice, Metric, Tone, stamp, type ToneName } from "./ui";
+
+const repositoryPattern =
+  /^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9_.-]{1,100}$/;
+const slowPoll = 30000,
+  fastPoll = 5000,
+  fastWindow = 60000;
+
+const stateText: Record<string, string> = {
+  not_configured: "No repository is connected.",
+  disabled:
+    "Not polled: the source is disabled, the dependencies module is not selected, or the project is archived.",
+  pending: "Configured; waiting for the first collection.",
+  fresh: "Collected within 30 minutes with every source readable.",
+  partial:
+    "Collected recently, but some sources were unreadable or truncated. Missing parts are not healthy.",
+  stale: "Older than 30 minutes or the last collection failed.",
+  permission_denied: "The token lacks a required read permission.",
+  not_found_or_denied:
+    "The repository was not found or the token cannot see it.",
+  credential_expired: "The token was rejected or has expired.",
+  rate_limited: "GitHub rate limited collection; the next attempt is delayed.",
+  unavailable: "GitHub could not be reached.",
+  invalid_response: "GitHub returned an unexpected or oversized response.",
+  request_budget_exceeded: "Collection exceeded its per-pass request budget.",
+};
+
+/** Links are server-generated under github.com; anything else is not linked. */
+const safeLink = (url: string) =>
+  url.startsWith("https://github.com/") ? url : undefined;
+function iso(value: string) {
+  if (!value) return "Unknown";
+  const t = Date.parse(value);
+  return Number.isNaN(t) ? value : new Date(t).toLocaleString();
+}
+function Link({ url, children }: { url: string; children: ReactNode }) {
+  const href = safeLink(url);
+  return href ? (
+    <a href={href} target="_blank" rel="noopener noreferrer">
+      {children}
+    </a>
+  ) : (
+    <>{children}</>
+  );
+}
+
+const good = new Set([
+  "passing_observed",
+  "approval_observed",
+  "mergeable",
+  "success",
+]);
+const bad = new Set([
+  "failing",
+  "conflicting",
+  "changes_requested",
+  "failure",
+  "timed_out",
+  "startup_failure",
+  "critical",
+  "high",
+]);
+const warn = new Set([
+  "pending",
+  "partial",
+  "queued",
+  "in_progress",
+  "waiting",
+  "requested",
+  "medium",
+  "action_required",
+]);
+/** Retained (non-current) observations never render with a healthy tone. */
+function tone(value: string, current: boolean): ToneName {
+  if (bad.has(value)) return current ? "bad" : "warn";
+  if (!current) return "neutral";
+  return good.has(value) ? "good" : warn.has(value) ? "warn" : "neutral";
+}
+function sourceTone(state: string, current: boolean): ToneName {
+  if (state === "fresh") return current ? "good" : "warn";
+  if (["partial", "stale", "pending", "rate_limited"].includes(state))
+    return "warn";
+  if (["not_configured", "disabled"].includes(state)) return "neutral";
+  return "bad";
+}
+
+function Coverage<T>({
+  label,
+  c,
+  bound,
+}: {
+  label: string;
+  c: Collection<T>;
+  bound: string;
+}) {
+  if (c.state !== "ok")
+    return (
+      <p className="notice error" role="status">
+        {label} could not be read ({c.state.replaceAll("_", " ")}). This is
+        missing data, not an empty result.
+      </p>
+    );
+  return c.truncated ? (
+    <p className="notice">
+      Truncated: more {label.toLowerCase()} exist beyond the {bound} bound.
+    </p>
+  ) : null;
+}
+function count<T>(c: Collection<T>, filter?: (t: T) => boolean) {
+  if (c.state !== "ok") return "Not readable";
+  const n = (c.items || []).filter(filter || (() => true)).length;
+  return c.truncated ? `${n}+` : String(n);
+}
+
+function Pulls({
+  title,
+  items,
+  current,
+  empty,
+}: {
+  title: string;
+  items: PullRequest[];
+  current: boolean;
+  empty: string;
+}) {
+  return (
+    <>
+      <h3 className="subhead">{title}</h3>
+      {!items.length ? (
+        <p className="muted">{empty}</p>
+      ) : (
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Pull request</th>
+                <th>Updated</th>
+                <th>Checks</th>
+                <th>Reviews</th>
+                <th>Mergeability</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((p) => (
+                <tr key={p.number}>
+                  <td className="wrap-cell">
+                    <Link url={p.url}>
+                      #{p.number} {p.title}
+                    </Link>
+                    <small>
+                      {p.author || "unknown author"}
+                      {p.draft && " · draft"}
+                      {p.dependencyUpdate &&
+                        ` · ${p.updateKind === "security_or_version_unclassified" ? "update kind not classified" : p.updateKind.replaceAll("_", " ")}`}
+                    </small>
+                  </td>
+                  <td>{iso(p.updatedAt)}</td>
+                  <td>
+                    <Tone value={p.checks} tone={tone(p.checks, current)} />
+                  </td>
+                  <td>
+                    <Tone
+                      value={p.reviewState}
+                      tone={tone(p.reviewState, current)}
+                    />
+                  </td>
+                  <td>
+                    <Tone
+                      value={p.mergeable}
+                      tone={tone(p.mergeable, current)}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
+  );
+}
+
+/**
+ * Read-only GitHub health for one project. Mounted per project, so polls and
+ * late responses cannot leak between projects or accounts. Missing permission,
+ * failed polls and retained snapshots never render as current or healthy.
+ */
+export function GitHubPanel({
+  project,
+  permissions,
+  admin,
+  onVerify,
+  onChanged,
+}: {
+  project: Project;
+  permissions: string[] | null;
+  admin: boolean;
+  onVerify: () => void;
+  onChanged: () => void;
+}) {
+  const canRead = !!permissions?.includes("github.read"),
+    canSync = canRead && !!permissions?.includes("github.sync");
+  const [view, setView] = useState<GitHubView | null>(null),
+    [failed, setFailed] = useState<unknown>(null),
+    [denied, setDenied] = useState(false),
+    [error, setError] = useState<unknown>(null),
+    [notice, setNotice] = useState(""),
+    [busy, setBusy] = useState(false),
+    [, setTick] = useState(0);
+  const alive = useRef(true),
+    seq = useRef(0),
+    fastUntil = useRef(0),
+    wake = useRef<() => void>(() => {});
+  const path = `/api/projects/${encodeURIComponent(project.id)}/github`;
+
+  async function load() {
+    const n = ++seq.current;
+    try {
+      const v = await api<GitHubView>(path);
+      if (!alive.current || n !== seq.current) return;
+      setView(v);
+      setFailed(null);
+      setDenied(false);
+    } catch (e) {
+      if (!alive.current || n !== seq.current) return;
+      if (e instanceof ApiError && (e.status === 403 || e.status === 404)) {
+        // Access was removed: discard retained repository data entirely.
+        setView(null);
+        setDenied(true);
+        setFailed(null);
+      } else setFailed(e);
+    }
+  }
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+  useEffect(() => {
+    if (!canRead) {
+      seq.current++;
+      setView(null);
+      setFailed(null);
+      return;
+    }
+    let live = true;
+    let timer: ReturnType<typeof setTimeout>;
+    async function poll() {
+      clearTimeout(timer);
+      await load();
+      if (!live) return;
+      setTick((t) => t + 1);
+      // Replace any wake-up scheduled while this poll was in flight.
+      clearTimeout(timer);
+      timer = setTimeout(
+        poll,
+        Date.now() < fastUntil.current ? fastPoll : slowPoll,
+      );
+    }
+    wake.current = () => {
+      fastUntil.current = Date.now() + fastWindow;
+      clearTimeout(timer);
+      timer = setTimeout(poll, fastPoll);
+    };
+    void poll();
+    return () => {
+      live = false;
+      clearTimeout(timer);
+      wake.current = () => {};
+    };
+  }, [canRead]);
+
+  async function sync() {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    setNotice("");
+    try {
+      await api(`${path}/sync`, "POST", {});
+      if (!alive.current) return;
+      setNotice(
+        "Refresh scheduled. Collection runs in the background; results appear here once collected.",
+      );
+      wake.current();
+      onChanged();
+    } catch (e) {
+      if (!alive.current) return;
+      if (e instanceof ApiError && e.status === 429)
+        setNotice(
+          `Refresh is cooling down (15-minute minimum per source). Next attempt ${view?.nextAttemptAt ? stamp(view.nextAttemptAt) : "is pending"}.`,
+        );
+      else setError(e);
+      void load();
+    } finally {
+      if (alive.current) setBusy(false);
+    }
+  }
+
+  const moduleOn = project.modules.includes("dependencies");
+  const current =
+    !!view &&
+    !failed &&
+    view.freshness === "fresh" &&
+    (view.state === "fresh" || view.state === "partial");
+  const snapshot = view?.snapshot;
+  const cooling = !!view && view.nextAttemptAt > Date.now();
+
+  let body: ReactNode;
+  if (!permissions)
+    body = (
+      <Empty>
+        GitHub health is hidden until project permissions can be loaded.
+      </Empty>
+    );
+  else if (!canRead || denied)
+    body = (
+      <Empty>
+        <h3>GitHub read permission required</h3>
+        <p>
+          Your account does not hold github.read for this project. Project
+          registry permissions do not grant private repository data.
+        </p>
+      </Empty>
+    );
+  else if (!view)
+    body = failed ? (
+      <div className="notice error" role="alert">
+        GitHub health could not be loaded: {(failed as Error).message}
+      </div>
+    ) : (
+      <Empty>Loading GitHub health…</Empty>
+    );
+  else {
+    const pulls = snapshot?.pulls.items || [];
+    const runs = snapshot?.defaultBranchCI.items || [];
+    const alerts = snapshot?.alerts.items || [];
+    body = (
+      <>
+        {failed ? (
+          <div className="notice error" role="alert">
+            Polling failed: {(failed as Error).message}. Everything below is the
+            last response and is not current.
+          </div>
+        ) : null}
+        <div className="metrics">
+          <Metric
+            label="Source state"
+            value={
+              <Tone
+                value={failed ? "unknown" : view.state}
+                tone={failed ? "neutral" : sourceTone(view.state, current)}
+              />
+            }
+            detail={
+              failed
+                ? "Phoenix could not be reached"
+                : stateText[view.state] || "Collection reported an error."
+            }
+          />
+          <Metric
+            label="Freshness"
+            value={
+              <Tone
+                value={
+                  failed
+                    ? view.collectedAt
+                      ? "stale"
+                      : "unknown"
+                    : view.freshness
+                }
+                tone={current ? "good" : view.collectedAt ? "warn" : "neutral"}
+              />
+            }
+            detail={`Collected ${stamp(view.collectedAt)}`}
+          />
+          <Metric
+            label="Last attempt"
+            value={
+              view.lastAttemptAt
+                ? new Date(view.lastAttemptAt).toLocaleTimeString()
+                : "None"
+            }
+            detail={
+              view.lastAttemptAt
+                ? stamp(view.lastAttemptAt)
+                : "No collection attempted"
+            }
+          />
+          <Metric
+            label="Next attempt"
+            value={
+              view.nextAttemptAt
+                ? new Date(view.nextAttemptAt).toLocaleTimeString()
+                : "Not scheduled"
+            }
+            detail={
+              view.nextAttemptAt
+                ? `${stamp(view.nextAttemptAt)} · 15-minute minimum interval`
+                : view.state === "disabled"
+                  ? "Disabled sources are not polled"
+                  : "Awaiting the collector"
+            }
+          />
+        </div>
+        {view.error && (
+          <p className="notice error" role="status">
+            Last collection error: {view.error.replaceAll("_", " ")}.{" "}
+            {stateText[view.error] || ""}
+          </p>
+        )}
+        {!snapshot ? (
+          <Empty>
+            {view.configured
+              ? "Nothing has been observed for this repository yet. No health is implied."
+              : "No repository observations exist."}
+          </Empty>
+        ) : (
+          <>
+            {!current && (
+              <p className="notice retained" role="status">
+                <b>Retained observation</b> collected {stamp(view.collectedAt)}.
+                It is not current
+                {failed
+                  ? " because the dashboard could not reach Phoenix"
+                  : ` (state: ${view.state.replaceAll("_", " ")})`}
+                . Values below are last known, not current health.
+              </p>
+            )}
+            <div className="metrics">
+              <Metric
+                label="Repository"
+                value={
+                  <Link url={snapshot.repository.url}>
+                    {snapshot.repository.fullName}
+                  </Link>
+                }
+                detail={`${snapshot.repository.private ? "Private" : "Public"}${snapshot.repository.archived ? " · archived on GitHub" : ""} · default branch ${snapshot.repository.defaultBranch || "unknown"}`}
+              />
+              <Metric
+                label="Open PRs observed"
+                value={count(snapshot.pulls)}
+                detail={`Ten most recently updated${current ? "" : " · last known"}`}
+              />
+              <Metric
+                label="Dependency update PRs"
+                value={count(snapshot.pulls, (p) => p.dependencyUpdate)}
+                detail="Dependabot/Renovate authors only"
+              />
+              <Metric
+                label="Open Dependabot alerts"
+                value={count(snapshot.alerts)}
+                detail={`Up to 50${current ? "" : " · last known"}`}
+              />
+            </div>
+            <p className="muted coverage-note">
+              Last push {iso(snapshot.repository.pushedAt)} · Code scanning:{" "}
+              {snapshot.codeScanning} · Secret scanning:{" "}
+              {snapshot.secretScanning} · Dependency coverage: update PRs and
+              Dependabot alerts only. This is not a package-version inventory;
+              an empty list does not mean dependencies are current.
+            </p>
+            <div className="panel-body section">
+              <h3>Open pull requests</h3>
+              <Coverage
+                label="Pull requests"
+                c={snapshot.pulls}
+                bound="ten-PR"
+              />
+              {snapshot.pulls.state === "ok" && (
+                <>
+                  <Pulls
+                    title="Dependency update PRs"
+                    items={pulls.filter((p) => p.dependencyUpdate)}
+                    current={current}
+                    empty="No Dependabot or Renovate PRs among the observed open PRs. Other bots and human-authored updates are not classified."
+                  />
+                  <Pulls
+                    title="Other open PRs"
+                    items={pulls.filter((p) => !p.dependencyUpdate)}
+                    current={current}
+                    empty="No other open PRs among those observed."
+                  />
+                  <p className="muted">
+                    Checks need both check runs and commit statuses readable
+                    before passing is observed. Reviews use each reviewer's
+                    latest review on the current head. Neither evaluates branch
+                    protection, CODEOWNERS or required reviews.
+                  </p>
+                </>
+              )}
+            </div>
+            <div className="panel-body section">
+              <h3>Default-branch CI (recent pushes)</h3>
+              <Coverage
+                label="Workflow runs"
+                c={snapshot.defaultBranchCI}
+                bound="20-run"
+              />
+              {snapshot.defaultBranchCI.state === "ok" &&
+                (!runs.length ? (
+                  <p className="muted">
+                    No recent push workflow runs observed on the default branch.
+                    This is not a passing result.
+                  </p>
+                ) : (
+                  <div className="table-scroll">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Workflow</th>
+                          <th>Result</th>
+                          <th>Commit</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {runs.map((r: WorkflowRun, i) => {
+                          const result = r.conclusion || r.status || "unknown";
+                          return (
+                            <tr key={`${r.url}-${i}`}>
+                              <td className="wrap-cell">
+                                <Link url={r.url}>
+                                  {r.name || "Unnamed workflow"}
+                                </Link>
+                              </td>
+                              <td>
+                                <Tone
+                                  value={result}
+                                  tone={tone(result, current)}
+                                />
+                                {r.conclusion && r.status !== "completed" && (
+                                  <small>{r.status}</small>
+                                )}
+                              </td>
+                              <td>
+                                <code>{r.sha.slice(0, 12) || "unknown"}</code>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ))}
+              <p className="muted">
+                Recent history only: not the deployed version and not proof that
+                every workflow passes.
+              </p>
+            </div>
+            <div className="panel-body section">
+              <h3>Dependabot alerts</h3>
+              <Coverage label="Alerts" c={snapshot.alerts} bound="50-alert" />
+              {snapshot.alerts.state === "ok" &&
+                (!alerts.length ? (
+                  <p className="muted">
+                    No open Dependabot alerts reported. This does not establish
+                    that installed or transitive dependencies are current.
+                  </p>
+                ) : (
+                  <div className="table-scroll">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Alert</th>
+                          <th>Package</th>
+                          <th>Severity</th>
+                          <th>Fixed in</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {alerts.map((a: DependabotAlert) => (
+                          <tr key={a.number}>
+                            <td className="wrap-cell">
+                              <Link url={a.url}>#{a.number}</Link>
+                              <small>{a.summary}</small>
+                            </td>
+                            <td>
+                              {a.package}
+                              <small>{a.ecosystem}</small>
+                            </td>
+                            <td>
+                              <Tone
+                                value={a.severity || "unknown"}
+                                tone={tone(a.severity, current)}
+                              />
+                            </td>
+                            <td>{a.fixedIn || "Not supplied"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ))}
+            </div>
+          </>
+        )}
+      </>
+    );
+  }
+
+  return (
+    <section className="panel github">
+      <div className="panel-heading">
+        <h2>
+          GitHub health{" "}
+          {view && canRead && !denied && (
+            <Tone
+              value={failed ? "unknown" : view.state}
+              tone={failed ? "neutral" : sourceTone(view.state, current)}
+            />
+          )}
+        </h2>
+        <div className="button-row">
+          <span className="muted">Read-only · GitHub.com</span>
+          {canSync && view?.configured && (
+            <button
+              onClick={() => void sync()}
+              disabled={
+                busy ||
+                !view.enabled ||
+                view.state === "disabled" ||
+                !moduleOn ||
+                project.archived ||
+                cooling
+              }
+              title={
+                cooling
+                  ? `Cooling down until ${stamp(view.nextAttemptAt)}`
+                  : undefined
+              }
+            >
+              {cooling ? "Refresh cooling down" : "Request refresh"}
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="panel-body">
+        <ErrorNotice
+          error={error}
+          onDismiss={() => setError(null)}
+          onVerify={onVerify}
+        />
+        {notice && <div className="notice">{notice}</div>}
+        {!moduleOn && (
+          <p className="notice">
+            The dependencies module is not selected for this project. Select it
+            in metadata before connecting a repository; until then nothing is
+            collected.
+          </p>
+        )}
+        {project.archived && (
+          <p className="notice">Archived projects are not polled.</p>
+        )}
+      </div>
+      {body}
+      {admin && (
+        <GitHubSettings
+          key={view ? "loaded" : "unloaded"}
+          path={path}
+          view={canRead && !denied ? view : null}
+          usable={moduleOn && !project.archived}
+          onVerify={onVerify}
+          onSaved={() => {
+            wake.current();
+            void load();
+            onChanged();
+          }}
+          reload={load}
+        />
+      )}
+    </section>
+  );
+}
+
+function tokenProblem(token: string) {
+  if (token.length < 20 || token.length > 255)
+    return "Tokens are 20–255 characters.";
+  if (!/^[\x21-\x7e]+$/.test(token))
+    return "Tokens contain printable ASCII characters only, without spaces.";
+  return "";
+}
+
+/**
+ * Administrator source configuration. The token lives only in an unnamed
+ * password input (never React state, storage, logs or a URL) and is cleared
+ * after a successful save and on unmount.
+ */
+function GitHubSettings({
+  path,
+  view,
+  usable,
+  onVerify,
+  onSaved,
+  reload,
+}: {
+  path: string;
+  view: GitHubView | null;
+  usable: boolean;
+  onVerify: () => void;
+  onSaved: () => void;
+  reload: () => Promise<void>;
+}) {
+  const [repository, setRepository] = useState(view?.repository || ""),
+    [enabled, setEnabled] = useState(
+      view ? view.enabled || !view.configured : true,
+    ),
+    [base, setBase] = useState(view?.revision ?? -1),
+    [touched, setTouched] = useState(false),
+    [error, setError] = useState<unknown>(null),
+    [notice, setNotice] = useState(""),
+    [busy, setBusy] = useState(false);
+  const token = useRef<HTMLInputElement>(null),
+    alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    const input = token.current;
+    return () => {
+      alive.current = false;
+      if (input) input.value = "";
+    };
+  }, []);
+  // Follow server changes while the form is untouched; otherwise surface them.
+  useEffect(() => {
+    if (!view || touched) return;
+    setRepository(view.repository);
+    setEnabled(view.configured ? view.enabled : true);
+    setBase(view.revision);
+  }, [view?.revision, view?.repository, view?.enabled, touched]);
+  const conflict = !!view && touched && base !== view.revision;
+  const ready = !!view && usable && base >= 0;
+
+  async function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!view || !ready || conflict || busy) return;
+    const secret = token.current?.value || "";
+    if (!repositoryPattern.test(repository) || /\/\.\.?$/.test(repository))
+      return setError(
+        new Error("Use the owner/name form of one GitHub.com repository."),
+      );
+    if (secret) {
+      const problem = tokenProblem(secret);
+      if (problem) return setError(new Error(problem));
+    } else if (
+      !view.configured ||
+      view.repository.toLowerCase() !== repository.toLowerCase()
+    )
+      return setError(new Error("A token is required for a new repository."));
+    setBusy(true);
+    setError(null);
+    setNotice("");
+    try {
+      const v = await api<{ configured: boolean; revision: number }>(
+        path,
+        "PUT",
+        {
+          repository,
+          token: secret,
+          enabled,
+          revision: base,
+        },
+      );
+      if (!alive.current) return;
+      if (token.current) token.current.value = "";
+      setBase(v.revision);
+      setTouched(false);
+      setNotice(
+        `Saved source revision ${v.revision}. Previous observations were cleared; collection runs automatically.`,
+      );
+      onSaved();
+    } catch (err) {
+      if (!alive.current) return;
+      if (err instanceof ApiError && err.status === 409) {
+        setError(
+          new Error(
+            "The GitHub source changed since it was loaded. It has been reloaded; your input is kept. Review the current configuration before saving again.",
+          ),
+        );
+        await reload();
+      } else setError(err);
+    } finally {
+      if (alive.current) setBusy(false);
+    }
+  }
+
+  async function disconnect() {
+    if (!view?.configured || busy) return;
+    if (
+      !window.confirm(
+        `Disconnect ${view.repository}? Phoenix deletes its encrypted token and cached observations. This does not revoke the token on GitHub.`,
+      )
+    )
+      return;
+    setBusy(true);
+    setError(null);
+    setNotice("");
+    try {
+      await api(path, "DELETE", { revision: view.revision });
+      if (!alive.current) return;
+      if (token.current) token.current.value = "";
+      setTouched(false);
+      setNotice(
+        "Disconnected. Revoke the token on GitHub if it is no longer needed.",
+      );
+      onSaved();
+    } catch (err) {
+      if (!alive.current) return;
+      if (err instanceof ApiError && err.status === 409) {
+        setError(
+          new Error(
+            "The GitHub source changed; it has been reloaded. Review it before disconnecting.",
+          ),
+        );
+        await reload();
+      } else setError(err);
+    } finally {
+      if (alive.current) setBusy(false);
+    }
+  }
+
+  return (
+    <div className="panel-body section settings">
+      <h3>Source settings</h3>
+      <p className="muted">
+        Administrator only; saving requires recent password and MFA
+        verification. Use a fine-grained token limited to this repository with
+        read access to metadata, pull requests, checks, commit statuses, Actions
+        and Dependabot alerts. Phoenix only reads.
+      </p>
+      <ErrorNotice
+        error={error}
+        onDismiss={() => setError(null)}
+        onVerify={onVerify}
+      />
+      {notice && <div className="notice">{notice}</div>}
+      {!view ? (
+        <p className="muted">
+          Settings are available once the source state has loaded.
+        </p>
+      ) : !usable ? (
+        <p className="muted">
+          Select the dependencies module on an active project to configure a
+          repository.
+        </p>
+      ) : null}
+      {conflict && view && (
+        <div className="notice conflict" role="alert">
+          <b>
+            Source revision {view.revision} replaced revision {base}.
+          </b>
+          <p>
+            Current: {view.configured ? view.repository : "not configured"}
+            {view.configured && ` · ${view.enabled ? "enabled" : "disabled"}`}.
+            Your input: {repository || "(empty)"} ·{" "}
+            {enabled ? "enabled" : "disabled"}.
+          </p>
+          <div className="button-row">
+            <button type="button" onClick={() => setBase(view.revision)}>
+              Keep my input on revision {view.revision}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (token.current) token.current.value = "";
+                setTouched(false);
+              }}
+            >
+              Discard my input
+            </button>
+          </div>
+        </div>
+      )}
+      <form
+        className="form"
+        onSubmit={submit}
+        aria-label="GitHub source settings"
+      >
+        <fieldset disabled={!ready || busy}>
+          <legend>
+            {view?.configured
+              ? `Connected · revision ${view.revision}`
+              : "Connect a repository"}
+          </legend>
+          <label>
+            Repository (owner/name)
+            <input
+              name="repository"
+              value={repository}
+              autoComplete="off"
+              spellCheck={false}
+              maxLength={140}
+              onChange={(e) => {
+                setRepository(e.target.value.trim());
+                setTouched(true);
+              }}
+            />
+          </label>
+          <label>
+            {view?.configured
+              ? "Replacement token (optional)"
+              : "Read-only token"}
+            <input
+              ref={token}
+              type="password"
+              autoComplete="off"
+              spellCheck={false}
+              maxLength={255}
+              data-secret="github-token"
+              onChange={() => setTouched(true)}
+            />
+            <small>
+              {view?.configured
+                ? "Leave blank to keep the stored token for the same repository. A different repository requires a token."
+                : "Stored encrypted on the server and never shown again."}
+            </small>
+          </label>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={enabled}
+              onChange={(e) => {
+                setEnabled(e.target.checked);
+                setTouched(true);
+              }}
+            />
+            Collect automatically
+          </label>
+        </fieldset>
+        <div className="button-row">
+          <button className="primary" disabled={!ready || busy || conflict}>
+            {busy
+              ? "Working…"
+              : view?.configured
+                ? "Save source"
+                : "Connect repository"}
+          </button>
+          {view?.configured && (
+            <button
+              type="button"
+              className="danger"
+              disabled={busy}
+              onClick={() => void disconnect()}
+            >
+              Disconnect
+            </button>
+          )}
+        </div>
+      </form>
+    </div>
+  );
+}

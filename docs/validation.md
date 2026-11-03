@@ -4,6 +4,73 @@ Evidence is separated into compilation, fixture execution, actual Debian/systemd
 
 ## Recorded results
 
+**Validated project/GitHub source checkpoint:** on
+`095b2a844800ab3ec9844bce0ab5e35c2adf1cc6`, [Linux run 41699709962](https://github.com/Narehood/Phoenix/actions/runs/41699709962)
+passed all Debian CGO fixtures, Linux vet, all race packages (including both
+complementary server batches), server/agent/helper binaries, the server image
+and React bundle, and 13 browser regression cases in Chrome/156.0.8078.47.
+The run retains nine bounded screenshots for seven days. The new project/GitHub
+race batch took 31.031 seconds; the remaining server batch took 75.509 seconds,
+both within the original 120-second per-package deadline. The largest sampled
+scratch was 174,505,342 bytes, idle compiler cache remained below 256 MiB, module
+downloads were 33,807,244 bytes and the external compiler cache stayed empty.
+
+Browser cases cover registration, metadata conflicts, recent-MFA-gated source
+setup without token exposure, stale/partial/truncated observations, cooldowns,
+mixed host/project grants and late-response/account isolation, alongside the
+existing fleet/Canary regressions. They exercise the built interface against
+temporary API fixtures; Go fixtures separately execute the real server APIs and
+collector against temporary sources. This does not establish live GitHub
+compatibility, full manual browser acceptance, real Debian/systemd operation or
+production readiness. No real projects or credentials were configured.
+
+Sol-loop approved the core behavior in two rounds; the reconnect revision finding
+was fixed and re-reviewed. Both subsequent CodeRabbit findings (table rendering
+and recent-CI window classification) were fixed, acknowledged and resolved. The
+follow-up regression passed in this checkpoint. CodeRabbit's later review limit
+is advisory and is not treated as an approval. Reviewer token usage was not exposed.
+
+On `a97da8c5535208b71e8be3f97b26d448209dbff6`, [run 41698086281](https://github.com/Narehood/Phoenix/actions/runs/41698086281)
+passed all ordinary Debian CGO fixtures, including new project/GitHub tests, and
+Linux vet. Agent, Canary, GitHub and security race packages passed; the server
+race package reached its 120-second suite deadline during the existing bcrypt
+authentication-throttle case. No assertion or data-race failure was reported.
+The expanded server suite now uses complementary sequential project/GitHub and
+remaining-server race batches, preserving the 120-second deadline, test set and
+guarded cache/scratch budgets. Binary/image and browser stages were not reached
+by that failed run; the updated head requires a new Linux result.
+
+**Project/GitHub working slice, 2026-11-03:** source now includes the project UI,
+revision-conflict handling, mixed-scope grant editing and read-only GitHub
+collection/settings. Local guarded Linux cross-compilation passed with the new
+GitHub client/server fixtures. Opus 5.5 High implemented the interface and added
+Linux browser cases for registration, conflicts, source setup, stale/truncated
+observations, permission handling and late-response isolation. Runtime/race and
+browser execution for this slice are pending the PR's Linux CI. No live project
+or GitHub credential is configured, and no deployed integration is claimed.
+
+The final local source check also passed Linux-targeted `go vet` and the
+TypeScript/Vite production build through the guarded runner. Sol-loop completed
+two rounds with GPT-6.1 Sol at xhigh and approved the behavior diff. Its sole
+finding, S1, was fixed by retaining a monotonically increasing empty source
+revision after disconnect, preventing stale browser PUT/DELETE requests from
+mutating a reconnected repository. Reconnect/capacity regressions cross-compile;
+their execution remains part of Linux CI. Reviewer usage was not exposed.
+
+**Earlier foundation-only check, 2026-11-03 (before GitHub/frontend):** the empty
+project registry, explicit project scopes, revision/archive handling, bounded
+project audit and capability contract passed Linux amd64 test-package
+cross-compilation and Linux-targeted `go vet ./...` through the guarded runner.
+Compilation took 40.48 seconds; vet took 20.23 seconds. The largest sampled scratch
+was 33,167,261 bytes, idle compiler cache remained below 256 MiB, and the external
+compiler cache stayed at 14,702 bytes. No runtime test executable ran. New fixtures
+cover lifecycle/persistence, stale saves, host/project isolation, viewer ceilings,
+permission revocation, request security, metadata validation and storage bounds.
+They require the updated Linux CI fixture/race stages; Docker is unavailable in
+this workstation checkout. Live GitHub reads, real-host and production acceptance
+remain unrun. The backend contract and
+frontend handoff are in [project maintenance](project-maintenance.md).
+
 Canary configuration loading now uses one transaction, so a rejected over-capacity configuration leaves retained sources unchanged. The capacity fixture starts with fifteen IDs, rejects two new IDs without consuming a slot, then retries with the second ID and verifies existing-source credential refresh at capacity. This regression requires the updated Linux check; local cross-compilation is not a runtime pass.
 
 On `1edab99e819a46ab71244954605b311b2871d426`, [run 40736500830](https://github.com/Narehood/Phoenix/actions/runs/40736500830) stopped inside the validation size sampler when Go removed a temporary directory between traversal and `lstat`. That interrupted run provides no new fixture or browser result. The sampler now skips only vanished directory entries while retaining directory/link/reparse exclusions and every storage limit; a deterministic Linux-only traversal regression runs before the Go fixtures.
