@@ -22,6 +22,9 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await click("edge-01");
   await wait("document.body.innerText.includes('systemd-journald')");
   await shot("host-desktop");
+  await evaluate("document.querySelector('.host-actions').open = true");
+  await shot("host-management-desktop");
+  await evaluate("document.querySelector('.host-actions').open = false");
   await evaluate("(() => { const h = window.fixture.hosts[0]; window.fixture.freshHost = structuredClone(h); h.freshness = 'stale'; h.connectivity = 'offline'; h.resourceHealth = 'unknown'; h.latest.measuredAt -= 900000; h.latest.collectedAt -= 900000; })()");
   await wait("!!document.querySelector('.reading-snapshot') && document.querySelectorAll('.retained-label').length === 4");
   await top();
@@ -42,6 +45,11 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await evaluate("document.querySelector('.project-settings > summary').click()");
   await section(".project-settings");
   await shot("project-settings-desktop");
+  await evaluate("(() => { const input = document.querySelector('input[name=editName]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'Website updated'); input.dispatchEvent(new Event('input', {bubbles:true})); window.fixture.recent = false; })()");
+  await evaluate("document.querySelector('form[aria-label=\"Project details\"]').requestSubmit()");
+  await wait("document.querySelector('.project-edit-feedback [role=alert]')?.innerText.includes('Verify identity')");
+  await shot("project-verification-feedback-desktop");
+  await evaluate("(() => { window.fixture.recent = true; const input = document.querySelector('input[name=editName]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'Website'); input.dispatchEvent(new Event('input', {bubbles:true})); document.querySelector('.project-edit-feedback [aria-label=\"Dismiss error\"]').click(); })()");
   await navigate("Access & accounts");
   await wait("document.querySelector('select[name=user] option[value=operator-fixture]')");
   await top();
@@ -50,8 +58,17 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await wait(`!!document.querySelector('[data-grant="host:viewer-host:host.read"]')`);
   await section(".grant-editor");
   await shot("access-grants-desktop");
+  await click("Create account");
+  await wait("document.querySelector('.account-create').open");
+  await section(".account-create");
+  await shot("account-create-desktop");
   await navigate("Fleet overview");
   await top();
+  await evaluate("window.fixture.failSources.add('/api/audit'); window.fixture.hosts[0].latest.cpuPercent = 37");
+  await wait("[...document.querySelectorAll('[role=alert]')].some(a => a.innerText.includes('Activity unavailable')) && document.querySelector('.fleet-table').innerText.includes('37.0%')");
+  await shot("fleet-audit-unavailable-desktop");
+  await evaluate("window.fixture.failSources.clear(); window.fixture.hosts[0].latest.cpuPercent = 12");
+  await wait("!document.querySelector('[role=alert]') && document.querySelector('.fleet-table').innerText.includes('12.0%')");
   await viewport(1440, 390);
   await evaluate("[...document.querySelectorAll('.sidebar button')].find(b => b.textContent === 'Sign out').focus()");
   await shot("navigation-short-desktop");
@@ -68,7 +85,7 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await evaluate("document.querySelector('.mobile-navigation').open = false");
   await evaluate("window.fixture.hosts[1].resourceHealth = 'warning'; window.fixture.hosts[1].latest.cpuPercent = 96");
   await wait("document.querySelector('.attention-filter')?.textContent.includes('(2)')");
-  await click("Needs attention");
+  await click("Agent / readings issues");
   await wait("document.querySelectorAll('.fleet-table tbody tr').length === 2");
   await top();
   await shot("fleet-attention-mobile");

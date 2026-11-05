@@ -2,7 +2,15 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, ApiError } from "./api";
 import { GitHubPanel } from "./github";
 import type { Project, ProjectCapabilities, ProjectEvent, User } from "./types";
-import { Empty, ErrorNotice, Time, Tone, stamp, type ToneName } from "./ui";
+import {
+  Empty,
+  ErrorNotice,
+  StatusNotice,
+  Time,
+  Tone,
+  stamp,
+  type ToneName,
+} from "./ui";
 import { RouteLink, useNavigation, useUnsavedChanges } from "./navigation";
 
 export const moduleInfo: [string, string][] = [
@@ -38,10 +46,12 @@ function ModulePicker({
   modules,
   onChange,
   disabled,
+  registered = false,
 }: {
   modules: string[];
   onChange: (modules: string[]) => void;
   disabled?: boolean;
+  registered?: boolean;
 }) {
   const choices = (planned: boolean) =>
     moduleInfo
@@ -68,7 +78,9 @@ function ModulePicker({
       <legend>Project features</legend>
       {choices(false)}
       <small>
-        Connect a repository after saving to start read-only collection.
+        {registered
+          ? "Use Repository settings to manage the connection and read-only collection."
+          : "After registration, use Repository settings to connect GitHub."}
       </small>
       <details className="planned-features">
         <summary>Planned features</summary>
@@ -463,6 +475,7 @@ function ProjectDetail({
   const [project, setProject] = useState<Project | null>(null),
     [caps, setCaps] = useState<ProjectCapabilities | null>(null),
     [events, setEvents] = useState<ProjectEvent[] | null>(null),
+    [historyError, setHistoryError] = useState<unknown>(null),
     [gone, setGone] = useState(false),
     [loadError, setLoadError] = useState<unknown>(null),
     [edit, setEdit] = useState<Edit | null>(null),
@@ -479,6 +492,16 @@ function ProjectDetail({
   useEffect(() => {
     if (conflict && settingsRef.current) settingsRef.current.open = true;
   }, [conflict]);
+  useEffect(() => {
+    if (!error && !notice) return;
+    if (settingsRef.current) settingsRef.current.open = true;
+    const frame = requestAnimationFrame(() =>
+      settingsRef.current
+        ?.querySelector(".project-edit-feedback")
+        ?.scrollIntoView({ block: "nearest" }),
+    );
+    return () => cancelAnimationFrame(frame);
+  }, [error, notice]);
   const path = `/api/projects/${encodeURIComponent(id)}`;
 
   function adopt(p: Project) {
@@ -496,16 +519,31 @@ function ProjectDetail({
   async function load() {
     const n = ++seq.current;
     try {
-      const [p, c, a] = await Promise.all([
+      const [p, c] = await Promise.all([
         api<Project>(path),
         api<ProjectCapabilities>(`${path}/capabilities`),
-        api<{ events: ProjectEvent[] | null }>(`${path}/audit`),
       ]);
       if (!alive.current || n !== seq.current) return;
       adopt(p);
       setCaps(c);
-      setEvents(a.events || []);
       setLoadError(null);
+      // History is secondary evidence. Its failure must not hide successful
+      // project/capability reads or the independently collected repository.
+      void api<{ events: ProjectEvent[] | null }>(`${path}/audit`)
+        .then((value) => {
+          if (!alive.current || n !== seq.current) return;
+          setEvents(value.events || []);
+          setHistoryError(null);
+        })
+        .catch((error) => {
+          if (!alive.current || n !== seq.current) return;
+          setHistoryError(error);
+          if (
+            error instanceof ApiError &&
+            [401, 403, 404].includes(error.status)
+          )
+            setEvents(null);
+        });
     } catch (e) {
       if (!alive.current || n !== seq.current) return;
       if (e instanceof ApiError && e.status === 404) {
@@ -718,11 +756,6 @@ function ProjectDetail({
         </div>
       </div>
       <div aria-live="polite">
-        <ErrorNotice
-          error={error}
-          onDismiss={() => setError(null)}
-          onVerify={onVerify}
-        />
         {loadError && !error ? (
           <div className="notice error" role="alert">
             <span>
@@ -731,7 +764,6 @@ function ProjectDetail({
             </span>
           </div>
         ) : null}
-        {notice && <div className="notice">{notice}</div>}
       </div>
       <GitHubPanel
         key={project.id}
@@ -769,6 +801,14 @@ function ProjectDetail({
                 </span>
               </div>
               <div className="panel-body">
+                <div className="project-edit-feedback">
+                  <ErrorNotice
+                    error={error}
+                    onDismiss={() => setError(null)}
+                    onVerify={onVerify}
+                  />
+                  <StatusNotice>{notice}</StatusNotice>
+                </div>
                 {!canManage || !edit ? (
                   <dl className="facts">
                     <dt>Name</dt>
@@ -893,6 +933,7 @@ function ProjectDetail({
                       />
                     </label>
                     <ModulePicker
+                      registered
                       modules={edit.modules}
                       onChange={(modules) => setEdit({ ...edit, modules })}
                     />
@@ -1015,13 +1056,22 @@ function ProjectDetail({
               </div>
             </section>
           </div>
-          <section className="panel">
+          <section className="panel project-history">
             <div className="panel-heading">
               <h2>Project history</h2>
               <span className="muted">
                 Newest 100 events · no prior field values
               </span>
             </div>
+            {!!historyError && (
+              <p className="notice error" role="alert">
+                History could not be refreshed:{" "}
+                {(historyError as Error).message}.{" "}
+                {events
+                  ? "Showing last-loaded events."
+                  : "No current history can be established."}
+              </p>
+            )}
             {!events ? (
               <Empty>History unavailable.</Empty>
             ) : !events.length ? (

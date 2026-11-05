@@ -53,7 +53,7 @@ function installFixture() {
   };
   const control = window.fixture = { role: "admin", hosts: fixtureHosts, offline: false, htmlFailure: false, logoutFailure: 0, grantWrites: 0, holdHosts: false, releaseHosts: null,
     // Project, GitHub and grant stores start empty: nothing is preseeded in the product.
-    usersFail: true, recent: true, authFailure: 0, githubFail: false, syncStatus: 429, projects: {}, events: {}, githubViews: {}, githubPuts: [],
+    usersFail: true, recent: true, authFailure: 0, githubFail: false, syncStatus: 429, projects: {}, events: {}, githubViews: {}, githubPuts: [], failSources: new Set(), createdUsers: [],
     grantStore: {
       "operator-fixture": [{ scopeType: "host", scope: "viewer-host", action: "host.read" }, { scopeType: "project", scope: "fixture-project", action: "project.read" }],
       "viewer-fixture": [{ scopeType: "host", scope: "viewer-host", action: "host.read" }],
@@ -182,14 +182,22 @@ function installFixture() {
     if (control.offline) throw new TypeError("Fixture dashboard connection unavailable");
     if (control.role === "signedout") return json({ error: "sign in required" }, 401);
     const admin = control.role === "admin";
+    if (control.failSources.has(path)) return json({error: "Fixture source unavailable: " + path}, 503);
     if (path === "/api/session") return json({ user: user(control.role), csrfToken: "fixture-csrf" });
     if (path === "/api/auth/recent") {
       if (control.authFailure) return json({ error: "Fixture verification unavailable" }, control.authFailure);
       control.recent = true;
       return json({ verified: true });
     }
+    if (path === "/api/users" && method === "POST") {
+      if (!admin) return json({error: "administrator required"}, 403);
+      if (!control.recent) return recentRequired();
+      if (control.createdUsers.length) return json({error: "Fixture account bound reached"}, 409);
+      control.createdUsers.push({id: "temporary-account", name: body.name, role: body.role, active: true});
+      return json({secret: "FIXTURE-ONLY-AUTHENTICATOR-SECRET"}, 201);
+    }
     if (path === "/api/users") return control.usersFail ? json({ error: "Fixture account list unavailable" }, 503)
-      : json([user("admin"), user("operator"), user("viewer"), { id: "unreadable-fixture", name: "unreadable-fixture", role: "operator", active: true }]);
+      : json([user("admin"), user("operator"), user("viewer"), { id: "unreadable-fixture", name: "unreadable-fixture", role: "operator", active: true }, ...control.createdUsers]);
     const grants = path.match(/^\/api\/users\/([^/]+)\/grants$/);
     if (grants && method === "GET") return grants[1] === "unreadable-fixture" ? json({ error: "Fixture grant read unavailable" }, 500) : json({ grants: control.grantStore[grants[1]] || [] });
     if (grants) {
@@ -399,9 +407,10 @@ try {
   await evaluate("window.fixture.hosts[0].resourceHealth = 'warning'; window.fixture.hosts[0].latest.cpuPercent = 96");
   await wait("document.querySelector('.attention-filter')?.textContent.includes('(1)') && [...document.querySelectorAll('.mobile-resource-warning .chip')].some(c => c.checkVisibility() && c.textContent.includes('Resource warning'))");
   assert.equal(await evaluate("document.querySelector('.resource-details').open"), false, "Resource-warning proof needs a collapsed card");
-  await click("Needs attention");
+  await click("Agent / readings issues");
   await wait("document.querySelector('.attention-filter').getAttribute('aria-pressed') === 'true' && document.querySelectorAll('.fleet-table tbody tr').length === 1 && document.querySelector('.fleet-table').innerText.includes('ADMIN-ONLY-HOST')");
   assert.ok(await evaluate("document.querySelector('.compact-freshness').innerText.toLowerCase().includes('fresh readings')"), "Resource warning incorrectly changed independent reading freshness");
+  assert.ok(await evaluate("document.querySelector('.mobile-resource-warning').innerText.includes('CPU 96.0%')"), "Resource warning hides its current measurement");
   await evaluate("window.fixture.hosts[0].resourceHealth = 'normal'; window.fixture.hosts[0].latest.cpuPercent = 12");
   await wait("document.body.innerText.includes('No matching hosts')");
   await click("Show all hosts");
@@ -451,6 +460,22 @@ try {
   }
   await evaluate("document.documentElement.dataset.mode = 'light'");
   pass("actual light/dark status text meets 4.5:1 and enabled input boundaries meet 3:1 contrast");
+
+  await evaluate("window.fixture.failSources.add('/api/audit'); window.fixture.hosts[0].latest.cpuPercent = 37");
+  await wait("[...document.querySelectorAll('[role=alert]')].some(a => a.innerText.includes('Activity unavailable')) && document.querySelector('.fleet-table').innerText.includes('37.0%')");
+  assert.ok(await evaluate("[...document.querySelectorAll('.fleet-table td[data-label=\"Reading freshness\"] .chip')].every(c => c.textContent.toLowerCase().includes('fresh')) && [...document.querySelectorAll('.metrics .metric')].find(m => m.innerText.includes('Canary sources')).innerText.includes('1 / 1')"), "Audit failure invalidated valid host or Canary evidence");
+  await evaluate("window.fixture.failSources.clear(); window.fixture.failSources.add('/api/canary')");
+  await wait("[...document.querySelectorAll('[role=alert]')].some(a => a.innerText.includes('Canary unavailable')) && ![...document.querySelectorAll('[role=alert]')].some(a => a.innerText.includes('Activity unavailable'))");
+  assert.ok(await evaluate("[...document.querySelectorAll('.fleet-table td[data-label=\"Reading freshness\"] .chip')].every(c => c.textContent.toLowerCase().includes('fresh')) && document.querySelector('.fleet-table').innerText.includes('37.0%') && [...document.querySelectorAll('.metrics .metric')].find(m => m.innerText.includes('Canary sources')).innerText.includes('0 / 1')"), "Canary failure invalidated valid host readings or retained a fresh Canary source");
+  await evaluate("window.fixture.failSources.clear(); window.fixture.hosts[0].latest.cpuPercent = 12");
+  await wait("!document.querySelector('[role=alert]') && document.querySelector('.fleet-table').innerText.includes('12.0%')");
+  await evaluate("window.fixture.hold.add('/api/audit')");
+  await wait("typeof window.fixture.holds['/api/audit'] === 'function'");
+  await evaluate("window.fixture.hosts[0].latest.cpuPercent = 55");
+  await wait("document.querySelector('.fleet-table').innerText.includes('55.0%')");
+  await evaluate("window.fixture.holds['/api/audit'](); window.fixture.hosts[0].latest.cpuPercent = 12");
+  await wait("document.querySelector('.fleet-table').innerText.includes('12.0%')");
+  pass("dashboard sources keep updating through isolated failures and a held audit request, invalidating only failed evidence");
   await click("Access & accounts");
   await wait("document.querySelector('[role=alert]')?.innerText.includes('Fixture account list unavailable') && !!document.querySelector('select[name=user]')");
   assert.equal(await evaluate("document.querySelector('select[name=user]').checkValidity()"), false, "Empty account select allows grant submission");
@@ -488,10 +513,14 @@ try {
   await setValue("input[name=projectName]", "Fixture project");
   await setValue("textarea[name=projectDescription]", "Temporary browser fixture");
   await evaluate(`document.querySelector('form[aria-label="Register a project"] input[value=dependencies]').click()`);
+  await evaluate("window.fixture.failSources.add('/api/projects/fixture-project/audit')");
   await submit("Register a project");
   await wait(`document.querySelector('h1')?.textContent.includes('Fixture project') && !!document.querySelector('form[aria-label="Project details"]')`);
   await evaluate("document.querySelector('.project-settings > summary').click()");
   assert.ok(await evaluate("document.querySelector('input[name=editName]').getClientRects().length"), "Metadata edits are hidden from the user");
+  await wait("document.querySelector('.project-history [role=alert]')?.textContent.includes('History could not be refreshed') && document.querySelector('.repository-identity h3')?.textContent.includes('Connect a GitHub repository')");
+  assert.ok(await evaluate("!document.querySelector('input[name=editName]').disabled"), "Project history failure disabled valid project controls");
+  await evaluate("window.fixture.failSources.clear()");
   assert.deepEqual(await evaluate("window.fixture.projects['fixture-project'].modules"), ["dependencies"]);
   pass("empty project inventory allows administrator registration with explicit modules");
 
@@ -504,6 +533,10 @@ try {
   assert.equal(await evaluate("document.querySelector('input[name=editName]').value"), "Fixture project renamed", "Declining Back discarded unsaved metadata");
   await evaluate("window.confirm = () => true");
   pass("unsaved project edits survive declined workspace navigation and browser Back");
+  await evaluate("window.fixture.recent = false");
+  await submit("Project details");
+  await wait("document.querySelector('.project-edit-feedback [role=alert]')?.innerText.includes('Verify identity') && document.querySelector('input[name=editName]').value === 'Fixture project renamed'");
+  await evaluate("window.fixture.recent = true");
   await evaluate("window.fixture.externalEdit('fixture-project')");
   await submit("Project details");
   await wait("document.querySelector('.notice.conflict')?.innerText.includes('saved by someone else') && document.querySelector('input[name=editName]').value === 'Fixture project renamed'");
@@ -594,6 +627,22 @@ try {
     ["host:viewer-host:host.read", "project:fixture-project:github.read", "project:fixture-project:project.read"], "Grant replacement dropped an existing host or project grant");
   await capture("09-grant-editor");
   pass("grant editing loads the complete set first, preserves host and project grants and ignores stale account responses");
+  await click("Create account");
+  await wait("document.querySelector('.account-create').open && document.activeElement?.name === 'name'");
+  await setValue(".account-create input[name=name]", "temporary-account");
+  await setValue(".account-create input[name=password]", "temporary fixture password");
+  await evaluate("window.fixture.recent = false; document.querySelector('form[aria-label=\"Create an account\"]').requestSubmit()");
+  await wait("document.querySelector('.account-create [role=alert]')?.innerText.includes('Verify identity') && document.querySelector('.account-create input[name=password]').value === 'temporary fixture password'");
+  await evaluate("window.fixture.recent = true; document.querySelector('form[aria-label=\"Create an account\"]').requestSubmit()");
+  await wait("window.fixture.createdUsers.length === 1 && document.querySelector('.account-create .notice .secret')?.textContent === 'FIXTURE-ONLY-AUTHENTICATOR-SECRET' && document.querySelector('.account-create input[name=password]').value === '' && document.querySelector('.account-create form button').textContent === 'Create account'");
+  assert.ok(await evaluate("document.querySelector('.account-create').innerText.includes('Authenticator setup for temporary-account') && document.querySelector('.account-create form button').disabled"), "One-time authenticator setup lacks account context or can be overwritten");
+  assert.equal(await evaluate("(() => {const secret = 'FIXTURE-ONLY-AUTHENTICATOR-SECRET'; return [localStorage,sessionStorage].some(s => Object.keys(s).some(k => (k+s.getItem(k)).includes(secret))) || location.href.includes(secret);})()"), false, "Authenticator setup leaked into storage or a URL");
+  await evaluate("window.confirm = () => false");
+  await click("Fleet overview");
+  assert.equal(await evaluate("location.hash"), "#/access", "Navigation silently discarded one-time authenticator setup");
+  await click("Dismiss secret");
+  await evaluate("window.confirm = () => true");
+  pass("account setup keeps failed input local, clears successful passwords and protects named one-time secrets without storage");
   await click("Fleet overview");
   await click("ADMIN-ONLY-HOST");
   await wait("document.querySelectorAll('.metrics .chip.good').length >= 3");

@@ -1,10 +1,11 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, csrf, ApiError } from "./api";
 import type { Audit, Canary, Host, Job, Reading, User, Monitor } from "./types";
 import {
   Dialog,
   ResponsiveDetails,
   Empty,
+  ErrorNotice,
   Form,
   Metric,
   StatusNotice,
@@ -15,7 +16,12 @@ import {
 } from "./ui";
 import { Projects } from "./projects";
 import { GrantEditor } from "./grants";
-import { NavigationProvider, RouteLink, useNavigation } from "./navigation";
+import {
+  NavigationProvider,
+  RouteLink,
+  useNavigation,
+  useUnsavedChanges,
+} from "./navigation";
 
 const bytes = (n: number) =>
   n >= 2 ** 30
@@ -34,6 +40,42 @@ const needsAttention = (host: Host) =>
   host.connectivity === "offline" ||
   host.freshness === "stale" ||
   host.resourceHealth === "warning";
+function resourceSummary(reading?: Reading | null) {
+  if (!reading) return "No measurements available";
+  const percentage = (value: number | null) =>
+    value === null ? "Unknown" : `${value.toFixed(1)}%`;
+  return `CPU ${percentage(reading.cpuPercent)} · Memory ${percentage(reading.memoryTotal ? (100 * reading.memoryUsed) / reading.memoryTotal : null)} · Disk ${percentage(reading.diskTotal ? (100 * reading.diskUsed) / reading.diskTotal : null)}`;
+}
+function SourceNotice({ errors }: { errors: Record<string, string> }) {
+  const entries = Object.entries(errors);
+  if (!entries.length) return null;
+  const label = (name: string) => (name === "Hosts" ? "Host inventory" : name);
+  const common = entries.every(([, message]) => message === entries[0][1]);
+  return (
+    <div className="notice error" role="alert">
+      <div>
+        {common ? (
+          <p>
+            <strong>
+              {entries.map(([name]) => label(name)).join(", ")} unavailable:
+            </strong>{" "}
+            {entries[0][1]}.
+          </p>
+        ) : (
+          entries.map(([name, message]) => (
+            <p key={name}>
+              <strong>{label(name)} unavailable:</strong> {message}.
+            </p>
+          ))
+        )}
+        <small>
+          Failed sources show last-loaded results. Other sources continue
+          updating.
+        </small>
+      </div>
+    </div>
+  );
+}
 function monitorState(m: Monitor) {
   const observations = m.observations || [];
   const fresh = observations.filter(
@@ -289,7 +331,8 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
       null,
     ),
     [error, setError] = useState(""),
-    [pollError, setPollError] = useState(""),
+    [sourceErrors, setSourceErrors] = useState<Record<string, string>>({}),
+    [detailError, setDetailError] = useState(""),
     [modalError, setModalError] = useState(""),
     [notice, setNotice] = useState(""),
     [search, setSearch] = useState(""),
@@ -306,6 +349,14 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
       expiresAt: number;
     } | null>(null),
     [busy, setBusy] = useState(false);
+  const mounted = useRef(false),
+    versions = useRef<Record<string, number>>({});
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   useEffect(() => setModalError(""), [modal]);
   useEffect(() => {
     if (!verificationUntil) return;
@@ -332,51 +383,82 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
       .querySelector<HTMLDetailsElement>(".mobile-navigation")
       ?.removeAttribute("open");
   }, [route.view, route.id]);
+  async function readSource<T>(
+    name: string,
+    request: () => Promise<T>,
+    apply: (value: T) => void,
+    invalidate?: () => void,
+  ) {
+    const version = (versions.current[name] =
+      (versions.current[name] || 0) + 1);
+    try {
+      const value = await request();
+      if (!mounted.current || versions.current[name] !== version) return;
+      apply(value);
+      setSourceErrors((previous) => {
+        if (!previous[name]) return previous;
+        const next = { ...previous };
+        delete next[name];
+        return next;
+      });
+    } catch (e) {
+      if (!mounted.current || versions.current[name] !== version) return;
+      setSourceErrors((previous) => ({
+        ...previous,
+        [name]: (e as Error).message,
+      }));
+      invalidate?.();
+    }
+  }
+  function readers() {
+    // Apply each response independently, keeping valid monitoring evidence
+    // when another endpoint fails. Older overlapping reads cannot win.
+    return [
+      () =>
+        readSource(
+          "Hosts",
+          () => api<{ hosts: Host[] }>("/api/hosts"),
+          (value) => setHosts(value.hosts),
+          () => setHosts((previous) => previous.map(unavailableHost)),
+        ),
+      () =>
+        readSource(
+          "Canary",
+          () => api<Canary>("/api/canary"),
+          setCanary,
+          () =>
+            setCanary((previous) => ({
+              ...previous,
+              sources: previous.sources.map((source) => ({
+                ...source,
+                freshness: source.collectedAt ? "stale" : "unknown",
+              })),
+            })),
+        ),
+      () => readSource("Jobs", () => api<Job[]>("/api/jobs"), setJobs),
+      () => readSource("Activity", () => api<Audit[]>("/api/audit"), setAudit),
+    ];
+  }
   async function refresh() {
-    const [h, c, j, a] = await Promise.all([
-      api<{ hosts: Host[] }>("/api/hosts"),
-      api<Canary>("/api/canary"),
-      api<Job[]>("/api/jobs"),
-      api<Audit[]>("/api/audit"),
-    ]);
-    setHosts(h.hosts);
-    setCanary(c);
-    setJobs(j);
-    setAudit(a);
+    await Promise.allSettled(readers().map((read) => read()));
   }
   useEffect(() => {
     let alive = true;
-    let timer: ReturnType<typeof setTimeout>;
-    async function poll() {
-      try {
-        await refresh();
-        if (alive) setPollError("");
-      } catch (e) {
-        if (alive) {
-          setPollError((e as Error).message);
-          setHosts((previous) => previous.map(unavailableHost));
-          setDetail(
-            (previous) =>
-              previous && { ...previous, host: unavailableHost(previous.host) },
-          );
-          setCanary((previous) => ({
-            ...previous,
-            sources: previous.sources.map((source) => ({
-              ...source,
-              freshness: source.collectedAt ? "stale" : "unknown",
-            })),
-          }));
-        }
-      }
-      if (alive) timer = setTimeout(poll, 5000);
-    }
-    void poll();
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    readers().forEach((read, index) => {
+      const poll = async () => {
+        await read();
+        if (alive) timers[index] = setTimeout(poll, 5000);
+      };
+      void poll();
+    });
     return () => {
       alive = false;
-      clearTimeout(timer);
+      timers.forEach((timer) => clearTimeout(timer));
     };
   }, [user]);
   useEffect(() => {
+    setDetailError("");
     if (!selected) {
       setDetail(null);
       return;
@@ -388,10 +470,13 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
         const d = await api<{ host: Host; samples: Reading[] }>(
           `/api/hosts/${selected}`,
         );
-        if (alive) setDetail(d);
+        if (alive) {
+          setDetail(d);
+          setDetailError("");
+        }
       } catch (e) {
         if (alive) {
-          setPollError((e as Error).message);
+          setDetailError((e as Error).message);
           setDetail(
             (previous) =>
               previous && { ...previous, host: unavailableHost(previous.host) },
@@ -419,11 +504,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
     setNotice("");
     try {
       await fn();
-      try {
-        await refresh();
-      } catch (e) {
-        setPollError((e as Error).message);
-      }
+      await refresh();
     } catch (e) {
       if (inDialog) setModalError((e as Error).message);
       else setError((e as Error).message);
@@ -638,13 +719,12 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
         </header>
         <main id="content">
           <div aria-live="polite">
-            {(error || pollError) && (
+            {error && (
               <div className="notice error" role="alert">
-                {error || pollError}
+                {error}
                 <button
                   onClick={() => {
-                    if (error) setError("");
-                    else setPollError("");
+                    setError("");
                   }}
                   aria-label="Dismiss error"
                 >
@@ -654,6 +734,15 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
             )}
             {notice && <div className="notice">{notice}</div>}
           </div>
+          <SourceNotice errors={sourceErrors} />
+          {view === "host" &&
+            detailError &&
+            detailError !== sourceErrors.Hosts && (
+              <div className="notice error" role="alert">
+                Host detail unavailable: {detailError}. Retained readings below
+                are last known.
+              </div>
+            )}
           <StatusNotice>
             {verificationUntil ? (
               <>
@@ -678,7 +767,8 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                   <p className="eyebrow">YOUR INFRASTRUCTURE, AT A GLANCE</p>
                   <h1>Fleet overview</h1>
                   <p className="muted">
-                    Connections and resource readings across your hosts.
+                    Agent connections and resource readings. Canary uptime is
+                    independent.
                   </p>
                 </div>
                 {user.role === "admin" && (
@@ -714,7 +804,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                     detail="Last contact within 45 seconds"
                   />
                   <Metric
-                    label="Fresh telemetry"
+                    label="Fresh readings"
                     value={`${hosts.filter((h) => h.freshness === "fresh").length} / ${hosts.length}`}
                     detail="Measured and collected within 90 seconds"
                   />
@@ -723,7 +813,9 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                     value={
                       canary.sources.length
                         ? `${canary.sources.filter((s) => s.freshness === "fresh").length} / ${canary.sources.length}`
-                        : "Not configured"
+                        : sourceErrors.Canary
+                          ? "Unavailable"
+                          : "Not configured"
                     }
                     detail="Independent uptime observations"
                   />
@@ -738,8 +830,9 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                     className="attention-filter"
                     aria-pressed={attentionOnly}
                     onClick={() => setAttentionOnly(!attentionOnly)}
+                    title="Offline agents, stale readings and resource warnings. Canary uptime is separate."
                   >
-                    Needs attention ({attentionCount})
+                    Agent / readings issues ({attentionCount})
                   </button>
                   <input
                     className="search"
@@ -751,7 +844,8 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                 </div>
                 {attentionOnly && (
                   <p className="filter-context" role="status">
-                    Showing offline agents, stale readings or resource warnings.{" "}
+                    Offline agents, stale readings or resource warnings. Canary
+                    uptime is separate.{" "}
                     <button
                       className="text-link"
                       onClick={() => setAttentionOnly(false)}
@@ -762,10 +856,15 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                 )}
                 {!hosts.length ? (
                   <Empty>
-                    <h3>Your fleet starts here</h3>
+                    <h3>
+                      {sourceErrors.Hosts
+                        ? "Host inventory unavailable"
+                        : "Your fleet starts here"}
+                    </h3>
                     <p>
-                      Enroll a Debian host to collect real telemetry. No host
-                      has been added yet.
+                      {sourceErrors.Hosts
+                        ? "Wait for the next successful read. No current inventory can be established."
+                        : "Enroll a Debian host to collect real telemetry. No host has been added yet."}
                     </p>
                     {user.role === "admin" && (
                       <button
@@ -833,6 +932,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                                       value="warning"
                                       label="Resource warning"
                                     />
+                                    <small>{resourceSummary(h.latest)}</small>
                                   </span>
                                 )}
                               </div>
@@ -957,7 +1057,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                   </div>
                 </div>
                 <Empty>
-                  {pollError
+                  {detailError
                     ? "This host is unavailable or cannot be read by your account."
                     : "Loading host…"}
                 </Empty>
@@ -1023,21 +1123,32 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                         >
                           Run diagnostic
                         </button>
-                        <button
-                          className="danger"
-                          onClick={() => setModal("reboot")}
-                        >
-                          Reboot host
-                        </button>
                       </>
                     )}
-                    {user.role === "admin" && (
-                      <button
-                        className="danger"
-                        onClick={() => setModal("revoke")}
-                      >
-                        Revoke agent
-                      </button>
+                    {user.role !== "viewer" && (
+                      <details className="host-actions" key={current.id}>
+                        <summary>Manage host</summary>
+                        <p className="muted">
+                          Sensitive actions for {current.name}. Confirmation and
+                          recent verification are required.
+                        </p>
+                        <div className="button-row">
+                          <button
+                            className="danger"
+                            onClick={() => setModal("reboot")}
+                          >
+                            Reboot host
+                          </button>
+                          {user.role === "admin" && (
+                            <button
+                              className="danger"
+                              onClick={() => setModal("revoke")}
+                            >
+                              Revoke agent
+                            </button>
+                          )}
+                        </div>
+                      </details>
                     )}
                   </div>
                 </div>
@@ -1181,7 +1292,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                               <th>
                                 {retainedReading ? "Last known state" : "State"}
                               </th>
-                              <th>Action</th>
+                              <th>Agent requests</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -1228,6 +1339,14 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                           </tbody>
                         </table>
                       </div>
+                    )}
+                    {retainedReading && (
+                      <p className="snapshot-action-note">
+                        Service states are last known and may have changed. Logs
+                        and restart send new requests to this host’s agent;
+                        restart still requires confirmation and the agent’s
+                        allowlist.
+                      </p>
                     )}
                   </section>
                   <section className="panel">
@@ -1353,6 +1472,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                   </section>
                 )}
                 <Jobs
+                  unavailable={!!sourceErrors.Jobs}
                   jobs={hostJobs}
                   hosts={hosts}
                   open={(id) =>
@@ -1371,6 +1491,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                   canManage={user.role !== "viewer"}
                 />
                 <Activity
+                  unavailable={!!sourceErrors.Activity}
                   audit={audit.filter((a) => a.hostId === current.id)}
                 />
               </>
@@ -1388,6 +1509,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                 </div>
               </div>
               <Jobs
+                unavailable={!!sourceErrors.Jobs}
                 jobs={jobs}
                 hosts={hosts}
                 open={(id) =>
@@ -1416,7 +1538,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                   </p>
                 </div>
               </div>
-              <Activity audit={audit} />
+              <Activity audit={audit} unavailable={!!sourceErrors.Activity} />
             </>
           )}
           {view === "canary" && (
@@ -1434,11 +1556,15 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
               {!canary.sources.length ? (
                 <section className="panel">
                   <Empty>
-                    <h3>No verified source configured</h3>
+                    <h3>
+                      {sourceErrors.Canary
+                        ? "Canary readings unavailable"
+                        : "No verified source configured"}
+                    </h3>
                     <p>
-                      The NetBird-protected deployment has not been verified.
-                      Follow docs/canary.md to connect a node API with its
-                      dedicated viewer credential.
+                      {sourceErrors.Canary
+                        ? "The dashboard cannot establish current Canary configuration or observations. Wait for the next successful read."
+                        : "Follow docs/canary.md to connect a verified node API with its dedicated viewer credential."}
                     </p>
                   </Empty>
                 </section>
@@ -1522,7 +1648,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
             <Projects user={user} onVerify={() => setModal("auth")} />
           )}
           {view === "access" && user.role === "admin" && (
-            <Access act={act} hosts={hosts} onVerify={() => setModal("auth")} />
+            <Access hosts={hosts} onVerify={() => setModal("auth")} />
           )}
         </main>
         <footer>
@@ -1862,12 +1988,14 @@ function Jobs({
   open,
   cancel,
   canManage,
+  unavailable = false,
 }: {
   jobs: Job[];
   hosts: Host[];
   open: (id: string) => void;
   cancel: (id: string) => void;
   canManage: boolean;
+  unavailable?: boolean;
 }) {
   return (
     <section className="panel">
@@ -1876,7 +2004,9 @@ function Jobs({
         <span className="muted">Latest 200 · output permission required</span>
       </div>
       {!jobs.length ? (
-        <Empty>No management jobs yet.</Empty>
+        <Empty>
+          {unavailable ? "Job history unavailable." : "No management jobs yet."}
+        </Empty>
       ) : (
         <div className="table-scroll">
           <table>
@@ -1929,7 +2059,13 @@ function Jobs({
     </section>
   );
 }
-function Activity({ audit }: { audit: Audit[] }) {
+function Activity({
+  audit,
+  unavailable = false,
+}: {
+  audit: Audit[];
+  unavailable?: boolean;
+}) {
   return (
     <section className="panel">
       <div className="panel-heading">
@@ -1937,7 +2073,11 @@ function Activity({ audit }: { audit: Audit[] }) {
         <span className="muted">Latest 500 · retained 90 days</span>
       </div>
       {!audit.length ? (
-        <Empty>No activity in view.</Empty>
+        <Empty>
+          {unavailable
+            ? "Activity history unavailable."
+            : "No activity in view."}
+        </Empty>
       ) : (
         <ol className="timeline">
           {audit.map((a) => (
@@ -2025,24 +2165,82 @@ function MappingForm({
     </Form>
   );
 }
-function Access({
-  act,
-  hosts,
-  onVerify,
-}: {
-  act: (fn: () => Promise<void>) => Promise<void>;
-  hosts: Host[];
-  onVerify: () => void;
-}) {
+function Access({ hosts, onVerify }: { hosts: Host[]; onVerify: () => void }) {
   const [users, setUsers] = useState<User[]>([]),
     [usersLoaded, setUsersLoaded] = useState(false),
-    [secret, setSecret] = useState("");
-  useEffect(() => {
-    void act(async () => {
-      setUsers(await api<User[]>("/api/users"));
+    [usersLoading, setUsersLoading] = useState(true),
+    [usersError, setUsersError] = useState<unknown>(null),
+    [secret, setSecret] = useState(""),
+    [createdName, setCreatedName] = useState(""),
+    [createError, setCreateError] = useState<unknown>(null),
+    [createNotice, setCreateNotice] = useState(""),
+    [draft, setDraft] = useState(false),
+    [busy, setBusy] = useState(false);
+  const alive = useRef(false),
+    loadVersion = useRef(0),
+    createRef = useRef<HTMLDetailsElement>(null);
+  useUnsavedChanges(
+    draft || !!secret || busy,
+    secret
+      ? "new account authenticator setup (the secret is shown once)"
+      : busy
+        ? "account creation in progress (it can complete after leaving; authenticator setup is shown once)"
+        : "new account",
+  );
+  async function loadUsers() {
+    const version = ++loadVersion.current;
+    setUsersLoading(true);
+    try {
+      const value = await api<User[]>("/api/users");
+      if (!alive.current || version !== loadVersion.current) return;
+      setUsers(value);
       setUsersLoaded(true);
-    });
+      setUsersError(null);
+    } catch (error) {
+      if (alive.current && version === loadVersion.current)
+        setUsersError(error);
+    } finally {
+      if (alive.current && version === loadVersion.current)
+        setUsersLoading(false);
+    }
+  }
+  useEffect(() => {
+    alive.current = true;
+    void loadUsers();
+    return () => {
+      alive.current = false;
+    };
   }, []);
+  async function create(e: FormEvent<HTMLFormElement>) {
+    const form = e.currentTarget,
+      f = field(e);
+    if (busy || secret) return;
+    setBusy(true);
+    setCreateError(null);
+    setCreateNotice("");
+    try {
+      const value = await api<{ secret: string }>("/api/users", "POST", {
+        name: f.get("name"),
+        role: f.get("role"),
+        password: f.get("password"),
+      });
+      if (!alive.current) return;
+      setSecret(value.secret);
+      setCreatedName(String(f.get("name")));
+      setDraft(false);
+      form.reset();
+      setCreateNotice(
+        "Account " +
+          String(f.get("name")) +
+          " created with no grants. Store its authenticator secret, then select the account above to assign access.",
+      );
+      await loadUsers();
+    } catch (error) {
+      if (alive.current) setCreateError(error);
+    } finally {
+      if (alive.current) setBusy(false);
+    }
+  }
   return (
     <>
       <div className="page-heading">
@@ -2054,36 +2252,74 @@ function Access({
             determine access. New accounts start with no grants.
           </p>
         </div>
+        <button
+          onClick={() => {
+            const details = createRef.current;
+            if (details) {
+              details.open = true;
+              details.scrollIntoView({ block: "start" });
+              details.querySelector("input")?.focus();
+            }
+          }}
+        >
+          Create account
+        </button>
       </div>
-      <div className="two-columns">
-        <section className="panel">
-          <div className="panel-heading">
-            <h2>Create an account</h2>
-          </div>
-          <div className="panel-body">
-            <Form
-              submit="Create account"
-              onSubmit={(e) => {
-                const f = field(e);
-                void act(async () => {
-                  const v = await api<{ secret: string }>(
-                    "/api/users",
-                    "POST",
-                    {
-                      name: f.get("name"),
-                      role: f.get("role"),
-                      password: f.get("password"),
-                    },
-                  );
-                  setSecret(v.secret);
-                  setUsers(await api<User[]>("/api/users"));
-                  setUsersLoaded(true);
-                });
-              }}
+      <section className="panel">
+        <div className="panel-heading">
+          <h2>Account grants</h2>
+          <span className="muted">Complete set · max 100</span>
+        </div>
+        <div className="panel-body">
+          <ErrorNotice
+            error={usersError}
+            onDismiss={() => setUsersError(null)}
+          />
+          {usersLoading && (
+            <p role="status" className="muted">
+              Loading accounts…
+            </p>
+          )}
+          {!usersLoading && (!usersLoaded || !!usersError) && (
+            <button type="button" onClick={() => void loadUsers()}>
+              Retry accounts
+            </button>
+          )}
+          <GrantEditor
+            hosts={hosts}
+            users={users.filter((user) => user.role !== "admin")}
+            usersLoaded={usersLoaded}
+            usersLoading={usersLoading}
+            onVerify={onVerify}
+          />
+        </div>
+      </section>
+      <details ref={createRef} className="disclosure account-create">
+        <summary>
+          <strong>Create an account</strong>
+          <span>Viewer or operator · no grants by default</span>
+        </summary>
+        <div className="disclosure-body">
+          <ErrorNotice
+            error={createError}
+            onDismiss={() => setCreateError(null)}
+            onVerify={onVerify}
+          />
+          <StatusNotice>{createNotice}</StatusNotice>
+          <form
+            className="form"
+            aria-label="Create an account"
+            onSubmit={create}
+            onChange={() => setDraft(true)}
+          >
+            <fieldset
+              className="account-fields"
+              aria-label="Account details"
+              disabled={busy || !!secret}
             >
               <label>
                 Name
-                <input name="name" required />
+                <input name="name" autoComplete="off" required />
               </label>
               <label>
                 Role
@@ -2103,34 +2339,26 @@ function Access({
                   required
                 />
               </label>
-            </Form>
-            {secret && (
-              <div className="notice">
-                <p>
-                  Share this authenticator secret through a trusted channel. It
-                  is shown once.
-                </p>
-                <code className="secret">{secret}</code>
-                <button onClick={() => setSecret("")}>Dismiss secret</button>
-              </div>
-            )}
-          </div>
-        </section>
-        <section className="panel">
-          <div className="panel-heading">
-            <h2>Account grants</h2>
-            <span className="muted">Loaded before editing · max 100</span>
-          </div>
-          <div className="panel-body">
-            <GrantEditor
-              hosts={hosts}
-              users={users.filter((u) => u.role !== "admin")}
-              usersLoaded={usersLoaded}
-              onVerify={onVerify}
-            />
-          </div>
-        </section>
-      </div>
+            </fieldset>
+            <button className="primary" disabled={busy || !!secret}>
+              {busy ? "Working…" : "Create account"}
+            </button>
+          </form>
+          {secret && (
+            <div className="notice">
+              <p>
+                Authenticator setup for {createdName}. Share this secret through
+                a trusted channel. It is shown once; dismiss it before creating
+                another account.
+              </p>
+              <code className="secret">{secret}</code>
+              <button type="button" onClick={() => setSecret("")}>
+                Dismiss secret
+              </button>
+            </div>
+          )}
+        </div>
+      </details>
     </>
   );
 }

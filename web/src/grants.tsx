@@ -38,6 +38,15 @@ const projectActions = [
   "github.sync",
 ];
 const viewerActions = ["host.read", "project.read", "github.read"];
+const hostActionGroups: [string, string[]][] = [
+  ["Observe", ["host.read", "services.inspect", "logs.read", "jobs.output"]],
+  ["Operate", ["diagnostic", "service.restart", "jobs.cancel"]],
+  ["Manage", ["host.manage", "host.reboot"]],
+];
+const projectActionGroups: [string, string[]][] = [
+  ["Project details", ["project.read", "project.manage"]],
+  ["Repository observations", ["github.read", "github.sync"]],
+];
 const grantLimit = 100;
 const key = (g: Grant) => `${g.scopeType}\u0000${g.scope}\u0000${g.action}`;
 
@@ -56,11 +65,13 @@ export function GrantEditor({
   users,
   hosts,
   usersLoaded,
+  usersLoading = false,
   onVerify,
 }: {
   users: User[];
   hosts: Host[];
   usersLoaded: boolean;
+  usersLoading?: boolean;
   onVerify: () => void;
 }) {
   const [userId, setUserId] = useState(""),
@@ -143,6 +154,8 @@ export function GrantEditor({
   useUnsavedChanges(changed, "account permissions");
   const groups = [...new Set(hosts.flatMap((host) => host.groups))].sort();
   const available = scopeType === "project" ? projectActions : hostActions;
+  const actionGroups =
+    scopeType === "project" ? projectActionGroups : hostActionGroups;
 
   function addGrants() {
     setError(null);
@@ -194,272 +207,326 @@ export function GrantEditor({
   }
 
   const projectName = (id: string) => projects?.find((p) => p.id === id)?.name;
+  const scopeName = (grant: Grant) =>
+    grant.scopeType === "project"
+      ? projectName(grant.scope)
+      : grant.scopeType === "host"
+        ? hosts.find((host) => host.id === grant.scope)?.name
+        : undefined;
   const sorted = [...working].sort((a, b) => key(a).localeCompare(key(b)));
   return (
     <form className="form grant-editor" onSubmit={submit} aria-busy={busy}>
-      <ErrorNotice
-        error={error}
-        onDismiss={() => setError(null)}
-        onVerify={onVerify}
-      />
-      <StatusNotice>{notice}</StatusNotice>
       <p className="muted grant-instructions">
         Select an account, add or remove grants, then replace its saved grants.
         Changes stay in this working set until you save.
       </p>
-      <label>
-        Account
-        <select
-          name="user"
-          required
-          value={userId}
-          onChange={(e) => choose(e.target.value)}
-        >
-          <option value="">
-            {usersLoaded ? "Select an account" : "Accounts unavailable"}
-          </option>
-          {users.map((u) => (
-            <option key={u.id} value={u.id}>
-              {u.name} ({u.role})
-            </option>
-          ))}
-        </select>
-      </label>
-      {load.state === "loading" && (
-        <p className="muted" role="status">
-          Loading current grants…
-        </p>
-      )}
-      {load.state === "failed" && (
-        <div className="notice error" role="alert">
-          <span>
-            Current grants could not be loaded: {(load.error as Error).message}.
-            Replacement is disabled so existing grants cannot be overwritten
-            blindly.
-          </span>
-          <button type="button" onClick={() => void fetchGrants(userId)}>
-            Retry
-          </button>
-        </div>
-      )}
-      {loaded && (
-        <div className="grant-list">
-          <p className="muted">
-            {working.length} of at most {grantLimit} grants
-            {changed ? ` · ${added} added, ${removed} removed (unsaved)` : ""}
-          </p>
-          {!working.length ? (
-            <p className="muted">This account holds no grants.</p>
-          ) : (
-            <div className="table-scroll bounded">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Scope</th>
-                    <th>Action</th>
-                    <th>
-                      <span className="sr-only">Remove</span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sorted.map((g) => (
-                    <tr
-                      key={key(g)}
-                      data-grant={`${g.scopeType}:${g.scope}:${g.action}`}
-                    >
-                      <td>
-                        <span className="tag">{g.scopeType}</span>{" "}
-                        <code>{g.scope}</code>
-                        {g.scopeType === "project" && (
-                          <small>
-                            {projectName(g.scope) ??
-                              (projects ? "Unregistered project" : "")}
-                          </small>
-                        )}
-                      </td>
-                      <td>
-                        {g.action === "*"
-                          ? "All actions"
-                          : actionLabels[g.action] || g.action}
-                        <small>
-                          <code>{g.action}</code>
-                        </small>
-                        {!saved.has(key(g)) && <small>Added · unsaved</small>}
-                      </td>
-                      <td>
-                        <button
-                          type="button"
-                          aria-label={`Remove ${g.action} on ${g.scopeType} ${g.scope}`}
-                          onClick={() =>
-                            setWorking((w) =>
-                              w.filter((x) => key(x) !== key(g)),
-                            )
-                          }
-                        >
-                          Remove
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
-      <fieldset disabled={!loaded || busy}>
-        <legend>Add grants to the working set</legend>
-        <label>
-          Scope type
-          <select
-            name="scopeType"
-            value={scopeType}
-            onChange={(e) => {
-              setScopeType(e.target.value);
-              setScope("");
-              setManualTarget(false);
-              setActions([]);
-            }}
-          >
-            <option value="host">Host</option>
-            <option value="group">Group</option>
-            <option value="all">All hosts (*)</option>
-            <option value="project" disabled={!projects?.length}>
-              Project
-            </option>
-          </select>
-          {projectsError && (
-            <small className="error">
-              Projects could not be loaded ({projectsError}); project scopes
-              cannot be added. Existing project grants are preserved.
-            </small>
-          )}
-          {projects && !projects.length && (
-            <small>Register a project before granting project access.</small>
-          )}
-        </label>
-        {scopeType === "project" ? (
+      <div className="grant-workspace">
+        <div className="grant-current">
           <label>
-            Project
+            Account
             <select
-              name="projectScope"
-              value={scope}
-              onChange={(e) => setScope(e.target.value)}
+              name="user"
+              required
+              value={userId}
+              onChange={(e) => choose(e.target.value)}
             >
-              <option value="">Select a project</option>
-              {(projects || []).map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name} ({p.id}){p.archived ? " · archived" : ""}
+              <option value="">
+                {usersLoaded
+                  ? "Select an account"
+                  : usersLoading
+                    ? "Loading accounts…"
+                    : "Accounts unavailable"}
+              </option>
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name} ({u.role})
                 </option>
               ))}
             </select>
           </label>
-        ) : (
-          <>
-            {scopeType !== "all" && (
-              <label>
-                {scopeType === "host" ? "Host" : "Group"}
-                <select
-                  name="grantTarget"
-                  value={manualTarget ? "__manual__" : scope}
-                  onChange={(event) => {
-                    setManualTarget(event.target.value === "__manual__");
-                    setScope(
-                      event.target.value === "__manual__"
-                        ? ""
-                        : event.target.value,
-                    );
-                  }}
-                >
-                  <option value="">
-                    Select {scopeType === "host" ? "a host" : "a group"}
-                  </option>
-                  {scopeType === "host"
-                    ? hosts.map((host) => (
-                        <option key={host.id} value={host.id}>
-                          {host.name}
-                        </option>
-                      ))
-                    : groups.map((group) => (
-                        <option key={group} value={group}>
-                          {group}
-                        </option>
+          {load.state === "loading" && (
+            <p className="muted" role="status">
+              Loading current grants…
+            </p>
+          )}
+          {load.state === "failed" && (
+            <div className="notice error" role="alert">
+              <span>
+                Current grants could not be loaded:{" "}
+                {(load.error as Error).message}. Replacement is disabled so
+                existing grants cannot be overwritten blindly.
+              </span>
+              <button type="button" onClick={() => void fetchGrants(userId)}>
+                Retry
+              </button>
+            </div>
+          )}
+          {loaded && (
+            <div className="grant-list">
+              <p className="muted">
+                {working.length} of at most {grantLimit} grants
+                {changed
+                  ? ` · ${added} added, ${removed} removed (unsaved)`
+                  : ""}
+              </p>
+              {!working.length ? (
+                <p className="muted">This account holds no grants.</p>
+              ) : (
+                <div className="table-scroll bounded">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Scope</th>
+                        <th>Action</th>
+                        <th>
+                          <span className="sr-only">Remove</span>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sorted.map((g) => (
+                        <tr
+                          key={key(g)}
+                          data-grant={`${g.scopeType}:${g.scope}:${g.action}`}
+                        >
+                          <td>
+                            <span className="tag">{g.scopeType}</span>{" "}
+                          {scopeName(g) || <code>{g.scope}</code>}
+                          {scopeName(g) && scopeName(g) !== g.scope && (
+                            <small><code>{g.scope}</code></small>
+                          )}
+                          {g.scopeType === "project" && !scopeName(g) && (
+                              <small>
+                              {projects ? "Project unavailable" : ""}
+                              </small>
+                            )}
+                          </td>
+                          <td>
+                            {g.action === "*"
+                              ? "All actions"
+                              : actionLabels[g.action] || g.action}
+                            <small>
+                              <code>{g.action}</code>
+                            </small>
+                            {!saved.has(key(g)) && (
+                              <small>Added · unsaved</small>
+                            )}
+                          </td>
+                          <td>
+                            <button
+                              type="button"
+                              aria-label={`Remove ${g.action} on ${g.scopeType} ${g.scope}`}
+                              onClick={() =>
+                                setWorking((w) =>
+                                  w.filter((x) => key(x) !== key(g)),
+                                )
+                              }
+                            >
+                              Remove
+                            </button>
+                          </td>
+                        </tr>
                       ))}
-                  <option value="__manual__">
-                    Enter {scopeType === "host" ? "a host ID" : "a group name"}{" "}
-                    manually
-                  </option>
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+        <fieldset className="grant-add" disabled={!loaded || busy}>
+          <legend>Add grants to the working set</legend>
+          <div className="grant-targets">
+            <label>
+              Scope type
+              <select
+                name="scopeType"
+                value={scopeType}
+                onChange={(e) => {
+                  setScopeType(e.target.value);
+                  setScope("");
+                  setManualTarget(false);
+                  setActions([]);
+                }}
+              >
+                <option value="host">Host</option>
+                <option value="group">Group</option>
+                <option value="all">All hosts (*)</option>
+                <option value="project" disabled={!projects?.length}>
+                  Project
+                </option>
+              </select>
+              {projectsError && (
+                <small className="error">
+                  Projects could not be loaded ({projectsError}); project scopes
+                  cannot be added. Existing project grants are preserved.
+                </small>
+              )}
+              {projects && !projects.length && (
+                <small>
+                  Register a project before granting project access.
+                </small>
+              )}
+            </label>
+            {scopeType === "project" ? (
+              <label>
+                Project
+                <select
+                  name="projectScope"
+                  value={scope}
+                  onChange={(e) => setScope(e.target.value)}
+                >
+                  <option value="">Select a project</option>
+                  {(projects || []).map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.id}){p.archived ? " · archived" : ""}
+                    </option>
+                  ))}
                 </select>
               </label>
+            ) : (
+              <>
+                {scopeType !== "all" && (
+                  <label>
+                    {scopeType === "host" ? "Host" : "Group"}
+                    <select
+                      name="grantTarget"
+                      value={manualTarget ? "__manual__" : scope}
+                      onChange={(event) => {
+                        setManualTarget(event.target.value === "__manual__");
+                        setScope(
+                          event.target.value === "__manual__"
+                            ? ""
+                            : event.target.value,
+                        );
+                      }}
+                    >
+                      <option value="">
+                        Select {scopeType === "host" ? "a host" : "a group"}
+                      </option>
+                      {scopeType === "host"
+                        ? hosts.map((host) => (
+                            <option key={host.id} value={host.id}>
+                              {host.name}
+                            </option>
+                          ))
+                        : groups.map((group) => (
+                            <option key={group} value={group}>
+                              {group}
+                            </option>
+                          ))}
+                      <option value="__manual__">
+                        Enter{" "}
+                        {scopeType === "host" ? "a host ID" : "a group name"}{" "}
+                        manually
+                      </option>
+                    </select>
+                  </label>
+                )}
+                <label hidden={scopeType !== "all" && !manualTarget}>
+                  {scopeType === "all"
+                    ? "All hosts"
+                    : scopeType === "host"
+                      ? "Host ID"
+                      : "Group name"}
+                  <input
+                    name="scope"
+                    autoComplete="off"
+                    maxLength={80}
+                    value={scopeType === "all" ? "*" : scope}
+                    readOnly={scopeType === "all"}
+                    onChange={(e) => setScope(e.target.value)}
+                  />
+                </label>
+              </>
             )}
-            <label hidden={scopeType !== "all" && !manualTarget}>
-              {scopeType === "all"
-                ? "All hosts"
-                : scopeType === "host"
-                  ? "Host ID"
-                  : "Group name"}
-              <input
-                name="scope"
-                autoComplete="off"
-                maxLength={80}
-                value={scopeType === "all" ? "*" : scope}
-                readOnly={scopeType === "all"}
-                onChange={(e) => setScope(e.target.value)}
-              />
-            </label>
-          </>
-        )}
-        <div className="check-grid" role="group" aria-label="Actions">
-          {available.map((a) => {
-            const blocked = viewer && !viewerActions.includes(a);
-            return (
-              <label className="check" key={a}>
-                <input
-                  type="checkbox"
-                  value={a}
-                  disabled={blocked}
-                  checked={actions.includes(a)}
-                  onChange={(e) =>
-                    setActions((v) =>
-                      e.target.checked ? [...v, a] : v.filter((x) => x !== a),
-                    )
-                  }
-                />
-                <span>
-                  {actionLabels[a] || a}
-                  <small>
-                    <code>{a}</code>
-                  </small>
-                </span>
-              </label>
-            );
-          })}
+          </div>
+          <div className="check-grid" role="group" aria-label="Actions">
+            {actionGroups.map(([group, items]) => (
+              <fieldset className="permission-group" key={group}>
+                <legend>{group}</legend>
+                {items.map((a) => {
+                  const blocked = viewer && !viewerActions.includes(a);
+                  return (
+                    <label className="check" key={a}>
+                      <input
+                        type="checkbox"
+                        value={a}
+                        disabled={blocked}
+                        checked={actions.includes(a)}
+                        onChange={(e) =>
+                          setActions((v) =>
+                            e.target.checked
+                              ? [...v, a]
+                              : v.filter((x) => x !== a),
+                          )
+                        }
+                      />
+                      <span>{actionLabels[a] || a}</span>
+                    </label>
+                  );
+                })}
+              </fieldset>
+            ))}
+          </div>
+          <details className="permission-reference">
+            <summary>Permission identifiers</summary>
+            <dl>
+              {available.map((action) => (
+                <div key={action}>
+                  <dt>{actionLabels[action]}</dt>
+                  <dd>
+                    <code>{action}</code>
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </details>
+          <small>
+            {scopeType === "project"
+              ? "Editing project details does not grant read access. Repository observations require their own read permission; refresh also requires it."
+              : "Host, group and all-host grants confer no project access."}
+            {viewer && " Viewers are limited to read actions."}
+          </small>
+          <button type="button" onClick={addGrants}>
+            Add to working set
+          </button>
+        </fieldset>
+      </div>
+      <div className="grant-save">
+        <ErrorNotice
+          error={error}
+          onDismiss={() => setError(null)}
+          onVerify={onVerify}
+        />
+        <StatusNotice>{notice}</StatusNotice>
+        <div className="grant-save-summary">
+          <p className="grant-save-account">
+            {account ? (
+              <>
+                <strong>{account.name}</strong> · {working.length} grants in the
+                working set
+              </>
+            ) : (
+              "Select an account to edit its grants."
+            )}
+          </p>
+          <small>
+            Saving replaces every grant this account holds with the list above,
+            including host and project grants.
+          </small>
+          <small role="status">
+            {!loaded
+              ? "Select an account and load its grants to begin."
+              : !changed
+                ? "No unsaved changes."
+                : `${added} added, ${removed} removed. Ready to replace the account’s complete grant set.`}
+          </small>
         </div>
-        <small>
-          {scopeType === "project"
-            ? "project.manage does not include read, and neither registry permission grants private GitHub data. github.sync requires github.read."
-            : "Host, group and all-host grants confer no project access."}
-          {viewer && " Viewers are limited to read actions."}
-        </small>
-        <button type="button" onClick={addGrants}>
-          Add to working set
+        <button className="primary" disabled={!loaded || !changed || busy}>
+          {busy ? "Working…" : "Replace grants"}
         </button>
-      </fieldset>
-      <small>
-        Saving replaces every grant this account holds with the list above,
-        including host and project grants.
-      </small>
-      <button className="primary" disabled={!loaded || !changed || busy}>
-        {busy ? "Working…" : "Replace grants"}
-      </button>
-      <small role="status">
-        {!loaded
-          ? "Select an account and load its grants to begin."
-          : !changed
-            ? "No unsaved changes."
-            : `${added} added, ${removed} removed. Ready to replace the account’s complete grant set.`}
-      </small>
+      </div>
     </form>
   );
 }

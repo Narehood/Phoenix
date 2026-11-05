@@ -1064,7 +1064,7 @@ time {
   font-size: 12px;
   display: flex;
   flex-wrap: wrap;
-  align-items: start;
+  align-items: center;
   gap: 8px 20px;
 }
 .collection-current {
@@ -1373,7 +1373,7 @@ time {
   .responsive-table td small {
     margin: 0;
   }
-  .fleet-table td[data-label="Readings"],
+  .fleet-table td[data-label="Reading freshness"],
   .fleet-table td[data-label="Resources"] {
     grid-column: 1 / -1;
   }
@@ -1774,5 +1774,204 @@ textarea:disabled {
   }
   .filter-context {
     padding: 12px 16px;
+  }
+}
+
+.host-actions {
+  max-width: 340px;
+}
+.host-actions > summary {
+  min-height: 36px;
+  padding: 8px 12px;
+  border: 1px solid var(--control-border);
+  border-radius: 7px;
+  color: var(--text-2);
+  background: var(--surface);
+}
+.host-actions[open] {
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.host-actions[open] > summary {
+  border: 0;
+  padding: 0;
+}
+.host-actions p {
+  font-size: 12px;
+  margin: 4px 0 12px;
+}
+.snapshot-action-note {
+  padding: 12px 16px;
+  margin: 0;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-2);
+}
+.mobile-resource-warning small {
+  display: block;
+  margin-top: 6px;
+  color: var(--warning-text);
+}
+.project-edit-feedback:has(.notice) {
+  scroll-margin-top: 80px;
+}
+.grant-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  gap: 24px;
+  align-items: start;
+}
+.grant-current {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.grant-current .grant-list p {
+  margin-top: 0;
+}
+.grant-list table {
+  table-layout: fixed;
+  width: 100%;
+}
+.grant-list th:last-child {
+  width: 88px;
+}
+.grant-list td,
+.grant-list code {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.grant-add {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  min-width: 0;
+}
+.grant-targets {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.grant-add .permission-group {
+  padding: 0;
+  border: 0;
+  min-width: 0;
+  margin: 0;
+  gap: 3px;
+  align-content: start;
+}
+.permission-group > legend {
+  padding: 0;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--text-2);
+  margin-bottom: 6px;
+}
+.permission-group .check {
+  font-size: 12px;
+}
+.permission-reference {
+  font-size: 12px;
+}
+.permission-reference > summary {
+  font-size: 12px;
+  color: var(--text-3);
+  min-height: 32px;
+  padding: 6px 0;
+}
+.permission-reference dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+  margin: 8px 0;
+}
+.permission-reference dt {
+  color: var(--text-2);
+}
+.permission-reference dd {
+  margin: 0;
+}
+.grant-save {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+.grant-save > .notice,
+.grant-save > .status-notice {
+  grid-column: 1 / -1;
+}
+.grant-save-summary {
+  display: grid;
+  gap: 5px;
+  overflow-wrap: anywhere;
+}
+.grant-save-account {
+  margin: 0;
+  font-size: 13px;
+}
+.grant-save-summary small {
+  line-height: 1.5;
+}
+.account-create {
+  margin-top: 22px;
+}
+.account-create .form {
+  max-width: 560px;
+}
+.form .account-fields {
+  display: grid;
+  gap: 16px;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+  margin: 0;
+}
+@media (min-width: 721px) {
+  .permission-group .check {
+    min-height: 36px;
+    padding: 4px 0;
+  }
+}
+@media (max-width: 1000px) {
+  .grant-workspace {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 720px) {
+  .projects-table td[data-label="Updated"] {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .host-actions > summary {
+    min-height: 44px;
+    padding: 11px 12px;
+  }
+  .grant-workspace {
+    gap: 18px;
+  }
+  .grant-targets {
+    grid-template-columns: 1fr;
+  }
+  .grant-add .check-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .grant-save {
+    grid-template-columns: 1fr;
+  }
+  .grant-save > button {
+    justify-self: start;
+    min-height: 44px;
+  }
+  .permission-group .check {
+    min-height: 44px;
+    font-size: 13px;
   }
 }
