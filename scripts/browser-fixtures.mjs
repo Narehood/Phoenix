@@ -382,7 +382,18 @@ try {
     throw new Error(`Browser assertion timed out: ${expression}`);
   };
   const click = async (text) => {
-    const point = await evaluate(`(async () => { const button = [...document.querySelectorAll('button,a')].find(b => !b.closest('details:not([open])') && b.checkVisibility() && b.textContent.trim().startsWith(${JSON.stringify(text)})); if (!button) throw Error('Missing visible fixture control: ' + ${JSON.stringify(text)}); button.scrollIntoView({block:'nearest'}); await new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done))); const r = button.getBoundingClientRect(), x = r.x+r.width/2, y = r.y+r.height/2; if (!button.isConnected || document.elementFromPoint(x,y)?.closest('button,a') !== button) throw Error('Fixture control is obstructed or changed: ' + ${JSON.stringify(text)}); return {x,y}; })()`);
+    let point;
+    try {
+      point = await evaluate(`(async () => { await new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done))); const button = [...document.querySelectorAll('button,a')].find(b => !b.closest('details:not([open])') && b.checkVisibility() && b.textContent.trim().startsWith(${JSON.stringify(text)})); if (!button) throw Error('Missing visible fixture control: ' + ${JSON.stringify(text)}); button.scrollIntoView({block:'center'}); await new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done))); const r = button.getBoundingClientRect(), x = r.x+r.width/2, y = r.y+r.height/2; if (!button.isConnected || document.elementFromPoint(x,y)?.closest('button,a') !== button) throw Error('Fixture control is obstructed or changed: ' + ${JSON.stringify(text)}); return {x,y}; })()`);
+    } catch (error) {
+      try {
+        const state = await evaluate("({route:location.hash.slice(0,200),heading:document.querySelector('h1')?.textContent?.slice(0,100),width:innerWidth,height:innerHeight,scrollY,activeTag:document.activeElement?.tagName,openDialog:!!document.querySelector('dialog[open]')})");
+        const report = JSON.stringify({control:text.slice(0,100),state,error:String(error).slice(0,1500)},null,2);
+        if (Buffer.byteLength(report) <= 16384) writeFileSync(join(evidence, "click-failure-state.json"),report);
+        await capture("99-click-failure");
+      } catch {}
+      throw error;
+    }
     await send("Input.dispatchMouseEvent", { type: "mouseMoved", ...point }, sessionId);
     await send("Input.dispatchMouseEvent", { type: "mousePressed", ...point, button: "left", clickCount: 1 }, sessionId);
     await send("Input.dispatchMouseEvent", { type: "mouseReleased", ...point, button: "left", clickCount: 1 }, sessionId);
@@ -766,6 +777,8 @@ try {
   await click("Fleet overview");
   await click("ADMIN-ONLY-HOST");
   await wait("!!document.querySelector('#host-jobs') && document.querySelectorAll('#host-jobs tbody tr').length === 4");
+  await click("Jobs");
+  await wait("!!document.activeElement.closest('#host-jobs')");
   await click("Cancel");
   await wait("document.querySelector('#host-jobs .job-cancel [role=status]')?.innerText.includes('Cancellation requested')");
   pass("host and global cancellation show local pending/error/acceptance, preserve retry and prevent repeated submission");
