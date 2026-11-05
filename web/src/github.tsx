@@ -6,6 +6,7 @@ import {
   type ReactNode,
 } from "react";
 import { api, ApiError } from "./api";
+import { useUnsavedChanges } from "./navigation";
 import type {
   Collection,
   DependabotAlert,
@@ -649,6 +650,22 @@ export function GitHubPanel({
         </h2>
         <div className="button-row">
           <span className="muted">Read-only · GitHub.com</span>
+          {admin && (
+            <button
+              onClick={() => {
+                const settings = document.getElementById(
+                  `repository-settings-${project.id}`,
+                ) as HTMLDetailsElement | null;
+                if (settings) {
+                  settings.open = true;
+                  settings.scrollIntoView({ block: "start" });
+                  settings.querySelector("summary")?.focus();
+                }
+              }}
+            >
+              Connection settings
+            </button>
+          )}
           {canSync && view?.configured && (
             <button
               onClick={() => void sync()}
@@ -693,6 +710,7 @@ export function GitHubPanel({
         <GitHubSettings
           key={view ? "loaded" : "unloaded"}
           path={path}
+          settingsId={`repository-settings-${project.id}`}
           view={canRead && !denied ? view : null}
           usable={moduleOn && !project.archived}
           onVerify={onVerify}
@@ -723,6 +741,7 @@ function tokenProblem(token: string) {
  */
 function GitHubSettings({
   path,
+  settingsId,
   view,
   usable,
   onVerify,
@@ -730,6 +749,7 @@ function GitHubSettings({
   reload,
 }: {
   path: string;
+  settingsId: string;
   view: GitHubView | null;
   usable: boolean;
   onVerify: () => void;
@@ -764,6 +784,7 @@ function GitHubSettings({
     setBase(view.revision);
   }, [view?.revision, view?.repository, view?.enabled, touched]);
   const conflict = !!view && touched && base !== view.revision;
+  useUnsavedChanges(touched, "repository settings");
   const ready = !!view && usable && base >= 0;
 
   async function submit(e: FormEvent<HTMLFormElement>) {
@@ -857,6 +878,7 @@ function GitHubSettings({
   return (
     <details
       className="disclosure settings"
+      id={settingsId}
       open={expanded}
       onToggle={(event) => setExpanded(event.currentTarget.open)}
     >

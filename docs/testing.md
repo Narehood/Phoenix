@@ -66,7 +66,7 @@ in isolation, runs offline administrator recovery and verifies old-session
 rejection plus retained hosts/projects/jobs. Logs and state are bounded and
 removed. This is container evidence, not an installed-host restore drill.
 
-The 13 browser regressions use the built dashboard with temporary API fixtures.
+The browser regressions use the built dashboard with temporary API fixtures.
 The smoke uses real APIs but does not drive a browser. Neither substitutes for
 manual end-to-end browser acceptance. Container systemd service/log inspection
 may be unavailable; the smoke never installs or executes the root helper.
@@ -88,7 +88,7 @@ administrative-action failure.
 | GitHub | Optionally connect an operator-supplied disposable repository with a dedicated read-only token; verify PR checks/reviews, recent push CI and Dependabot observations, cooldowns and stale/permission states; disable/disconnect and ensure old observations do not reappear. Empty results never prove packages current. |
 | Canary | Only with a reachable operator-supplied node API/viewer account, verify source/build, independent freshness, mappings and unavailable-source behavior. Do not modify Canary or contact notification destinations. |
 | Recovery | Complete a stopped, isolated backup/restore drill with separate identity keys, revoke restored sessions, reconcile agents/jobs, and verify permissions before reconnecting. |
-| Browser | Use the real server in supported desktop and narrow viewports; inspect keyboard navigation, errors/empty/loading states and branding at small sizes. Record browser/version. |
+| Browser | Use the real server in desktop, narrow and short viewports. Check Back/Forward, refresh and copied host/project links; decline leaving an unsaved edit. Open the mobile menu, reach sign-out, dismiss with Escape and verify destination heading focus. Reveal exact reading times by tap or keyboard. Inspect errors/empty/loading states and branding at small sizes. Record browser/version. |
 
 Use this report shape, with sanitized evidence only:
 

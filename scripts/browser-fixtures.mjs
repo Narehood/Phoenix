@@ -292,7 +292,7 @@ try {
     throw new Error(`Browser assertion timed out: ${expression}`);
   };
   const click = async (text) => {
-    const point = await evaluate(`(() => { const button = [...document.querySelectorAll('button')].find(b => !b.closest('details:not([open])') && b.checkVisibility() && b.textContent.trim().startsWith(${JSON.stringify(text)})); if (!button) throw Error('Missing visible fixture button: ' + ${JSON.stringify(text)}); button.scrollIntoView({block:'nearest'}); const r = button.getBoundingClientRect(), x = r.x+r.width/2, y = r.y+r.height/2; if (document.elementFromPoint(x,y)?.closest('button') !== button) throw Error('Fixture button is obstructed: ' + ${JSON.stringify(text)}); return {x,y}; })()`);
+    const point = await evaluate(`(() => { const button = [...document.querySelectorAll('button,a')].find(b => !b.closest('details:not([open])') && b.checkVisibility() && b.textContent.trim().startsWith(${JSON.stringify(text)})); if (!button) throw Error('Missing visible fixture control: ' + ${JSON.stringify(text)}); button.scrollIntoView({block:'nearest'}); const r = button.getBoundingClientRect(), x = r.x+r.width/2, y = r.y+r.height/2; if (document.elementFromPoint(x,y)?.closest('button,a') !== button) throw Error('Fixture control is obstructed: ' + ${JSON.stringify(text)}); return {x,y}; })()`);
     await send("Input.dispatchMouseEvent", { type: "mousePressed", ...point, button: "left", clickCount: 1 }, sessionId);
     await send("Input.dispatchMouseEvent", { type: "mouseReleased", ...point, button: "left", clickCount: 1 }, sessionId);
   };
@@ -331,7 +331,7 @@ try {
   await wait("document.querySelector('dialog [role=alert]')?.textContent.includes('Fixture verification unavailable')");
   await sleep(5500);
   assert.ok(await evaluate("document.querySelector('dialog [role=alert]')?.textContent.includes('Fixture verification unavailable')"), "Successful background polling cleared a mutation error");
-  await evaluate("document.querySelector('nav button').focus()");
+  await evaluate("document.querySelector('nav a').focus()");
   assert.ok(await evaluate("document.querySelector('dialog').contains(document.activeElement)"), "Modal focus escaped to the inert background");
   await capture("10-dialog-verification-error");
   await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, sessionId);
@@ -340,12 +340,28 @@ try {
   await evaluate("window.fixture.authFailure = 0");
   pass("verification errors remain in a keyboard-contained modal across polling; Escape restores focus");
 
+  // Real destinations survive history and a new document, with heading focus.
+  assert.equal(await evaluate("document.querySelector('nav a[href=\"#/projects\"]')?.getAttribute('href')"), "#/projects");
+  await click("ADMIN-ONLY-HOST");
+  await wait("location.hash === '#/hosts/private-host' && document.querySelector('h1')?.textContent === 'ADMIN-ONLY-HOST' && document.activeElement === document.querySelector('h1')");
+  await evaluate("history.back()");
+  await wait("location.hash === '#/fleet' && document.activeElement === document.querySelector('h1')");
+  await evaluate("history.forward()");
+  await wait("location.hash === '#/hosts/private-host' && document.querySelector('h1')?.textContent === 'ADMIN-ONLY-HOST'");
+  await send("Page.reload", {}, sessionId);
+  // Wait for the new execution context; no application or assertion errors are ignored.
+  await new Promise(done => setTimeout(done, 300));
+  await wait("location.hash === '#/hosts/private-host' && document.querySelector('h1')?.textContent === 'ADMIN-ONLY-HOST' && document.activeElement === document.querySelector('h1')");
+  await click("← All hosts");
+  await wait("location.hash === '#/fleet'");
+  pass("real host/project links preserve destinations across Back, Forward and reload, and focus page headings");
+
   await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true }, sessionId);
   await evaluate("document.querySelector('.mobile-navigation summary').click()");
   await wait("document.querySelector('.mobile-navigation').open");
   assert.ok(await evaluate("[...document.querySelectorAll('.mobile-account button')].some(b => b.textContent === 'Sign out' && b.getClientRects().length)"), "Mobile sign-out is not discoverable");
   await click("Projects");
-  await wait("document.querySelector('h1')?.textContent === 'Projects' && !document.querySelector('.mobile-navigation').open");
+  await wait("document.querySelector('h1')?.textContent === 'Projects' && !document.querySelector('.mobile-navigation').open && document.activeElement === document.querySelector('h1')");
   assert.ok(await evaluate("document.querySelector('.mobile-navigation [aria-current=page]')?.textContent.includes('Projects')"), "Mobile current destination is not exposed");
   await evaluate("document.querySelector('.mobile-navigation summary').click()");
   const priorMode = await evaluate("document.documentElement.dataset.mode");
@@ -353,9 +369,25 @@ try {
   assert.notEqual(await evaluate("document.documentElement.dataset.mode"), priorMode);
   await click("Switch appearance");
   await capture("11-mobile-navigation");
+  await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 390, deviceScaleFactor: 1, mobile: true }, sessionId);
+  assert.ok(await evaluate(`(() => {
+    const menu = document.querySelector('.mobile-menu-body');
+    menu.scrollTop = menu.scrollHeight;
+    const button = [...menu.querySelectorAll('button')].find(b => b.textContent === 'Sign out');
+    button.focus(); const r = button.getBoundingClientRect();
+    return r.bottom <= innerHeight && r.top >= 0 && document.elementFromPoint(r.x + r.width/2,r.y + r.height/2) === button;
+  })()`), "Short mobile viewport makes sign-out unreachable");
+  await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, sessionId);
+  await send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, sessionId);
+  await wait("!document.querySelector('.mobile-navigation').open && document.activeElement === document.querySelector('.mobile-navigation summary')");
+  await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true }, sessionId);
+  await evaluate("document.querySelector('.mobile-navigation summary').click()");
   await click("Fleet overview");
   await wait("!!document.querySelector('.fleet-table')");
   assert.ok(await evaluate("document.documentElement.scrollWidth <= innerWidth && document.querySelector('.fleet-table').scrollWidth <= innerWidth"), "Host statuses require horizontal document/table scrolling on mobile");
+  await click("Just now");
+  assert.ok(await evaluate("(() => {const b = [...document.querySelectorAll('.time-trigger')].find(b => b.getAttribute('aria-expanded') === 'true'); const exact = b && document.getElementById(b.getAttribute('aria-controls')); return exact?.checkVisibility() && exact.textContent.length > 15;})()"), "Exact operational times are not available by tap");
+  await click("Just now");
   await click("ADMIN-ONLY-HOST");
   await wait("document.querySelector('h1')?.textContent === 'ADMIN-ONLY-HOST'");
   assert.ok(await evaluate(`(() => {
@@ -367,10 +399,10 @@ try {
   await click("← All hosts");
   await wait("!!document.querySelector('.fleet-table')");
   await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false }, sessionId);
-  pass("mobile navigation exposes the current section, account/sign-out and appearance; host statuses fit without sideways scrolling");
+  pass("mobile navigation, short-viewport sign-out, Escape, heading focus and exact-time tap work without horizontal overflow");
 
   for (const mode of ['light', 'dark']) {
-    const ratio = await evaluate(`(() => {
+    const ratios = await evaluate(`(() => {
       document.documentElement.dataset.mode = ${JSON.stringify(mode)};
       const el = document.querySelector('.fleet-table .chip.good');
       const rgb = c => c.match(/[\\d.]+/g).map(Number);
@@ -378,12 +410,15 @@ try {
       const bg = rgb(getComputedStyle(el).backgroundColor), fg = rgb(getComputedStyle(el).color);
       const blend = bg.slice(0, 3).map((v, i) => v * (bg[3] ?? 1) + base[i] * (1 - (bg[3] ?? 1)));
       const l = c => c.slice(0, 3).map(v => { v /= 255; return v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }).reduce((sum,v,i) => sum + v * [.2126,.7152,.0722][i], 0);
-      const a = l(fg), b = l(blend); return (Math.max(a,b) + .05) / (Math.min(a,b) + .05);
+      const ratio = (a,b) => (Math.max(l(a),l(b)) + .05) / (Math.min(l(a),l(b)) + .05);
+      const input = getComputedStyle(document.querySelector('input.search'));
+      return {status: ratio(fg,blend), control: ratio(rgb(input.borderTopColor),rgb(input.backgroundColor))};
     })()`);
-    assert.ok(ratio >= 4.5, `Good status text contrast is below 4.5:1 in ${mode}: ${ratio}`);
+    assert.ok(ratios.status >= 4.5, `Good status text contrast is below 4.5:1 in ${mode}: ${ratios.status}`);
+    assert.ok(ratios.control >= 3, `Enabled control border contrast is below 3:1 in ${mode}: ${ratios.control}`);
   }
   await evaluate("document.documentElement.dataset.mode = 'light'");
-  pass("actual light and dark good-status text meets 4.5:1 contrast");
+  pass("actual light/dark status text meets 4.5:1 and enabled input boundaries meet 3:1 contrast");
   await click("Access & accounts");
   await wait("document.querySelector('[role=alert]')?.innerText.includes('Fixture account list unavailable') && !!document.querySelector('select[name=user]')");
   assert.equal(await evaluate("document.querySelector('select[name=user]').checkValidity()"), false, "Empty account select allows grant submission");
@@ -428,6 +463,14 @@ try {
   pass("empty project inventory allows administrator registration with explicit modules");
 
   await setValue("input[name=editName]", "Fixture project renamed");
+  await evaluate("window.fixture.confirmCount = 0; window.confirm = () => { window.fixture.confirmCount++; return false; }");
+  await click("Fleet overview");
+  assert.equal(await evaluate("location.hash"), "#/projects/fixture-project", "Navigation discarded an unsaved metadata draft");
+  await evaluate("history.back()");
+  await wait("window.fixture.confirmCount >= 2 && location.hash === '#/projects/fixture-project'");
+  assert.equal(await evaluate("document.querySelector('input[name=editName]').value"), "Fixture project renamed", "Declining Back discarded unsaved metadata");
+  await evaluate("window.confirm = () => true");
+  pass("unsaved project edits survive declined workspace navigation and browser Back");
   await evaluate("window.fixture.externalEdit('fixture-project')");
   await submit("Project metadata");
   await wait("document.querySelector('.notice.conflict')?.innerText.includes('saved by someone else') && document.querySelector('input[name=editName]').value === 'Fixture project renamed'");

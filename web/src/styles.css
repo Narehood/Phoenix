@@ -46,7 +46,7 @@ button.danger {
 input,
 select,
 textarea {
-  border: 1px solid var(--border-2);
+  border: 1px solid var(--control-border);
   background: var(--surface);
   border-radius: 7px;
   padding: 9px 11px;
@@ -173,7 +173,7 @@ nav {
   display: grid;
   gap: 5px;
 }
-nav button {
+nav :is(button, a) {
   display: flex;
   justify-content: space-between;
   text-align: left;
@@ -182,10 +182,10 @@ nav button {
   border: 1px solid transparent;
   padding: 11px 14px;
 }
-nav button:hover {
+nav :is(button, a):hover {
   background: #ffffff0b;
 }
-nav button.active {
+nav :is(button, a).active {
   background: #ffb02014;
   color: var(--ink-text-1);
   border-color: #ffb02020;
@@ -996,25 +996,41 @@ summary:hover {
   margin-top: 8px;
   max-width: 240px;
 }
-time {
-  position: relative;
-  white-space: nowrap;
+.timestamp {
+  display: inline-block;
+  max-width: 100%;
+}
+.time-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 24px;
+  border: 0;
+  border-bottom: 1px dotted var(--axis);
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
+  text-align: left;
+}
+.time-trigger:hover {
+  background: var(--accent-wash);
+  color: var(--accent-text);
+}
+.time-trigger > span {
+  color: var(--accent-text);
 }
 .time-exact {
-  display: none;
-  position: absolute;
-  inset: auto auto calc(100% + 6px) 0;
-  background: var(--tip-bg);
-  color: var(--tip-fg);
-  border: 1px solid var(--border-2);
-  padding: 6px 9px;
-  border-radius: 5px;
-  z-index: 20;
-  box-shadow: var(--shadow);
-}
-time:hover .time-exact,
-time:focus .time-exact {
   display: block;
+  padding: 5px 0;
+  max-width: 100%;
+  color: var(--text-2);
+  font-size: 12px;
+  white-space: normal;
+}
+time {
+  white-space: nowrap;
 }
 .repository-identity {
   padding: 0 20px 14px;
@@ -1026,8 +1042,13 @@ time:focus .time-exact {
   overflow-wrap: anywhere;
 }
 .repository-identity h3 a {
-  color: var(--text-1);
-  text-decoration: none;
+  color: var(--accent-text);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.repository-identity h3 a::after {
+  content: " ↗";
+  font-size: 14px;
 }
 .repository-identity h3 a:hover {
   color: var(--accent-text);
@@ -1171,12 +1192,12 @@ time:focus .time-exact {
     display: grid;
     overflow: visible;
   }
-  .mobile-menu-body nav button {
+  .mobile-menu-body nav :is(button, a) {
     color: var(--text-2);
     min-height: 44px;
     font-size: 14px;
   }
-  .mobile-menu-body nav button.active {
+  .mobile-menu-body nav :is(button, a).active {
     background: var(--accent-wash);
     color: var(--accent-text);
     border: 1px solid var(--border);
@@ -1221,12 +1242,12 @@ time:focus .time-exact {
     gap: 3px;
     overflow: auto;
   }
-  nav button {
+  nav :is(button, a) {
     padding: 8px;
     font-size: 11px;
     flex-shrink: 0;
   }
-  nav button.active {
+  nav :is(button, a).active {
     border-left: 1px solid #ffb02020;
     border-bottom: 2px solid var(--phoenix);
     padding-left: 8px;
@@ -1445,5 +1466,165 @@ time:focus .time-exact {
   }
   .auth {
     padding: 20px;
+  }
+}
+[hidden] {
+  display: none !important;
+}
+nav a {
+  text-decoration: none;
+}
+#content h1:focus,
+#content:focus {
+  outline: none;
+}
+.quantity {
+  white-space: nowrap;
+}
+.disclosure {
+  scroll-margin-top: 76px;
+}
+.responsive-details > summary {
+  display: none;
+}
+.compact-freshness {
+  display: none;
+}
+.mobile-reading-time {
+  display: none;
+}
+.host-identity {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.host-identity > a {
+  color: var(--accent-text);
+  font-size: 14px;
+  font-weight: 650;
+}
+.attention-note {
+  font-size: 12px;
+  font-weight: 500;
+  margin-left: 12px;
+  color: var(--warning-text);
+}
+.check-grid .check {
+  align-items: start;
+  padding: 6px 0;
+  min-height: 44px;
+}
+.check-grid .check small {
+  display: block;
+  color: var(--text-3);
+}
+.check-grid .check input {
+  margin-top: 4px;
+}
+input:disabled,
+select:disabled,
+textarea:disabled {
+  border-color: var(--border);
+  color: var(--text-3);
+}
+@media (max-width: 720px) {
+  .mobile-menu-body {
+    max-height: calc(100dvh - 150px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .responsive-details > summary {
+    display: block;
+    min-height: 40px;
+    padding: 9px 0;
+  }
+  .fleet-summary {
+    margin-bottom: 16px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+  }
+  .fleet-summary > summary {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 14px;
+  }
+  .fleet-summary > summary::after {
+    content: "+";
+    margin-left: 12px;
+    color: var(--accent-text);
+  }
+  .fleet-summary[open] > summary::after {
+    content: "−";
+  }
+  .fleet-summary > .metrics {
+    margin: 0;
+    padding: 0 12px 12px;
+  }
+  .host-identity {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .host-identity > a {
+    font-size: 16px;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .compact-freshness {
+    display: inline-flex;
+  }
+  .fleet-table td[data-label="Readings"] {
+    display: none;
+  }
+  .fleet-table td[data-label="Resources"]::before {
+    display: none;
+  }
+  .resource-details {
+    width: 100%;
+  }
+  .resource-details > summary {
+    color: var(--accent-text);
+  }
+  .resource-details > summary::before {
+    content: "+ ";
+  }
+  .resource-details[open] > summary::before {
+    content: "− ";
+  }
+  .mobile-reading-time {
+    display: block;
+    margin-bottom: 8px;
+  }
+  .health-metrics {
+    display: block;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .health-metrics .metric {
+    display: grid;
+    grid-template-columns: minmax(110px, 1fr) 32px minmax(80px, 1fr);
+    align-items: center;
+    min-height: 0;
+    gap: 6px;
+    padding: 10px 12px;
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    border-radius: 0;
+  }
+  .health-metrics .metric:last-child {
+    border-bottom: 0;
+  }
+  .health-metrics .metric strong {
+    font-size: 21px;
+    text-align: center;
+  }
+  .health-metrics .metric small {
+    font-size: 11px;
+  }
+  .time-trigger {
+    min-height: 32px;
   }
 }

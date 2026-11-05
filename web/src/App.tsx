@@ -1,9 +1,20 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api, csrf, ApiError } from "./api";
 import type { Audit, Canary, Host, Job, Reading, User, Monitor } from "./types";
-import { Dialog, Empty, Form, Metric, Time, Tone, field, stamp } from "./ui";
+import {
+  Dialog,
+  ResponsiveDetails,
+  Empty,
+  Form,
+  Metric,
+  Time,
+  Tone,
+  field,
+  stamp,
+} from "./ui";
 import { Projects } from "./projects";
 import { GrantEditor } from "./grants";
+import { NavigationProvider, RouteLink, useNavigation } from "./navigation";
 
 const bytes = (n: number) =>
   n >= 2 ** 30
@@ -225,7 +236,11 @@ export function App() {
   if (!user) return <Auth onLogin={setUser} />;
   // Each authenticated mount owns its data; late responses from an unmounted
   // session cannot populate a later account's dashboard.
-  return <Dashboard key={user.id} user={user} onLogout={() => setUser(null)} />;
+  return (
+    <NavigationProvider key={user.id}>
+      <Dashboard user={user} onLogout={() => setUser(null)} />
+    </NavigationProvider>
+  );
 }
 
 function unavailableHost(h: Host): Host {
@@ -238,6 +253,25 @@ function unavailableHost(h: Host): Host {
 }
 
 function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
+  const { route, navigate, canLeave } = useNavigation();
+  const view = route.view,
+    selected = view === "host" ? route.id || "" : "";
+  const setView = (next: string) => {
+    navigate({ view: next });
+  };
+  useEffect(() => {
+    if (view === "access" && user.role !== "admin")
+      navigate({ view: "fleet" }, { replace: true, force: true });
+  }, [view, user.role, navigate]);
+  useEffect(() => {
+    const close = (event: PointerEvent) => {
+      const menu =
+        document.querySelector<HTMLDetailsElement>(".mobile-navigation");
+      if (menu?.open && !menu.contains(event.target as Node)) menu.open = false;
+    };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, []);
   const [hosts, setHosts] = useState<Host[]>([]),
     [canary, setCanary] = useState<Canary>({
       sources: [],
@@ -246,8 +280,6 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
     }),
     [jobs, setJobs] = useState<Job[]>([]),
     [audit, setAudit] = useState<Audit[]>([]),
-    [view, setView] = useState("fleet"),
-    [selected, setSelected] = useState(""),
     [detail, setDetail] = useState<{ host: Host; samples: Reading[] } | null>(
       null,
     ),
@@ -267,6 +299,11 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
     } | null>(null),
     [busy, setBusy] = useState(false);
   useEffect(() => setModalError(""), [modal]);
+  useEffect(() => {
+    document
+      .querySelector<HTMLDetailsElement>(".mobile-navigation")
+      ?.removeAttribute("open");
+  }, [route.view, route.id]);
   async function refresh() {
     const [h, c, j, a] = await Promise.all([
       api<{ hosts: Host[] }>("/api/hosts"),
@@ -366,11 +403,6 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
       setBusy(false);
     }
   }
-  function openHost(id: string) {
-    setSelected(id);
-    setView("host");
-    setDetail(null);
-  }
   async function job(action: string, args: object = {}) {
     if (!selected) return;
     await act(async () => {
@@ -394,6 +426,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
     } catch {}
   }
   function signOut() {
+    if (!canLeave()) return;
     void act(async () => {
       try {
         await api("/api/auth/logout", "POST", {});
@@ -401,6 +434,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
         if (!(error instanceof ApiError) || error.status !== 401) throw error;
       }
       csrf("");
+      navigate({ view: "fleet" }, { replace: true, force: true });
       onLogout();
     });
   }
@@ -417,22 +451,28 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
   const navigation = (mobile = false) => (
     <nav aria-label={mobile ? "Mobile navigation" : "Main navigation"}>
       {destinations.map(([key, label]) => (
-        <button
+        <RouteLink
           key={key}
-          className={view === key ? "active" : ""}
-          aria-current={view === key ? "page" : undefined}
-          onClick={(event) => {
-            setView(key);
-            event.currentTarget.closest("details")?.removeAttribute("open");
-          }}
+          to={{ view: key }}
+          className={
+            view === key || (key === "fleet" && view === "host") ? "active" : ""
+          }
+          aria-current={
+            view === key
+              ? "page"
+              : key === "fleet" && view === "host"
+                ? "location"
+                : undefined
+          }
         >
           {label}
           {key === "fleet" && <small>{hosts.length}</small>}
-        </button>
+        </RouteLink>
       ))}
     </nav>
   );
-  const current = detail?.host || hosts.find((h) => h.id === selected),
+  const selectedDetail = detail?.host.id === selected ? detail : null;
+  const current = selectedDetail?.host || hosts.find((h) => h.id === selected),
     reading = current?.latest;
   const filtered = hosts.filter((h) =>
     `${h.name} ${h.osVersion} ${h.addresses.join(" ")} ${h.groups.join(" ")} ${h.tags.join(" ")}`
@@ -469,23 +509,27 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
   }
   return (
     <div className="shell">
-      <a className="skip" href="#content">
+      <a
+        className="skip"
+        href="#content"
+        onClick={(event) => {
+          event.preventDefault();
+          const main = document.getElementById("content");
+          if (main) {
+            main.tabIndex = -1;
+            main.focus();
+          }
+        }}
+      >
         Skip to content
       </a>
       <aside className="sidebar">
-        <a
-          className="brand"
-          href="#"
-          onClick={(e) => {
-            e.preventDefault();
-            setView("fleet");
-          }}
-        >
+        <RouteLink className="brand" to={{ view: "fleet" }}>
           <img src="/phoenix.svg" width="40" height="40" alt="" />
           <span>
             Phoenix<small>INFRASTRUCTURE</small>
           </span>
-        </a>
+        </RouteLink>
         <span className="nav-label">WORKSPACE</span>
         {navigation()}
         <div className="sidebar-bottom">
@@ -523,7 +567,24 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                     : sectionName}
             </span>
           </span>
-          <details className="mobile-navigation">
+          <details
+            className="mobile-navigation"
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                event.currentTarget.open = false;
+                event.currentTarget.querySelector("summary")?.focus();
+              }
+            }}
+            onBlur={(event) => {
+              if (
+                !event.currentTarget.contains(
+                  event.relatedTarget as Node | null,
+                )
+              )
+                event.currentTarget.open = false;
+            }}
+          >
             <summary>
               <span>Menu</span>
               <strong>{sectionName}</strong>
@@ -583,36 +644,61 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                   </button>
                 )}
               </div>
-              <div className="metrics">
-                <Metric
-                  label="Managed hosts"
-                  value={hosts.length}
-                  detail="Enrolled in this workspace"
-                />
-                <Metric
-                  label="Agent connected"
-                  value={`${hosts.filter((h) => h.connectivity === "connected").length} / ${hosts.length}`}
-                  detail="Last contact within 45 seconds"
-                />
-                <Metric
-                  label="Fresh telemetry"
-                  value={`${hosts.filter((h) => h.freshness === "fresh").length} / ${hosts.length}`}
-                  detail="Measured and collected within 90 seconds"
-                />
-                <Metric
-                  label="Canary sources"
-                  value={
-                    canary.sources.length
-                      ? `${canary.sources.filter((s) => s.freshness === "fresh").length} / ${canary.sources.length}`
-                      : "Not configured"
-                  }
-                  detail="Independent uptime observations"
-                />
-              </div>
+              <ResponsiveDetails
+                className="fleet-summary"
+                label={
+                  <>
+                    Fleet summary{" "}
+                    <span className="muted">{hosts.length} hosts</span>
+                  </>
+                }
+              >
+                <div className="metrics">
+                  <Metric
+                    label="Managed hosts"
+                    value={hosts.length}
+                    detail="Enrolled in this workspace"
+                  />
+                  <Metric
+                    label="Agent connected"
+                    value={`${hosts.filter((h) => h.connectivity === "connected").length} / ${hosts.length}`}
+                    detail="Last contact within 45 seconds"
+                  />
+                  <Metric
+                    label="Fresh telemetry"
+                    value={`${hosts.filter((h) => h.freshness === "fresh").length} / ${hosts.length}`}
+                    detail="Measured and collected within 90 seconds"
+                  />
+                  <Metric
+                    label="Canary sources"
+                    value={
+                      canary.sources.length
+                        ? `${canary.sources.filter((s) => s.freshness === "fresh").length} / ${canary.sources.length}`
+                        : "Not configured"
+                    }
+                    detail="Independent uptime observations"
+                  />
+                </div>
+              </ResponsiveDetails>
               <section className="panel">
                 <div className="panel-heading">
                   <h2>
                     Hosts <span className="count">{hosts.length}</span>
+                    {hosts.some(
+                      (h) =>
+                        h.connectivity === "offline" || h.freshness === "stale",
+                    ) && (
+                      <span className="attention-note">
+                        {
+                          hosts.filter(
+                            (h) =>
+                              h.connectivity === "offline" ||
+                              h.freshness === "stale",
+                          ).length
+                        }{" "}
+                        offline or stale
+                      </span>
+                    )}
                   </h2>
                   <input
                     className="search"
@@ -666,12 +752,20 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                         {filtered.map((h) => (
                           <tr key={h.id}>
                             <td data-label="Host">
-                              <button
-                                className="text-link"
-                                onClick={() => openHost(h.id)}
-                              >
-                                {h.name}
-                              </button>
+                              <div className="host-identity">
+                                <RouteLink
+                                  className="text-link"
+                                  to={{ view: "host", id: h.id }}
+                                >
+                                  {h.name}
+                                </RouteLink>
+                                <span className="compact-freshness">
+                                  <Tone
+                                    value={h.freshness}
+                                    label={`Readings ${h.freshness}`}
+                                  />
+                                </span>
+                              </div>
                               <small>
                                 {h.osVersion || "Awaiting enrollment"} ·{" "}
                                 {h.addresses[0] || "No address"}
@@ -703,56 +797,65 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                               </small>
                             </td>
                             <td data-label="Resources">
-                              <div className="resource-summary">
-                                <div>
-                                  <small>CPU</small>
-                                  <Usage
-                                    label="CPU"
-                                    value={h.latest?.cpuPercent ?? null}
-                                    stale={h.freshness !== "fresh"}
-                                  />
+                              <ResponsiveDetails
+                                className="resource-details"
+                                label="Resource readings"
+                              >
+                                <small className="mobile-reading-time">
+                                  Measured{" "}
+                                  <Time value={h.latest?.measuredAt || 0} />
+                                </small>
+                                <div className="resource-summary">
+                                  <div>
+                                    <small>CPU</small>
+                                    <Usage
+                                      label="CPU"
+                                      value={h.latest?.cpuPercent ?? null}
+                                      stale={h.freshness !== "fresh"}
+                                    />
+                                  </div>
+                                  <div>
+                                    <small>Memory</small>
+                                    <Usage
+                                      label="Memory"
+                                      value={
+                                        h.latest?.memoryTotal
+                                          ? (100 * h.latest.memoryUsed) /
+                                            h.latest.memoryTotal
+                                          : null
+                                      }
+                                      stale={h.freshness !== "fresh"}
+                                    />
+                                  </div>
+                                  <div>
+                                    <small>Disk /</small>
+                                    <Usage
+                                      label="Disk"
+                                      value={
+                                        h.latest?.diskTotal
+                                          ? (100 * h.latest.diskUsed) /
+                                            h.latest.diskTotal
+                                          : null
+                                      }
+                                      stale={h.freshness !== "fresh"}
+                                    />
+                                  </div>
                                 </div>
-                                <div>
-                                  <small>Memory</small>
-                                  <Usage
-                                    label="Memory"
-                                    value={
-                                      h.latest?.memoryTotal
-                                        ? (100 * h.latest.memoryUsed) /
-                                          h.latest.memoryTotal
-                                        : null
-                                    }
-                                    stale={h.freshness !== "fresh"}
-                                  />
-                                </div>
-                                <div>
-                                  <small>Disk /</small>
-                                  <Usage
-                                    label="Disk"
-                                    value={
-                                      h.latest?.diskTotal
-                                        ? (100 * h.latest.diskUsed) /
-                                          h.latest.diskTotal
-                                        : null
-                                    }
-                                    stale={h.freshness !== "fresh"}
-                                  />
-                                </div>
-                              </div>
-                              <details className="measurement-details">
-                                <summary>Network & uptime</summary>
-                                <div>
-                                  {h.latest?.networkRxBps != null
-                                    ? bytes(h.latest.networkRxBps) + "/s"
-                                    : "Unknown"}
-                                  {" received · "}
-                                  {h.latest
-                                    ? uptime(h.latest.uptimeSeconds)
-                                    : "Unknown"}
-                                  {" since boot"}
-                                  {h.freshness !== "fresh" && " · last known"}
-                                </div>
-                              </details>
+                                <details className="measurement-details">
+                                  <summary>Network & uptime</summary>
+                                  <div>
+                                    {h.latest?.networkRxBps != null
+                                      ? bytes(h.latest.networkRxBps) + "/s"
+                                      : "Unknown"}
+                                    {" received · "}
+                                    {h.latest
+                                      ? uptime(h.latest.uptimeSeconds)
+                                      : "Unknown"}
+                                    {" since boot"}
+                                    {h.freshness !== "fresh" && " · last known"}
+                                  </div>
+                                </details>
+                              </ResponsiveDetails>
                             </td>
                           </tr>
                         ))}
@@ -769,7 +872,18 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
           )}
           {view === "host" &&
             (!current ? (
-              <Empty>Loading host…</Empty>
+              <>
+                <div className="page-heading">
+                  <div>
+                    <h1 key="host-title">Host details</h1>
+                  </div>
+                </div>
+                <Empty>
+                  {pollError
+                    ? "This host is unavailable or cannot be read by your account."
+                    : "Loading host…"}
+                </Empty>
+              </>
             ) : (
               <>
                 <div className="page-heading">
@@ -780,7 +894,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                     >
                       ← All hosts
                     </button>
-                    <h1>{current.name}</h1>
+                    <h1 key="host-title">{current.name}</h1>
                     <p className="muted">
                       {!current.verified
                         ? "Identity verification pending · "
@@ -884,12 +998,54 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                         detail={`Measured ${stamp(reading.measuredAt)}`}
                       />
                       <Metric
-                        label="Memory"
-                        value={`${bytes(reading.memoryUsed)} / ${bytes(reading.memoryTotal)}`}
+                        label="Memory used"
+                        value={
+                          reading.memoryTotal ? (
+                            <span className="quantity">
+                              {bytes(reading.memoryUsed)}
+                            </span>
+                          ) : (
+                            "Unknown"
+                          )
+                        }
+                        detail={
+                          reading.memoryTotal ? (
+                            <>
+                              of{" "}
+                              <span className="quantity">
+                                {bytes(reading.memoryTotal)}
+                              </span>{" "}
+                              total
+                            </>
+                          ) : (
+                            "No memory reading"
+                          )
+                        }
                       />
                       <Metric
-                        label="Disk /"
-                        value={`${bytes(reading.diskUsed)} / ${bytes(reading.diskTotal)}`}
+                        label="Disk used (/)"
+                        value={
+                          reading.diskTotal ? (
+                            <span className="quantity">
+                              {bytes(reading.diskUsed)}
+                            </span>
+                          ) : (
+                            "Unknown"
+                          )
+                        }
+                        detail={
+                          reading.diskTotal ? (
+                            <>
+                              of{" "}
+                              <span className="quantity">
+                                {bytes(reading.diskTotal)}
+                              </span>{" "}
+                              total
+                            </>
+                          ) : (
+                            "No disk reading"
+                          )
+                        }
                       />
                       <Metric
                         label="Network counters"
@@ -910,7 +1066,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                           At most 240 readings · gaps stay unknown
                         </span>
                       </div>
-                      <History samples={detail?.samples || []} />
+                      <History samples={selectedDetail?.samples || []} />
                     </section>
                   </>
                 )}
@@ -918,7 +1074,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                   <section className="panel">
                     <div className="panel-heading">
                       <h2>systemd services</h2>
-                      <span className="muted">Read-only snapshot</span>
+                      <span className="muted">Service state snapshot</span>
                     </div>
                     {!reading?.services.length ? (
                       <Empty>No service readings available.</Empty>
@@ -1267,7 +1423,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
             <Projects user={user} onVerify={() => setModal("auth")} />
           )}
           {view === "access" && user.role === "admin" && (
-            <Access act={act} onVerify={() => setModal("auth")} />
+            <Access act={act} hosts={hosts} onVerify={() => setModal("auth")} />
           )}
         </main>
         <footer>
@@ -1762,9 +1918,11 @@ function MappingForm({
 }
 function Access({
   act,
+  hosts,
   onVerify,
 }: {
   act: (fn: () => Promise<void>) => Promise<void>;
+  hosts: Host[];
   onVerify: () => void;
 }) {
   const [users, setUsers] = useState<User[]>([]),
@@ -1856,6 +2014,7 @@ function Access({
           </div>
           <div className="panel-body">
             <GrantEditor
+              hosts={hosts}
               users={users.filter((u) => u.role !== "admin")}
               usersLoaded={usersLoaded}
               onVerify={onVerify}

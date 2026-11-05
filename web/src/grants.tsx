@@ -1,7 +1,24 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "./api";
-import type { Grant, Project, User } from "./types";
+import type { Grant, Host, Project, User } from "./types";
 import { ErrorNotice } from "./ui";
+import { useUnsavedChanges } from "./navigation";
+
+const actionLabels: Record<string, string> = {
+  "host.read": "View host status",
+  "host.manage": "Edit host details",
+  diagnostic: "Run diagnostics",
+  "services.inspect": "Inspect services",
+  "logs.read": "Read service logs",
+  "service.restart": "Restart allowed services",
+  "host.reboot": "Request a reboot",
+  "jobs.output": "View job output",
+  "jobs.cancel": "Cancel jobs",
+  "project.read": "View project",
+  "project.manage": "Edit project details",
+  "github.read": "View repository health",
+  "github.sync": "Refresh repository health",
+};
 
 const hostActions = [
   "host.read",
@@ -37,10 +54,12 @@ type Load =
  */
 export function GrantEditor({
   users,
+  hosts,
   usersLoaded,
   onVerify,
 }: {
   users: User[];
+  hosts: Host[];
   usersLoaded: boolean;
   onVerify: () => void;
 }) {
@@ -51,6 +70,7 @@ export function GrantEditor({
     [projectsError, setProjectsError] = useState(""),
     [scopeType, setScopeType] = useState("host"),
     [scope, setScope] = useState(""),
+    [manualTarget, setManualTarget] = useState(false),
     [actions, setActions] = useState<string[]>([]),
     [error, setError] = useState<unknown>(null),
     [notice, setNotice] = useState(""),
@@ -86,7 +106,16 @@ export function GrantEditor({
       setLoad({ state: "failed", error: e });
     }
   }
-  function choose(id: string) {
+  function choose(id: string, force = false) {
+    if (
+      !force &&
+      id !== userId &&
+      changed &&
+      !window.confirm(
+        "Discard unsaved permission changes before selecting another account?",
+      )
+    )
+      return;
     setUserId(id);
     setError(null);
     setNotice("");
@@ -102,7 +131,7 @@ export function GrantEditor({
   // Drop a selection whose account disappeared from the list.
   useEffect(() => {
     if (userId && usersLoaded && !users.some((u) => u.id === userId))
-      choose("");
+      choose("", true);
   }, [users, usersLoaded]);
 
   const loaded = load.state === "loaded" ? load.grants : null;
@@ -111,6 +140,8 @@ export function GrantEditor({
   const added = working.filter((g) => !saved.has(key(g))).length,
     removed = (loaded || []).filter((g) => !pending.has(key(g))).length;
   const changed = added + removed > 0;
+  useUnsavedChanges(changed, "account permissions");
+  const groups = [...new Set(hosts.flatMap((host) => host.groups))].sort();
   const available = scopeType === "project" ? projectActions : hostActions;
 
   function addGrants() {
@@ -244,9 +275,12 @@ export function GrantEditor({
                         )}
                       </td>
                       <td>
-                        <code>
-                          {g.action === "*" ? "* (all actions)" : g.action}
-                        </code>
+                        {g.action === "*"
+                          ? "All actions"
+                          : actionLabels[g.action] || g.action}
+                        <small>
+                          <code>{g.action}</code>
+                        </small>
                         {!saved.has(key(g)) && <small>Added · unsaved</small>}
                       </td>
                       <td>
@@ -280,11 +314,12 @@ export function GrantEditor({
             onChange={(e) => {
               setScopeType(e.target.value);
               setScope("");
+              setManualTarget(false);
               setActions([]);
             }}
           >
-            <option value="host">Host ID</option>
-            <option value="group">Group name</option>
+            <option value="host">Host</option>
+            <option value="group">Group</option>
             <option value="all">All hosts (*)</option>
             <option value="project" disabled={!projects?.length}>
               Project
@@ -317,17 +352,59 @@ export function GrantEditor({
             </select>
           </label>
         ) : (
-          <label>
-            Host ID, group name or *
-            <input
-              name="scope"
-              autoComplete="off"
-              maxLength={80}
-              value={scopeType === "all" ? "*" : scope}
-              readOnly={scopeType === "all"}
-              onChange={(e) => setScope(e.target.value)}
-            />
-          </label>
+          <>
+            {scopeType !== "all" && (
+              <label>
+                {scopeType === "host" ? "Host" : "Group"}
+                <select
+                  name="grantTarget"
+                  value={manualTarget ? "__manual__" : scope}
+                  onChange={(event) => {
+                    setManualTarget(event.target.value === "__manual__");
+                    setScope(
+                      event.target.value === "__manual__"
+                        ? ""
+                        : event.target.value,
+                    );
+                  }}
+                >
+                  <option value="">
+                    Select {scopeType === "host" ? "a host" : "a group"}
+                  </option>
+                  {scopeType === "host"
+                    ? hosts.map((host) => (
+                        <option key={host.id} value={host.id}>
+                          {host.name}
+                        </option>
+                      ))
+                    : groups.map((group) => (
+                        <option key={group} value={group}>
+                          {group}
+                        </option>
+                      ))}
+                  <option value="__manual__">
+                    Enter {scopeType === "host" ? "a host ID" : "a group name"}{" "}
+                    manually
+                  </option>
+                </select>
+              </label>
+            )}
+            <label hidden={scopeType !== "all" && !manualTarget}>
+              {scopeType === "all"
+                ? "All hosts"
+                : scopeType === "host"
+                  ? "Host ID"
+                  : "Group name"}
+              <input
+                name="scope"
+                autoComplete="off"
+                maxLength={80}
+                value={scopeType === "all" ? "*" : scope}
+                readOnly={scopeType === "all"}
+                onChange={(e) => setScope(e.target.value)}
+              />
+            </label>
+          </>
         )}
         <div className="check-grid" role="group" aria-label="Actions">
           {available.map((a) => {
@@ -345,7 +422,12 @@ export function GrantEditor({
                     )
                   }
                 />
-                {a}
+                <span>
+                  {actionLabels[a] || a}
+                  <small>
+                    <code>{a}</code>
+                  </small>
+                </span>
               </label>
             );
           })}

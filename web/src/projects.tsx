@@ -3,6 +3,7 @@ import { api, ApiError } from "./api";
 import { GitHubPanel } from "./github";
 import type { Project, ProjectCapabilities, ProjectEvent, User } from "./types";
 import { Empty, ErrorNotice, Time, Tone, stamp, type ToneName } from "./ui";
+import { RouteLink, useNavigation, useUnsavedChanges } from "./navigation";
 
 export const moduleInfo: [string, string][] = [
   ["dependencies", "Repository health · read-only GitHub checks and alerts"],
@@ -88,7 +89,8 @@ export function Projects({
   user: User;
   onVerify: () => void;
 }) {
-  const [selected, setSelected] = useState("");
+  const { route, navigate } = useNavigation();
+  const selected = route.id || "";
   // Each project detail mount owns its data; a late response for one project
   // cannot populate another project's view.
   if (selected)
@@ -98,10 +100,17 @@ export function Projects({
         id={selected}
         user={user}
         onVerify={onVerify}
-        onBack={() => setSelected("")}
       />
     );
-  return <Inventory user={user} onVerify={onVerify} onOpen={setSelected} />;
+  return (
+    <Inventory
+      user={user}
+      onVerify={onVerify}
+      onOpen={(id) => {
+        navigate({ view: "projects", id });
+      }}
+    />
+  );
 }
 
 function Inventory({
@@ -229,12 +238,12 @@ function Inventory({
                 {visible.map((p) => (
                   <tr key={p.id}>
                     <td data-label="Project">
-                      <button
+                      <RouteLink
+                        to={{ view: "projects", id: p.id }}
                         className="text-link"
-                        onClick={() => onOpen(p.id)}
                       >
                         {p.name}
-                      </button>
+                      </RouteLink>
                       <small>{p.description || p.id}</small>
                     </td>
                     <td data-label="Status">
@@ -293,6 +302,10 @@ function Register({
     [error, setError] = useState<unknown>(null),
     [busy, setBusy] = useState(false);
   const alive = useRef(true);
+  const markSaved = useUnsavedChanges(
+    !!(id || name || description || modules.length),
+    "new project",
+  );
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -319,7 +332,10 @@ function Register({
         description,
         modules,
       });
-      if (alive.current) onCreated(p);
+      if (alive.current) {
+        markSaved();
+        onCreated(p);
+      }
     } catch (err) {
       if (alive.current) setError(err);
     } finally {
@@ -440,12 +456,10 @@ function ProjectDetail({
   id,
   user,
   onVerify,
-  onBack,
 }: {
   id: string;
   user: User;
   onVerify: () => void;
-  onBack: () => void;
 }) {
   const [project, setProject] = useState<Project | null>(null),
     [caps, setCaps] = useState<ProjectCapabilities | null>(null),
@@ -462,6 +476,7 @@ function ProjectDetail({
     editRef = useRef<Edit | null>(null),
     settingsRef = useRef<HTMLDetailsElement>(null);
   editRef.current = edit;
+  useUnsavedChanges(!!edit && isDirty(edit), "project details");
   useEffect(() => {
     if (conflict && settingsRef.current) settingsRef.current.open = true;
   }, [conflict]);
@@ -622,9 +637,9 @@ function ProjectDetail({
   }
 
   const back = (
-    <button className="text-link" onClick={onBack}>
+    <RouteLink className="text-link" to={{ view: "projects" }}>
       ← All projects
-    </button>
+    </RouteLink>
   );
   if (gone)
     return (
@@ -687,6 +702,18 @@ function ProjectDetail({
             {project.description || "No description."}
           </p>
         </div>
+        <button
+          onClick={() => {
+            const settings = settingsRef.current;
+            if (settings) {
+              settings.open = true;
+              settings.scrollIntoView({ block: "start" });
+              settings.querySelector("summary")?.focus();
+            }
+          }}
+        >
+          Project settings
+        </button>
       </div>
       <div aria-live="polite">
         <ErrorNotice

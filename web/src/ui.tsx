@@ -2,6 +2,7 @@ import {
   useEffect,
   useId,
   useRef,
+  useState,
   type FormEvent,
   type ReactNode,
 } from "react";
@@ -13,6 +14,8 @@ export const stamp = (n: number) =>
   n ? new Date(n).toLocaleString() : "Never";
 
 export function Time({ value }: { value: number }) {
+  const [expanded, setExpanded] = useState(false);
+  const id = useId();
   if (!value) return <span>Never</span>;
   const elapsed = Math.max(0, Math.floor((Date.now() - value) / 1000));
   const label =
@@ -24,14 +27,56 @@ export function Time({ value }: { value: number }) {
           ? `${Math.floor(elapsed / 3600)}h ago`
           : new Date(value).toLocaleDateString();
   return (
-    <time
-      dateTime={new Date(value).toISOString()}
-      title={stamp(value)}
-      tabIndex={0}
+    <span className="timestamp">
+      <button
+        type="button"
+        className="time-trigger"
+        aria-expanded={expanded}
+        aria-controls={id}
+        aria-label={`${expanded ? "Hide" : "Show"} exact time: ${label}`}
+        onClick={() => setExpanded(!expanded)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") setExpanded(false);
+        }}
+      >
+        <time dateTime={new Date(value).toISOString()}>{label}</time>
+        <span aria-hidden="true">⌄</span>
+      </button>
+      <span id={id} className="time-exact" hidden={!expanded}>
+        {new Date(value).toLocaleString(undefined, { timeZoneName: "short" })}
+      </span>
+    </span>
+  );
+}
+
+/** Summary information starts collapsed on small screens without losing fields. */
+export function ResponsiveDetails({
+  children,
+  label,
+  className = "",
+}: {
+  children: ReactNode;
+  label: ReactNode;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(
+    () => matchMedia("(min-width: 721px)").matches,
+  );
+  useEffect(() => {
+    const query = matchMedia("(min-width: 721px)");
+    const changed = () => setOpen(query.matches);
+    query.addEventListener("change", changed);
+    return () => query.removeEventListener("change", changed);
+  }, []);
+  return (
+    <details
+      className={`responsive-details ${className}`}
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
     >
-      {label}
-      <span className="time-exact">{stamp(value)}</span>
-    </time>
+      <summary>{label}</summary>
+      {children}
+    </details>
   );
 }
 
@@ -139,7 +184,7 @@ export function Metric({
 }: {
   label: string;
   value: ReactNode;
-  detail?: string;
+  detail?: ReactNode;
 }) {
   return (
     <div className="metric">
