@@ -2404,9 +2404,13 @@ textarea:disabled {
 }
 .job-filter-count {
   margin: 0;
-  padding: 0 20px 12px;
   font-size: 13px;
   color: var(--text-2);
+}
+.job-history-warning {
+  margin: 0;
+  padding: 0 20px 12px;
+  color: var(--warning-text);
 }
 .job-cancel {
   display: inline-block;
@@ -2530,7 +2534,7 @@ textarea:disabled {
     font-size: 16px;
     padding: 8px;
   }
-  .job-filter-count {
+  .job-history-warning {
     padding: 0 14px 10px;
   }
   .jobs-table tbody tr {

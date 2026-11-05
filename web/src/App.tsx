@@ -2428,8 +2428,18 @@ function Jobs({
     <section className="panel jobs-panel" id={id}>
       <div className="panel-heading">
         <h2>Jobs</h2>
-        <span className="muted" id={boundsId}>
-          Within latest 200 · output permission required
+        <span
+          className="muted job-filter-count"
+          id={boundsId}
+          role="status"
+          title="Command output requires a separate permission."
+        >
+          {!!jobs.length && (
+            <>
+              {filtered.length} of {jobs.length} ·{" "}
+            </>
+          )}
+          Within latest 200
         </span>
       </div>
       <form
@@ -2502,10 +2512,9 @@ function Jobs({
           </button>
         )}
       </form>
-      {!!jobs.length && (
-        <p className="job-filter-count" role="status">
-          {filtered.length} of {jobs.length} loaded jobs
-          {unavailable ? " · retained history; source unavailable" : ""}
+      {unavailable && !!jobs.length && (
+        <p className="job-history-warning" role="status">
+          Retained history; source unavailable.
         </p>
       )}
       {!jobs.length ? (

@@ -23,7 +23,15 @@ try {
   execFileSync("docker", ["rm", container], { timeout: 10000 });
 }
 
-function installFixture() {
+function installFixture(visualCapture = false) {
+  // Screenshot scenes exercise presentation, not polling cadence. Accelerate
+  // only five-second refresh delays so synthetic state changes render promptly.
+  // The interactive regression suite keeps the production timer values.
+  if (visualCapture) {
+    const fixtureSetTimeout = window.setTimeout.bind(window);
+    window.setTimeout = (callback, delay, ...args) =>
+      fixtureSetTimeout(callback, delay === 5000 ? 1000 : delay, ...args);
+  }
   const now = Date.now();
   const user = (role) => ({ id: `${role}-fixture`, name: `${role}-fixture`, role, active: true });
   const reading = {
@@ -305,7 +313,7 @@ const server = createServer((request, response) => {
   if (!file.startsWith(web + sep) || !existsSync(file)) { response.writeHead(404).end(); return; }
   const mime = file.endsWith(".js") ? "text/javascript" : file.endsWith(".css") ? "text/css" : file.endsWith(".svg") ? "image/svg+xml" : "text/html";
   let body = readFileSync(file);
-  if (file.endsWith("index.html")) body = Buffer.from(body.toString().replace("<head>", `<head><script>(${installFixture.toString()})();</script>`));
+  if (file.endsWith("index.html")) body = Buffer.from(body.toString().replace("<head>", `<head><script>(${installFixture.toString()})(${visual});</script>`));
   response.writeHead(200, { "Content-Type": mime });
   response.end(body);
 });
@@ -401,6 +409,7 @@ try {
     assert.ok(png.length <= 2 * 1024 ** 2, "Screenshot exceeds evidence bound");
     writeFileSync(join(evidence, `${name}.png`), png);
     screenshots.push(`${name}.png`);
+    if (visual) console.log(`Captured ${screenshots.length}: ${name}`);
   };
   await send("Runtime.enable", {}, sessionId);
   await send("Page.enable", {}, sessionId);
@@ -1017,7 +1026,7 @@ try {
   pass("expired session sign-out returns to authentication; unconfirmed server failures remain visible");
   }
   assert.deepEqual(errors, [], "Uncaught browser exceptions");
-  writeFileSync(join(evidence, "results.json"), JSON.stringify({ status: "passed", browser: version.product, screenshots, cases }, null, 2));
+  writeFileSync(join(evidence, "results.json"), JSON.stringify({ status: "passed", browser: version.product, screenshots, cases, refreshDelays: visual ? "Five-second refresh delays accelerated to one second for synthetic captures only" : "Production timers" }, null, 2));
   console.log(`${visual ? "UI capture" : "Browser fixture proof"}: ${version.product}; ${cases} regression cases; ${screenshots.length} bounded screenshots`);
 } finally {
   await send("Browser.close").catch(() => {});
