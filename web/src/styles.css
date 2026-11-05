@@ -1561,7 +1561,7 @@ textarea:disabled {
   .compact-freshness {
     display: inline-flex;
   }
-  .fleet-table td[data-label="Readings"] {
+  .fleet-table td[data-label="Reading freshness"] {
     display: none;
   }
   .fleet-table td[data-label="Resources"]::before {
@@ -1695,6 +1695,9 @@ textarea:disabled {
   display: block;
   margin-bottom: 6px;
 }
+.mobile-resource-warning {
+  display: none;
+}
 @media (min-width: 721px) {
   .sidebar {
     overflow-y: auto;
@@ -1707,6 +1710,10 @@ textarea:disabled {
 @media (max-width: 720px) {
   .desktop-resource-warning {
     display: none;
+  }
+  .mobile-resource-warning {
+    display: block;
+    flex-basis: 100%;
   }
   .project-page-heading {
     margin-bottom: 18px;

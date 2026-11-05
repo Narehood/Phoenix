@@ -395,8 +395,9 @@ try {
   await click("Fleet overview");
   await wait("!!document.querySelector('.fleet-table')");
   assert.ok(await evaluate("document.documentElement.scrollWidth <= innerWidth && document.querySelector('.fleet-table').scrollWidth <= innerWidth"), "Host statuses require horizontal document/table scrolling on mobile");
+  assert.equal(await evaluate("[...document.querySelector('.fleet-table tbody tr').querySelectorAll('.chip')].filter(c => c.checkVisibility() && /fresh/i.test(c.textContent)).length"), 1, "Mobile host repeats its reading freshness status");
   await evaluate("window.fixture.hosts[0].resourceHealth = 'warning'; window.fixture.hosts[0].latest.cpuPercent = 96");
-  await wait("document.querySelector('.attention-filter')?.textContent.includes('(1)') && [...document.querySelectorAll('.resource-details > summary .chip')].some(c => c.checkVisibility() && c.textContent.includes('Resource warning'))");
+  await wait("document.querySelector('.attention-filter')?.textContent.includes('(1)') && [...document.querySelectorAll('.mobile-resource-warning .chip')].some(c => c.checkVisibility() && c.textContent.includes('Resource warning'))");
   assert.equal(await evaluate("document.querySelector('.resource-details').open"), false, "Resource-warning proof needs a collapsed card");
   await click("Needs attention");
   await wait("document.querySelector('.attention-filter').getAttribute('aria-pressed') === 'true' && document.querySelectorAll('.fleet-table tbody tr').length === 1 && document.querySelector('.fleet-table').innerText.includes('ADMIN-ONLY-HOST')");

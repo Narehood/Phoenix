@@ -827,6 +827,14 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                                     label={`${h.freshness} readings`}
                                   />
                                 </span>
+                                {h.resourceHealth === "warning" && (
+                                  <span className="mobile-resource-warning">
+                                    <Tone
+                                      value="warning"
+                                      label="Resource warning"
+                                    />
+                                  </span>
+                                )}
                               </div>
                               <small>
                                 {h.osVersion || "Awaiting enrollment"} ·{" "}
@@ -869,17 +877,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                               )}
                               <ResponsiveDetails
                                 className="resource-details"
-                                label={
-                                  <>
-                                    Resource readings{" "}
-                                    {h.resourceHealth === "warning" && (
-                                      <Tone
-                                        value="warning"
-                                        label="Resource warning"
-                                      />
-                                    )}
-                                  </>
-                                }
+                                label="Resource readings"
                               >
                                 <small className="mobile-reading-time">
                                   Measured{" "}
