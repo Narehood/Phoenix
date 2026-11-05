@@ -7,6 +7,7 @@ import {
   Empty,
   Form,
   Metric,
+  StatusNotice,
   Time,
   Tone,
   field,
@@ -29,6 +30,10 @@ const list = (s: string) =>
     .split(",")
     .map((v) => v.trim())
     .filter(Boolean);
+const needsAttention = (host: Host) =>
+  host.connectivity === "offline" ||
+  host.freshness === "stale" ||
+  host.resourceHealth === "warning";
 function monitorState(m: Monitor) {
   const observations = m.observations || [];
   const fresh = observations.filter(
@@ -288,6 +293,9 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
     [modalError, setModalError] = useState(""),
     [notice, setNotice] = useState(""),
     [search, setSearch] = useState(""),
+    [attentionOnly, setAttentionOnly] = useState(false),
+    [verificationUntil, setVerificationUntil] = useState(0),
+    [verificationExpired, setVerificationExpired] = useState(false),
     [result, setResult] = useState<Job | null>(null),
     [modal, setModal] = useState<
       "enroll" | "reboot" | "revoke" | "auth" | null
@@ -299,6 +307,26 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
     } | null>(null),
     [busy, setBusy] = useState(false);
   useEffect(() => setModalError(""), [modal]);
+  useEffect(() => {
+    if (!verificationUntil) return;
+    const expire = () => {
+      if (Date.now() >= verificationUntil) {
+        setVerificationUntil(0);
+        setVerificationExpired(true);
+      }
+    };
+    const timer = setTimeout(
+      expire,
+      Math.max(0, verificationUntil - Date.now()),
+    );
+    window.addEventListener("focus", expire);
+    document.addEventListener("visibilitychange", expire);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("focus", expire);
+      document.removeEventListener("visibilitychange", expire);
+    };
+  }, [verificationUntil]);
   useEffect(() => {
     document
       .querySelector<HTMLDetailsElement>(".mobile-navigation")
@@ -474,10 +502,14 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
   const selectedDetail = detail?.host.id === selected ? detail : null;
   const current = selectedDetail?.host || hosts.find((h) => h.id === selected),
     reading = current?.latest;
-  const filtered = hosts.filter((h) =>
-    `${h.name} ${h.osVersion} ${h.addresses.join(" ")} ${h.groups.join(" ")} ${h.tags.join(" ")}`
-      .toLowerCase()
-      .includes(search.toLowerCase()),
+  const retainedReading = !!reading && current?.freshness !== "fresh";
+  const attentionCount = hosts.filter(needsAttention).length;
+  const filtered = hosts.filter(
+    (h) =>
+      (!attentionOnly || needsAttention(h)) &&
+      `${h.name} ${h.osVersion} ${h.addresses.join(" ")} ${h.groups.join(" ")} ${h.tags.join(" ")}`
+        .toLowerCase()
+        .includes(search.toLowerCase()),
   );
   const hostJobs =
     selected && view === "host"
@@ -622,6 +654,23 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
             )}
             {notice && <div className="notice">{notice}</div>}
           </div>
+          <StatusNotice>
+            {verificationUntil ? (
+              <>
+                Identity verified. Verify again after{" "}
+                <time dateTime={new Date(verificationUntil).toISOString()}>
+                  {new Date(verificationUntil).toLocaleString(undefined, {
+                    timeZoneName: "short",
+                  })}
+                </time>{" "}
+                for sensitive actions.
+              </>
+            ) : verificationExpired ? (
+              "Recent verification expired. Verify your identity again when prompted."
+            ) : (
+              ""
+            )}
+          </StatusNotice>
           {view === "fleet" && (
             <>
               <div className="page-heading">
@@ -684,22 +733,14 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                 <div className="panel-heading">
                   <h2>
                     Hosts <span className="count">{hosts.length}</span>
-                    {hosts.some(
-                      (h) =>
-                        h.connectivity === "offline" || h.freshness === "stale",
-                    ) && (
-                      <span className="attention-note">
-                        {
-                          hosts.filter(
-                            (h) =>
-                              h.connectivity === "offline" ||
-                              h.freshness === "stale",
-                          ).length
-                        }{" "}
-                        offline or stale
-                      </span>
-                    )}
                   </h2>
+                  <button
+                    className="attention-filter"
+                    aria-pressed={attentionOnly}
+                    onClick={() => setAttentionOnly(!attentionOnly)}
+                  >
+                    Needs attention ({attentionCount})
+                  </button>
                   <input
                     className="search"
                     aria-label="Search hosts"
@@ -708,6 +749,17 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                     onChange={(e) => setSearch(e.target.value)}
                   />
                 </div>
+                {attentionOnly && (
+                  <p className="filter-context" role="status">
+                    Showing offline agents, stale readings or resource warnings.{" "}
+                    <button
+                      className="text-link"
+                      onClick={() => setAttentionOnly(false)}
+                    >
+                      Show all hosts
+                    </button>
+                  </p>
+                )}
                 {!hosts.length ? (
                   <Empty>
                     <h3>Your fleet starts here</h3>
@@ -729,8 +781,18 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                 ) : !filtered.length ? (
                   <Empty>
                     <h3>No matching hosts</h3>
-                    <p>Try another name, address, tag or group.</p>
-                    <button onClick={() => setSearch("")}>Clear search</button>
+                    <p>
+                      Try another name, address, tag or group, or clear the
+                      attention filter.
+                    </p>
+                    <button
+                      onClick={() => {
+                        setSearch("");
+                        setAttentionOnly(false);
+                      }}
+                    >
+                      Clear filters
+                    </button>
                   </Empty>
                 ) : (
                   <div className="table-scroll">
@@ -743,8 +805,8 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                         <tr>
                           <th>Host</th>
                           <th>Canary uptime</th>
-                          <th>Agent</th>
-                          <th>Readings</th>
+                          <th>Agent connection</th>
+                          <th>Reading freshness</th>
                           <th>Resources</th>
                         </tr>
                       </thead>
@@ -762,7 +824,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                                 <span className="compact-freshness">
                                   <Tone
                                     value={h.freshness}
-                                    label={`Readings ${h.freshness}`}
+                                    label={`${h.freshness} readings`}
                                   />
                                 </span>
                               </div>
@@ -784,22 +846,40 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                                 {mappings(h).length} mapped monitors
                               </small>
                             </td>
-                            <td data-label="Agent">
+                            <td data-label="Agent connection">
                               <Tone value={h.connectivity} />
                               <small>
                                 Contact <Time value={h.lastContact} />
                               </small>
                             </td>
-                            <td data-label="Readings">
+                            <td data-label="Reading freshness">
                               <Tone value={h.freshness} />
                               <small>
                                 <Time value={h.latest?.measuredAt || 0} />
                               </small>
                             </td>
                             <td data-label="Resources">
+                              {h.resourceHealth === "warning" && (
+                                <span className="desktop-resource-warning">
+                                  <Tone
+                                    value="warning"
+                                    label="Resource warning"
+                                  />
+                                </span>
+                              )}
                               <ResponsiveDetails
                                 className="resource-details"
-                                label="Resource readings"
+                                label={
+                                  <>
+                                    Resource readings{" "}
+                                    {h.resourceHealth === "warning" && (
+                                      <Tone
+                                        value="warning"
+                                        label="Resource warning"
+                                      />
+                                    )}
+                                  </>
+                                }
                               >
                                 <small className="mobile-reading-time">
                                   Measured{" "}
@@ -970,12 +1050,12 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                     detail="Independent monitoring"
                   />
                   <Metric
-                    label="Management"
+                    label="Agent connection"
                     value={<Tone value={current.connectivity} />}
                     detail={`Contact ${stamp(current.lastContact)}`}
                   />
                   <Metric
-                    label="Telemetry"
+                    label="Reading freshness"
                     value={<Tone value={current.freshness} />}
                     detail={`Collected ${stamp(reading?.collectedAt || 0)}`}
                   />
@@ -985,11 +1065,20 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                     detail="Requires complete fresh readings"
                   />
                 </div>
+                {retainedReading && (
+                  <p className="notice retained reading-snapshot" role="status">
+                    <strong>Last known readings.</strong> Measured{" "}
+                    {stamp(reading!.measuredAt)}. Resource values, service
+                    states and processes below are a retained snapshot; current
+                    state is unknown.
+                  </p>
+                )}
                 {reading && (
                   <>
                     <div className="metrics">
                       <Metric
                         label="CPU"
+                        retained={retainedReading}
                         value={
                           reading.cpuPercent === null
                             ? "Sampling…"
@@ -999,6 +1088,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                       />
                       <Metric
                         label="Memory used"
+                        retained={retainedReading}
                         value={
                           reading.memoryTotal ? (
                             <span className="quantity">
@@ -1024,6 +1114,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                       />
                       <Metric
                         label="Disk used (/)"
+                        retained={retainedReading}
                         value={
                           reading.diskTotal ? (
                             <span className="quantity">
@@ -1049,6 +1140,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                       />
                       <Metric
                         label="Network counters"
+                        retained={retainedReading}
                         value={bytes(reading.networkRx)}
                         detail={`Received · sent ${bytes(reading.networkTx)} · since boot`}
                       />
@@ -1074,7 +1166,11 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                   <section className="panel">
                     <div className="panel-heading">
                       <h2>systemd services</h2>
-                      <span className="muted">Service state snapshot</span>
+                      <span className="muted">
+                        {retainedReading
+                          ? "Last known service snapshot"
+                          : "Service state snapshot"}
+                      </span>
                     </div>
                     {!reading?.services.length ? (
                       <Empty>No service readings available.</Empty>
@@ -1084,7 +1180,9 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                           <thead>
                             <tr>
                               <th>Service</th>
-                              <th>State</th>
+                              <th>
+                                {retainedReading ? "Last known state" : "State"}
+                              </th>
                               <th>Action</th>
                             </tr>
                           </thead>
@@ -1137,7 +1235,10 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                   <section className="panel">
                     <div className="panel-heading">
                       <h2>Processes</h2>
-                      <span className="muted">Top 100 by resident memory</span>
+                      <span className="muted">
+                        {retainedReading && "Last known · "}Top 100 by resident
+                        memory
+                      </span>
                     </div>
                     {!reading?.processes.length ? (
                       <Empty>No process readings available.</Empty>
@@ -1462,17 +1563,23 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
               onSubmit={(e) => {
                 const f = field(e);
                 void act(async () => {
+                  const checkedAt = Date.now();
                   await api("/api/auth/recent", "POST", {
                     password: f.get("password"),
                     code: f.get("code"),
                   });
                   setModal(null);
-                  setNotice(
-                    "Identity verified for five minutes. Use a new authenticator code for subsequent verification.",
-                  );
+                  setVerificationUntil(checkedAt + 5 * 60 * 1000);
+                  setVerificationExpired(false);
                 });
               }}
             >
+              <p className="muted">
+                Sensitive changes, including access grants, repository
+                credentials and reboots, require password and MFA verification
+                within the last five minutes. After verifying, return to your
+                action and try again.
+              </p>
               <label>
                 Your password
                 <input
@@ -1483,7 +1590,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                 />
               </label>
               <label>
-                New authenticator code
+                Current code from your authenticator
                 <input
                   name="code"
                   inputMode="numeric"
@@ -1491,6 +1598,10 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                   required
                   pattern="[0-9]{6}"
                 />
+                <small>
+                  Codes are single use. Wait for the next code if this one was
+                  already used.
+                </small>
               </label>
             </Form>
           ) : modal === "enroll" ? (

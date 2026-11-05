@@ -30,7 +30,7 @@ function installFixture() {
     measuredAt: now, collectedAt: now, cpuPercent: 12, memoryUsed: 256 * 1024 ** 2,
     memoryTotal: 1024 ** 3, diskUsed: 1024 ** 3, diskTotal: 8 * 1024 ** 3,
     networkRx: 4096, networkTx: 2048, networkRxBps: 128, networkTxBps: 64,
-    uptimeSeconds: 3600, bootId: "fixture-boot", services: [], collectionErrors: [],
+    uptimeSeconds: 3600, bootId: "fixture-boot", services: [{name: "fixture.service", load: "loaded", active: "active", sub: "running"}], collectionErrors: [],
     processes: [{ pid: 123, name: "ADMIN-ONLY-PROCESS", memoryBytes: 4096 }],
   };
   const host = (id, name) => ({
@@ -51,7 +51,7 @@ function installFixture() {
       maintenance: [], monitors: [{ monitor: { id: "unobserved", name: "Unobserved fixture monitor", intervalMs: 30000, nodeIds: [] },
         state: "unknown", observations: null, maintenanceIds: [], unknownNodes: 1, configConflict: false }] }],
   };
-  const control = window.fixture = { role: "admin", offline: false, htmlFailure: false, logoutFailure: 0, grantWrites: 0, holdHosts: false, releaseHosts: null,
+  const control = window.fixture = { role: "admin", hosts: fixtureHosts, offline: false, htmlFailure: false, logoutFailure: 0, grantWrites: 0, holdHosts: false, releaseHosts: null,
     // Project, GitHub and grant stores start empty: nothing is preseeded in the product.
     usersFail: true, recent: true, authFailure: 0, githubFail: false, syncStatus: 429, projects: {}, events: {}, githubViews: {}, githubPuts: [],
     grantStore: {
@@ -340,6 +340,16 @@ try {
   await evaluate("window.fixture.authFailure = 0");
   pass("verification errors remain in a keyboard-contained modal across polling; Escape restores focus");
 
+  await click("Verify identity");
+  await setValue("dialog input[name=password]", "temporary fixture password");
+  await setValue("dialog input[name=code]", "123456");
+  await evaluate("document.querySelector('dialog form').requestSubmit()");
+  await wait("!document.querySelector('dialog') && document.querySelector('.status-notice time')?.dateTime && document.querySelector('.status-notice').innerText.includes('Verify again after')");
+  await sleep(100);
+  await evaluate("(() => { const now = Date.now; try { Date.now = () => now() + 301000; window.dispatchEvent(new Event('focus')); } finally { Date.now = now; } })()");
+  await wait("[...document.querySelectorAll('.status-notice')].some(s => s.innerText.includes('Recent verification expired')) && !document.querySelector('.status-notice time')");
+  pass("verification explains its scope, shows an expiry and stops claiming current verification after expiry");
+
   // Real destinations survive history and a new document, with heading focus.
   assert.equal(await evaluate("document.querySelector('nav a[href=\"#/projects\"]')?.getAttribute('href')"), "#/projects");
   await click("ADMIN-ONLY-HOST");
@@ -385,6 +395,17 @@ try {
   await click("Fleet overview");
   await wait("!!document.querySelector('.fleet-table')");
   assert.ok(await evaluate("document.documentElement.scrollWidth <= innerWidth && document.querySelector('.fleet-table').scrollWidth <= innerWidth"), "Host statuses require horizontal document/table scrolling on mobile");
+  await evaluate("window.fixture.hosts[0].resourceHealth = 'warning'; window.fixture.hosts[0].latest.cpuPercent = 96");
+  await wait("document.querySelector('.attention-filter')?.textContent.includes('(1)') && [...document.querySelectorAll('.resource-details > summary .chip')].some(c => c.checkVisibility() && c.textContent.includes('Resource warning'))");
+  assert.equal(await evaluate("document.querySelector('.resource-details').open"), false, "Resource-warning proof needs a collapsed card");
+  await click("Needs attention");
+  await wait("document.querySelector('.attention-filter').getAttribute('aria-pressed') === 'true' && document.querySelectorAll('.fleet-table tbody tr').length === 1 && document.querySelector('.fleet-table').innerText.includes('ADMIN-ONLY-HOST')");
+  assert.ok(await evaluate("document.querySelector('.compact-freshness').innerText.toLowerCase().includes('fresh readings')"), "Resource warning incorrectly changed independent reading freshness");
+  await evaluate("window.fixture.hosts[0].resourceHealth = 'normal'; window.fixture.hosts[0].latest.cpuPercent = 12");
+  await wait("document.body.innerText.includes('No matching hosts')");
+  await click("Show all hosts");
+  await wait("document.querySelectorAll('.fleet-table tbody tr').length === 2");
+  pass("collapsed mobile cards expose resource warnings and attention filtering preserves independent freshness");
   await click("Just now");
   assert.ok(await evaluate("(() => {const b = [...document.querySelectorAll('.time-trigger')].find(b => b.getAttribute('aria-expanded') === 'true'); const exact = b && document.getElementById(b.getAttribute('aria-controls')); return exact?.checkVisibility() && exact.textContent.length > 15;})()"), "Exact operational times are not available by tap");
   await click("Just now");
@@ -400,6 +421,16 @@ try {
   await wait("!!document.querySelector('.fleet-table')");
   await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false }, sessionId);
   pass("mobile navigation, short-viewport sign-out, Escape, heading focus and exact-time tap work without horizontal overflow");
+
+  await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 390, deviceScaleFactor: 1, mobile: false }, sessionId);
+  assert.ok(await evaluate(`(() => {
+    const button = [...document.querySelectorAll('.sidebar button')].find(b => b.textContent === 'Sign out');
+    button.focus(); const r = button.getBoundingClientRect();
+    return r.bottom <= innerHeight && r.top >= 0 && document.elementFromPoint(r.x + r.width/2, r.y + r.height/2) === button;
+  })()`), "Short desktop sidebar makes sign-out unreachable");
+  await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false }, sessionId);
+  await evaluate("document.querySelector('.sidebar').scrollTop = 0");
+  pass("short desktop sidebars scroll account controls into view");
 
   for (const mode of ['light', 'dark']) {
     const ratios = await evaluate(`(() => {
@@ -437,6 +468,7 @@ try {
   await wait("document.body.innerText.includes('ADMIN-ONLY-PROCESS')");
   await evaluate("window.fixture.offline = true");
   await wait("!!document.querySelector('[role=alert]') && document.querySelectorAll('.metrics .chip.good').length === 0 && [...document.querySelectorAll('.metrics .chip')].some(c => c.textContent.includes('stale'))");
+  assert.ok(await evaluate("document.querySelector('.reading-snapshot')?.innerText.includes('retained snapshot') && document.querySelectorAll('.retained-label').length === 4 && [...document.querySelectorAll('th')].some(h => h.textContent === 'Last known state') && document.body.innerText.includes('Last known service snapshot')"), "Stale host readings or service states are presented without retained qualification");
   await capture("02-disconnected-dashboard");
   await evaluate("window.fixture.offline = false; window.fixture.htmlFailure = true");
   await wait("document.querySelector('[role=alert]')?.innerText.includes('Request failed (502)')");
@@ -456,7 +488,7 @@ try {
   await setValue("textarea[name=projectDescription]", "Temporary browser fixture");
   await evaluate(`document.querySelector('form[aria-label="Register a project"] input[value=dependencies]').click()`);
   await submit("Register a project");
-  await wait(`document.querySelector('h1')?.textContent.includes('Fixture project') && !!document.querySelector('form[aria-label="Project metadata"]')`);
+  await wait(`document.querySelector('h1')?.textContent.includes('Fixture project') && !!document.querySelector('form[aria-label="Project details"]')`);
   await evaluate("document.querySelector('.project-settings > summary').click()");
   assert.ok(await evaluate("document.querySelector('input[name=editName]').getClientRects().length"), "Metadata edits are hidden from the user");
   assert.deepEqual(await evaluate("window.fixture.projects['fixture-project'].modules"), ["dependencies"]);
@@ -472,13 +504,13 @@ try {
   await evaluate("window.confirm = () => true");
   pass("unsaved project edits survive declined workspace navigation and browser Back");
   await evaluate("window.fixture.externalEdit('fixture-project')");
-  await submit("Project metadata");
+  await submit("Project details");
   await wait("document.querySelector('.notice.conflict')?.innerText.includes('saved by someone else') && document.querySelector('input[name=editName]').value === 'Fixture project renamed'");
   assert.equal(await evaluate("window.fixture.projects['fixture-project'].name"), "Fixture project", "Stale metadata save overwrote a newer revision");
-  assert.equal(await evaluate("[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Save metadata').disabled"), true, "Save stays enabled during an unresolved conflict");
+  assert.equal(await evaluate("[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Save project details').disabled"), true, "Save stays enabled during an unresolved conflict");
   await capture("06-project-conflict");
   await click("Keep my edits on revision");
-  await submit("Project metadata");
+  await submit("Project details");
   await wait("window.fixture.projects['fixture-project'].name === 'Fixture project renamed' && window.fixture.projects['fixture-project'].revision === 3 && document.querySelector('h1').textContent.includes('renamed')");
   pass("stale metadata saves reload as a conflict, keep unsaved input and save only after explicit resolution");
 
@@ -493,6 +525,7 @@ try {
   await evaluate("window.fixture.recent = true");
   await submit("GitHub source settings");
   await wait("window.fixture.githubPuts.length === 1 && document.querySelector('input[data-secret=github-token]').value === '' && document.body.innerText.includes('Saved source revision 1')");
+  assert.ok(await evaluate("[...document.querySelectorAll('.settings [role=status]')].some(s => s.innerText.includes('Saved source revision 1'))"), "Repository save success is outside its status region");
   assert.deepEqual(await evaluate("window.fixture.githubPuts[0]"), { repository: "fixture-owner/fixture-repo", enabled: true, revision: 0, tokenLength: token.length });
   assert.equal(await evaluate(`(() => { const t = ${JSON.stringify(token)}; const stores = [localStorage, sessionStorage].flatMap(s => Object.keys(s).map(k => k + s.getItem(k))); return window.fixture.requests.some(r => (r.path + r.search).includes(t)) || stores.some(v => v.includes(t)) || document.documentElement.outerHTML.includes(t) || location.href.includes(t); })()`), false, "GitHub token leaked into a URL, storage or the document");
   pass("GitHub setup is recent-MFA gated, keeps input on failure and clears the token without URL or storage exposure");
@@ -509,6 +542,7 @@ try {
   await capture("08-github-retained");
   await click("Request refresh");
   await wait("document.body.innerText.includes('Refresh is cooling down')");
+  assert.ok(await evaluate("[...document.querySelectorAll('.github-feedback [role=status]')].some(s => s.innerText.includes('Refresh is cooling down'))"), "Refresh feedback is outside its status region");
   assert.ok(await evaluate("window.fixture.requests.some(r => r.method === 'POST' && r.path === '/api/projects/fixture-project/github/sync')"));
   pass("retained, partial, unreadable and truncated GitHub data stay explicit; refresh cooldown is reported");
 
@@ -552,6 +586,7 @@ try {
   await evaluate("window.confirm = () => true");
   await click("Replace grants");
   await wait("!!window.fixture.lastGrantPut");
+  await wait("[...document.querySelectorAll('.grant-editor [role=status]')].some(s => s.innerText.includes('Grants replaced for operator-fixture'))");
   const written = await evaluate("window.fixture.lastGrantPut");
   assert.equal(written.user, "operator-fixture");
   assert.deepEqual(written.grants.map((g) => `${g.scopeType}:${g.scope}:${g.action}`).sort(),
@@ -583,7 +618,7 @@ try {
   await click("Fixture project renamed");
   await wait("!!document.querySelector('.project-settings > summary')");
   await evaluate("document.querySelector('.project-settings > summary').click()");
-  await wait("document.body.innerText.includes('GitHub read permission required') && document.body.innerText.includes('Read only') && !document.querySelector('form[aria-label=\"Project metadata\"]')");
+  await wait("document.body.innerText.includes('GitHub read permission required') && document.body.innerText.includes('Read only') && !document.querySelector('form[aria-label=\"Project details\"]')");
   assert.equal(await evaluate("window.fixture.requests.some(r => r.role === 'viewer' && r.path.endsWith('/github'))"), false, "GitHub data requested without github.read");
   assert.equal(await evaluate("document.body.innerText.includes('fixture-owner/fixture-repo')"), false, "Previous account's GitHub data visible to viewer");
   pass("viewer project access honors capabilities: no registration, editing or GitHub reads without github.read");

@@ -156,8 +156,7 @@ function Inventory({
           <p className="eyebrow">MAINTENANCE WORKSPACE</p>
           <h1>Projects</h1>
           <p className="muted">
-            The software you maintain, with repository checks and alerts in one
-            place.
+            Organize project details, access and read-only GitHub observations.
           </p>
         </div>
         {admin && !registering && (
@@ -209,7 +208,7 @@ function Inventory({
             <h3>No projects yet</h3>
             <p>
               {admin
-                ? "Register a project you maintain to track its availability, permissions and read-only repository health. Nothing is preconfigured."
+                ? "Register a project to organize its details and access, then connect GitHub for read-only repository observations. Host enrollment and Canary uptime are managed separately. Nothing is preconfigured."
                 : "No projects are shared with your account. An administrator can grant project access."}
             </p>
             {admin && !registering && (
@@ -691,9 +690,24 @@ function ProjectDetail({
     };
   return (
     <>
-      <div className="page-heading">
+      <div className="page-heading project-page-heading">
         <div>
-          {back}
+          <div className="project-breadcrumb">
+            {back}
+            <button
+              className="text-link"
+              onClick={() => {
+                const settings = settingsRef.current;
+                if (settings) {
+                  settings.open = true;
+                  settings.scrollIntoView({ block: "start" });
+                  settings.querySelector("summary")?.focus();
+                }
+              }}
+            >
+              Project settings
+            </button>
+          </div>
           <h1>
             {project.name}{" "}
             {project.archived && <Tone value="archived" tone="neutral" />}
@@ -702,18 +716,6 @@ function ProjectDetail({
             {project.description || "No description."}
           </p>
         </div>
-        <button
-          onClick={() => {
-            const settings = settingsRef.current;
-            if (settings) {
-              settings.open = true;
-              settings.scrollIntoView({ block: "start" });
-              settings.querySelector("summary")?.focus();
-            }
-          }}
-        >
-          Project settings
-        </button>
       </div>
       <div aria-live="polite">
         <ErrorNotice
@@ -731,13 +733,6 @@ function ProjectDetail({
         ) : null}
         {notice && <div className="notice">{notice}</div>}
       </div>
-      <p className="project-meta">
-        <code>{project.id}</code>
-        <span>
-          Updated <Time value={project.updatedAt} />
-        </span>
-        <span>Revision {project.revision}</span>
-      </p>
       <GitHubPanel
         key={project.id}
         project={project}
@@ -756,6 +751,13 @@ function ProjectDetail({
           </span>
         </summary>
         <div className="disclosure-body">
+          <p className="project-meta">
+            <code>{project.id}</code>
+            <span>
+              Updated <Time value={project.updatedAt} />
+            </span>
+            <span>Revision {project.revision}</span>
+          </p>
           <div className="two-columns">
             <section className="panel">
               <div className="panel-heading">
@@ -790,7 +792,7 @@ function ProjectDetail({
                   <form
                     className="form"
                     onSubmit={save}
-                    aria-label="Project metadata"
+                    aria-label="Project details"
                   >
                     {conflict && differs && (
                       <div className="notice conflict" role="alert">
@@ -899,7 +901,7 @@ function ProjectDetail({
                         className="primary"
                         disabled={busy || !dirty || !!conflict}
                       >
-                        {busy ? "Working…" : "Save metadata"}
+                        {busy ? "Working…" : "Save project details"}
                       </button>
                       <button
                         type="button"

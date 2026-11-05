@@ -33,6 +33,7 @@ export function Time({ value }: { value: number }) {
         className="time-trigger"
         aria-expanded={expanded}
         aria-controls={id}
+        title="Exact date and time"
         aria-label={`${expanded ? "Hide" : "Show"} exact time: ${label}`}
         onClick={() => setExpanded(!expanded)}
         onKeyDown={(event) => {
@@ -40,7 +41,7 @@ export function Time({ value }: { value: number }) {
         }}
       >
         <time dateTime={new Date(value).toISOString()}>{label}</time>
-        <span aria-hidden="true">⌄</span>
+        <span aria-hidden="true">{expanded ? "▴" : "▾"}</span>
       </button>
       <span id={id} className="time-exact" hidden={!expanded}>
         {new Date(value).toLocaleString(undefined, { timeZoneName: "short" })}
@@ -181,16 +182,28 @@ export function Metric({
   label,
   value,
   detail,
+  retained = false,
 }: {
   label: string;
   value: ReactNode;
   detail?: ReactNode;
+  retained?: boolean;
 }) {
   return (
     <div className="metric">
       <span>{label}</span>
+      {retained && <small className="retained-label">Last known</small>}
       <strong>{value}</strong>
       {detail && <small>{detail}</small>}
+    </div>
+  );
+}
+
+/** The region stays mounted so asynchronous confirmation text is announced. */
+export function StatusNotice({ children }: { children: ReactNode }) {
+  return (
+    <div className="status-notice" role="status" aria-atomic="true">
+      {children && <div className="notice">{children}</div>}
     </div>
   );
 }

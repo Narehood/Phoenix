@@ -19,6 +19,8 @@ import {
   Empty,
   ErrorNotice,
   Metric,
+  ResponsiveDetails,
+  StatusNotice,
   Time,
   Tone,
   stamp,
@@ -392,17 +394,6 @@ export function GitHubPanel({
         </div>
         <div className="collection-summary">
           <div className="collection-current">
-            <span className="muted">Data</span>
-            <Tone
-              value={
-                failed
-                  ? view.collectedAt
-                    ? "stale"
-                    : "unknown"
-                  : view.freshness
-              }
-              tone={current ? "good" : view.collectedAt ? "warn" : "neutral"}
-            />
             <span className="muted">
               Collected <Time value={view.collectedAt} />
             </span>
@@ -463,27 +454,39 @@ export function GitHubPanel({
                 . Values below are last known, not current health.
               </p>
             )}
-            <div className="metrics health-metrics">
-              <Metric
-                label="Observed PRs"
-                value={count(snapshot.pulls)}
-                detail={`10 most recent${current ? "" : " · last known"}`}
-              />
-              <Metric
-                label="Update PRs"
-                value={count(snapshot.pulls, (p) => p.dependencyUpdate)}
-                detail="Recognized bot authors"
-              />
-              <Metric
-                label="Dependabot alerts"
-                value={count(snapshot.alerts)}
-                detail={`Up to 50${current ? "" : " · last known"}`}
-              />
-            </div>
+            <ResponsiveDetails
+              className="observation-counts"
+              label={
+                <span>
+                  {current ? "Observed" : "Last known"}: PRs{" "}
+                  {count(snapshot.pulls)} · Updates{" "}
+                  {count(snapshot.pulls, (p) => p.dependencyUpdate)} · Alerts{" "}
+                  {count(snapshot.alerts)}
+                </span>
+              }
+            >
+              <div className="metrics health-metrics">
+                <Metric
+                  label="Observed PRs"
+                  value={count(snapshot.pulls)}
+                  detail={`10 most recent${current ? "" : " · last known"}`}
+                />
+                <Metric
+                  label="Update PRs"
+                  value={count(snapshot.pulls, (p) => p.dependencyUpdate)}
+                  detail="Recognized bot authors"
+                />
+                <Metric
+                  label="Dependabot alerts"
+                  value={count(snapshot.alerts)}
+                  detail={`Up to 50${current ? "" : " · last known"}`}
+                />
+              </div>
+            </ResponsiveDetails>
             <div className="coverage-note">
               <p>
-                Read-only observations, not a package-version inventory. Empty
-                results do not prove dependencies are current.
+                Read-only PRs, CI and Dependabot alerts. Code/secret scanning
+                unsupported; not a package-version inventory.
               </p>
               <details>
                 <summary>Scope & coverage</summary>
@@ -492,7 +495,8 @@ export function GitHubPanel({
                   {snapshot.codeScanning}. Secret scanning:{" "}
                   {snapshot.secretScanning}. Dependency coverage is limited to
                   recognized update PRs and Dependabot alerts. Checks and
-                  reviews do not evaluate required-review rules.
+                  reviews do not evaluate required-review rules. Empty results
+                  do not prove dependencies are current.
                 </p>
               </details>
             </div>
@@ -638,20 +642,21 @@ export function GitHubPanel({
 
   return (
     <section className="panel github">
-      <div className="panel-heading">
+      <div className="panel-heading github-heading">
         <h2>
-          GitHub health{" "}
+          GitHub observations{" "}
           {view && canRead && !denied && (
             <Tone
               value={failed ? "unknown" : view.state}
               tone={failed ? "neutral" : sourceTone(view.state, current)}
+              label={`Collection: ${(failed ? "unreachable" : view.state).replaceAll("_", " ")}`}
             />
           )}
         </h2>
         <div className="button-row">
-          <span className="muted">Read-only · GitHub.com</span>
           {admin && (
             <button
+              className="text-link connection-shortcut"
               onClick={() => {
                 const settings = document.getElementById(
                   `repository-settings-${project.id}`,
@@ -688,13 +693,13 @@ export function GitHubPanel({
           )}
         </div>
       </div>
-      <div className="panel-body">
+      <div className="panel-body github-feedback">
         <ErrorNotice
           error={error}
           onDismiss={() => setError(null)}
           onVerify={onVerify}
         />
-        {notice && <div className="notice">{notice}</div>}
+        <StatusNotice>{notice}</StatusNotice>
         {!moduleOn && (
           <p className="notice">
             Repository health is not enabled. Open Project settings below and
@@ -898,7 +903,7 @@ function GitHubSettings({
           onDismiss={() => setError(null)}
           onVerify={onVerify}
         />
-        {notice && <div className="notice">{notice}</div>}
+        <StatusNotice>{notice}</StatusNotice>
         {!view ? (
           <p className="muted">
             Settings are available once the source state has loaded.

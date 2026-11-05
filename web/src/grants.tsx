@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "./api";
 import type { Grant, Host, Project, User } from "./types";
-import { ErrorNotice } from "./ui";
+import { ErrorNotice, StatusNotice } from "./ui";
 import { useUnsavedChanges } from "./navigation";
 
 const actionLabels: Record<string, string> = {
@@ -202,7 +202,11 @@ export function GrantEditor({
         onDismiss={() => setError(null)}
         onVerify={onVerify}
       />
-      {notice && <div className="notice">{notice}</div>}
+      <StatusNotice>{notice}</StatusNotice>
+      <p className="muted grant-instructions">
+        Select an account, add or remove grants, then replace its saved grants.
+        Changes stay in this working set until you save.
+      </p>
       <label>
         Account
         <select
@@ -449,6 +453,13 @@ export function GrantEditor({
       <button className="primary" disabled={!loaded || !changed || busy}>
         {busy ? "Working…" : "Replace grants"}
       </button>
+      <small role="status">
+        {!loaded
+          ? "Select an account and load its grants to begin."
+          : !changed
+            ? "No unsaved changes."
+            : `${added} added, ${removed} removed. Ready to replace the account’s complete grant set.`}
+      </small>
     </form>
   );
 }
