@@ -762,14 +762,14 @@ try {
   await click("ADMIN-ONLY-HOST");
   await wait("document.body.innerText.includes('ADMIN-ONLY-PROCESS')");
   await evaluate("window.fixture.hosts[0].latest.cpuPercent = null; window.fixture.hosts[0].resourceHealth = 'unknown'; window.fixture.offline = true");
-  await wait("!!document.querySelector('[role=alert]') && document.querySelectorAll('.metrics .chip.good').length === 0 && [...document.querySelectorAll('.metrics .chip')].some(c => c.textContent.includes('stale'))");
+  await wait("!!document.querySelector('[role=alert]') && document.querySelectorAll('.metrics .chip.good').length === 0 && [...document.querySelectorAll('.metrics .chip')].some(c => c.textContent.toLowerCase().includes('stale'))");
   assert.ok(await evaluate("document.querySelector('.reading-snapshot')?.innerText.includes('retained snapshot') && document.querySelectorAll('.retained-label').length === 4 && [...document.querySelectorAll('th')].some(h => h.textContent === 'Last known state') && document.body.innerText.includes('Last known service snapshot')"), "Stale host readings or service states are presented without retained qualification");
   // The prior response may still contain CPU 12; a separate fresh null snapshot is checked below after recovery.
   await capture("02-disconnected-dashboard");
   await evaluate("window.fixture.offline = false; window.fixture.htmlFailure = true");
   await wait("document.querySelector('[role=alert]')?.innerText.includes('Request failed (502)')");
   await click("Uptime Canary");
-  await wait("[...document.querySelectorAll('h2')].some(h => h.textContent.includes('fixture-source') && h.textContent.includes('stale')) && document.querySelectorAll('.chip.good').length === 0");
+  await wait("[...document.querySelectorAll('h2')].some(h => h.textContent.includes('fixture-source') && h.textContent.toLowerCase().includes('stale')) && document.querySelectorAll('.chip.good').length === 0");
   pass("failed polling invalidates cached host and Canary health");
 
   await evaluate("window.fixture.htmlFailure = false; window.fixture.offline = false");

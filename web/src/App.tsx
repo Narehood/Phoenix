@@ -125,8 +125,7 @@ function SourceNotice({
     >
       <details open={affected}>
         <summary>
-          {entries.map(([name]) => label(name)).join(", ")} unavailable · other
-          sources continue updating
+          {entries.map(([name]) => label(name)).join(", ")} unavailable
         </summary>
         <div>
           {entries.map(([name, message]) => (
