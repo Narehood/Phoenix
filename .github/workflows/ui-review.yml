@@ -1,0 +1,33 @@
+name: Phoenix UI evidence
+on:
+  pull_request:
+    paths:
+      - 'web/**'
+      - 'scripts/browser-fixtures.mjs'
+      - 'scripts/ui-scenes.mjs'
+      - '.github/workflows/ui-review.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: phoenix-ui-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  screenshots:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the actual dashboard
+        run: python3 scripts/validate.py --timeout 300 -- docker build --target web --progress=plain -t phoenix:web-ui .
+      - name: Capture temporary desktop, mobile and dark-mode scenes
+        run: python3 scripts/validate.py --timeout 120 -- node scripts/browser-fixtures.mjs --visual
+      - name: Retain bounded UI evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phoenix-ui-evidence
+          path: .validation/ui-evidence/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7

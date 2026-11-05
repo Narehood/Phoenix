@@ -1,0 +1,61 @@
+// A fixed, fresh review dataset. Not served by Phoenix or bundled into the app.
+export async function captureUI({ send, sessionId, evaluate, wait, click, capture }) {
+  const viewport = (width, height) => send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: width < 720 }, sessionId);
+  const settle = () => evaluate("new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)))");
+  const shot = async (name) => {
+    await settle();
+    await capture(name);
+  };
+  const top = () => evaluate("window.scrollTo(0, 0)");
+  const section = async (selector) => {
+    await evaluate(`document.querySelector(${JSON.stringify(selector)})?.scrollIntoView({block:'start'})`);
+    await settle();
+  };
+  await evaluate("window.fixture.visualScene(); document.documentElement.dataset.mode = 'light'");
+  await wait("document.body.innerText.includes('edge-01')");
+  await shot("fleet-desktop");
+  await click("edge-01");
+  await wait("document.body.innerText.includes('systemd-journald')");
+  await shot("host-desktop");
+  await click("Projects");
+  await wait("document.body.innerText.includes('Website')");
+  await top();
+  await shot("projects-desktop");
+  await click("Website");
+  await wait("document.querySelector('h1')?.textContent.includes('Website') && document.body.innerText.includes('example/website')");
+  await shot("repository-desktop");
+  await section(".github .section");
+  await shot("repository-checks-desktop");
+  await section("form[aria-label='Project metadata']");
+  await shot("project-settings-desktop");
+  await click("Access & accounts");
+  await wait("document.querySelector('select[name=user] option[value=operator-fixture]')");
+  await top();
+  await shot("access-desktop");
+  await click("Fleet overview");
+  await top();
+  await viewport(390, 844);
+  await shot("fleet-mobile");
+  await click("Projects");
+  await wait("document.body.innerText.includes('Website')");
+  await top();
+  await shot("projects-mobile");
+  await click("Website");
+  await wait("document.querySelector('h1')?.textContent.includes('Website') && document.body.innerText.includes('example/website')");
+  await shot("repository-mobile");
+  await viewport(1440, 1000);
+  await top();
+  await evaluate("document.documentElement.dataset.mode = 'dark'");
+  await shot("repository-dark");
+  await click("Fleet overview");
+  await top();
+  await shot("fleet-dark");
+  await evaluate("document.documentElement.dataset.mode = 'light'; window.fixture.projects = {}");
+  await click("Projects");
+  await wait("document.body.innerText.includes('No projects yet')");
+  await top();
+  await shot("empty-projects-desktop");
+  await click("Sign out");
+  await wait("document.querySelector('input[name=code]')");
+  await shot("sign-in-desktop");
+}

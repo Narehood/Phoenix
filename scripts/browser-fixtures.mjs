@@ -5,18 +5,20 @@ import { execFileSync, spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
+import { captureUI } from "./ui-scenes.mjs";
 
 assert.equal(process.platform, "linux", "Browser fixtures require Linux CI");
 assert.ok(process.env.PHOENIX_OUTPUT, "Run through scripts/validate.py");
 const scratch = process.env.PHOENIX_OUTPUT;
+const visual = process.argv.includes("--visual");
 const web = join(scratch, "web");
-const evidence = resolve(".validation/browser-evidence");
+const evidence = resolve(visual ? ".validation/ui-evidence" : ".validation/browser-evidence");
 mkdirSync(web);
 mkdirSync(evidence, { recursive: true });
-const container = execFileSync("docker", ["create", "phoenix:ci"], { encoding: "utf8", timeout: 10000 }).trim();
+const container = execFileSync("docker", ["create", visual ? "phoenix:web-ui" : "phoenix:ci"], { encoding: "utf8", timeout: 10000 }).trim();
 assert.match(container, /^[a-f0-9]{64}$/);
 try {
-  execFileSync("docker", ["cp", `${container}:/usr/share/phoenix/web/.`, web], { timeout: 10000 });
+  execFileSync("docker", ["cp", `${container}:${visual ? "/src/web/dist" : "/usr/share/phoenix/web"}/.`, web], { timeout: 10000 });
 } finally {
   execFileSync("docker", ["rm", container], { timeout: 10000 });
 }
@@ -40,6 +42,7 @@ function installFixture() {
   });
   const privateHost = host("private-host", "ADMIN-ONLY-HOST");
   const viewerHost = host("viewer-host", "Viewer fixture host");
+  const fixtureHosts = [privateHost, viewerHost];
   const emptyCanary = { sources: [], mappings: [], now };
   const canary = {
     now, mappings: [{ hostId: privateHost.id, sourceId: "fixture-source", monitorId: "unobserved" }],
@@ -85,6 +88,30 @@ function installFixture() {
   control.seedProject = (id, name, modules = []) => {
     control.projects[id] = { id, name, description: "", modules, archived: false, revision: 1, createdAt: now, updatedAt: now };
     record(id, "project.create");
+  };
+  control.visualScene = () => {
+    privateHost.name = "edge-01";
+    privateHost.osVersion = "Debian 13";
+    privateHost.groups = ["Production"];
+    viewerHost.name = "worker-01";
+    viewerHost.osVersion = "Debian 13";
+    viewerHost.groups = ["Production"];
+    const stale = host("backup-host", "backup-01");
+    stale.connectivity = "offline"; stale.freshness = "stale"; stale.resourceHealth = "unknown";
+    stale.lastContact -= 900000; stale.latest.measuredAt -= 900000;
+    stale.latest.collectedAt -= 900000; stale.groups = ["Recovery"];
+    fixtureHosts.push(stale);
+    reading.processes = [{ pid: 812, name: "phoenix", memoryBytes: 62 * 1024 ** 2 }, { pid: 230, name: "systemd-journald", memoryBytes: 18 * 1024 ** 2 }];
+    reading.services = [{ name: "phoenix-acceptance.service", load: "loaded", active: "active", sub: "running" }];
+    Object.assign(privateHost.latest, reading);
+    control.usersFail = false;
+    control.seedProject("website", "Website", ["dependencies"]);
+    control.projects.website.description = "Public website and customer documentation.";
+    control.githubViews.website = control.freshView("example/website");
+    control.seedProject("platform", "Platform API", ["dependencies"]);
+    control.projects.platform.description = "Internal services and shared infrastructure.";
+    control.seedProject("legacy", "Legacy dashboard", []);
+    control.projects.legacy.archived = true;
   };
   control.externalEdit = (id) => {
     const p = control.projects[id];
@@ -178,7 +205,7 @@ function installFixture() {
     }
     if (path.startsWith("/api/projects/")) return projectRoute(method, path, body);
     if (path === "/api/hosts") {
-      const snapshot = { hosts: admin ? [privateHost, viewerHost] : [viewerHost] };
+      const snapshot = { hosts: admin ? fixtureHosts : [viewerHost] };
       if (admin && control.holdHosts) {
         control.holdHosts = false;
         return new Promise((done) => { control.releaseHosts = () => { control.releaseHosts = null; done(json(snapshot)); }; });
@@ -282,6 +309,9 @@ try {
   await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false }, sessionId);
   await send("Page.navigate", { url: `http://127.0.0.1:${server.address().port}/` }, sessionId);
   await wait("document.body?.innerText.includes('ADMIN-ONLY-HOST')");
+  if (visual) {
+    await captureUI({ send, sessionId, evaluate, wait, click, capture });
+  } else {
   await click("Access & accounts");
   await wait("document.querySelector('[role=alert]')?.innerText.includes('Fixture account list unavailable') && !!document.querySelector('select[name=user]')");
   assert.equal(await evaluate("document.querySelector('select[name=user]').checkValidity()"), false, "Empty account select allows grant submission");
@@ -442,9 +472,10 @@ try {
   await click("Sign out");
   await wait("!!document.querySelector('input[name=code]') && !document.body.innerText.includes('Viewer fixture host')");
   pass("expired session sign-out returns to authentication; unconfirmed server failures remain visible");
+  }
   assert.deepEqual(errors, [], "Uncaught browser exceptions");
   writeFileSync(join(evidence, "results.json"), JSON.stringify({ status: "passed", browser: version.product, screenshots, cases }, null, 2));
-  console.log(`Browser fixture proof: ${version.product}; ${cases} cases; ${screenshots.length} bounded screenshots`);
+  console.log(`${visual ? "UI capture" : "Browser fixture proof"}: ${version.product}; ${cases} regression cases; ${screenshots.length} bounded screenshots`);
 } finally {
   await send("Browser.close").catch(() => {});
   if (chrome.exitCode === null) chrome.kill("SIGKILL");
