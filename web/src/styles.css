@@ -380,7 +380,7 @@ table {
   white-space: nowrap;
 }
 th {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-3);
   font-weight: 600;
   background: var(--surface-2);
@@ -446,7 +446,7 @@ td > .text-link {
   white-space: nowrap;
   line-height: 1.5;
 }
-.chip > span {
+.chip > span:first-child {
   font-size: 8px;
 }
 .good {
@@ -647,14 +647,6 @@ td > .text-link {
   stroke: var(--accent);
   stroke-width: 2.5;
   vector-effect: non-scaling-stroke;
-}
-.history-labels {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-}
-.history-labels small {
-  font-size: 10px;
 }
 footer {
   border-top: 1px solid var(--border);
@@ -961,7 +953,7 @@ summary:hover {
   white-space: normal;
 }
 .fleet-table td {
-  padding: 18px 16px;
+  padding: 12px 16px;
 }
 .fleet-table td:first-child {
   min-width: 155px;
@@ -1452,9 +1444,6 @@ time {
     min-height: 44px;
     font-size: 12px;
   }
-  .history-labels small:nth-child(2) {
-    display: none;
-  }
   footer {
     margin: 0 14px;
     gap: 10px;
@@ -1791,6 +1780,168 @@ textarea:disabled {
 .host-actions {
   max-width: 340px;
 }
+.mobile-tone-prefix {
+  display: none;
+}
+.host-metadata {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin-top: 4px;
+}
+.host-metadata > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.fleet-table td small,
+.pull-table td small {
+  font-size: 12px;
+}
+.host-edit-fields {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.host-edit-fields fieldset {
+  min-width: 0;
+}
+.host-form-feedback .retained {
+  display: block;
+}
+.host-form-feedback .retained p {
+  margin: 0 0 8px;
+}
+.host-form-feedback details {
+  margin-bottom: 10px;
+}
+.host-form-feedback .facts {
+  margin: 12px 0;
+}
+.service-requests {
+  max-width: 280px;
+  min-width: 0;
+  white-space: normal;
+}
+.service-request-context,
+.service-pending {
+  font-size: 12px;
+  line-height: 1.4;
+  margin: 0 0 8px;
+  color: var(--text-2);
+}
+.service-pending:empty {
+  margin: 0;
+}
+.service-requests .notice {
+  white-space: normal;
+  margin: 8px 0 0;
+  align-items: start;
+}
+.service-requests .error-notice {
+  flex-direction: column;
+}
+.service-requests .error-notice .button-row {
+  margin-top: 6px;
+}
+.history-chart {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+}
+.history-axis {
+  position: relative;
+  color: var(--text-2);
+  font-size: 12px;
+}
+.history-axis > span {
+  position: absolute;
+  right: 8px;
+  transform: translateY(-50%);
+}
+.history-axis > span:nth-child(1) {
+  top: 11.111%;
+}
+.history-axis > span:nth-child(2) {
+  top: 50%;
+}
+.history-axis > span:nth-child(3) {
+  top: 88.889%;
+}
+.history-plot {
+  position: relative;
+  min-width: 0;
+}
+.history-point {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent-text);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.history-ticks {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 4px 0 0 44px;
+  color: var(--text-2);
+  font-size: 12px;
+}
+.history-ticks time {
+  white-space: normal;
+}
+.history-ticks time:nth-child(2) {
+  text-align: center;
+}
+.history-ticks time:last-child {
+  text-align: right;
+}
+@media (min-width: 721px) {
+  .fleet-summary .metric {
+    padding: 14px 16px;
+  }
+}
+@media (max-width: 720px) {
+  .fleet-table tr {
+    padding: 12px;
+    gap: 8px 16px;
+  }
+  .fleet-table td {
+    padding: 0;
+  }
+  .fleet-table
+    td:is(
+      [data-label="Canary uptime"],
+      [data-label="Agent connection"]
+    )::before {
+    display: none;
+  }
+  .mobile-tone-prefix {
+    display: inline;
+  }
+  .fleet-table .chip {
+    display: inline-block;
+    white-space: normal;
+    max-width: 100%;
+  }
+  .host-metadata {
+    margin-top: 0;
+  }
+  .host-metadata small {
+    margin: 0;
+  }
+  .service-requests {
+    max-width: none;
+  }
+  .host-status .metric > small {
+    font-size: 12px;
+  }
+}
 .host-actions > summary {
   min-height: 36px;
   padding: 8px 12px;
@@ -1854,11 +2005,6 @@ textarea:disabled {
   margin: 0 0 12px;
   font-size: 13px;
   color: var(--text-2);
-}
-.history-dot {
-  fill: var(--accent-text);
-  stroke: var(--accent-text);
-  stroke-width: 2px;
 }
 .history-data {
   margin-top: 12px;
@@ -1976,22 +2122,6 @@ textarea:disabled {
   }
   .history svg {
     height: 132px;
-  }
-  .history-labels {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 6px 10px;
-  }
-  .history-labels small {
-    font-size: 12px;
-  }
-  .history-labels small:nth-child(2) {
-    display: block;
-    grid-column: 1 / -1;
-    grid-row: 1;
-  }
-  .history-labels small:last-child {
-    text-align: right;
   }
   .history-data table {
     table-layout: fixed;

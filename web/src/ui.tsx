@@ -179,14 +179,22 @@ export function Tone({
   value,
   tone,
   label,
+  mobilePrefix,
 }: {
   value: string;
   tone?: ToneName;
   label?: string;
+  mobilePrefix?: string;
 }) {
   return (
     <span className={`chip ${tone || toneOf(value)}`}>
-      <span aria-hidden="true">●</span> {label ?? value.replaceAll("_", " ")}
+      <span aria-hidden="true">●</span>{" "}
+      {mobilePrefix && (
+        <span className="mobile-tone-prefix" aria-hidden="true">
+          {mobilePrefix}:{" "}
+        </span>
+      )}
+      {label ?? value.replaceAll("_", " ")}
     </span>
   );
 }

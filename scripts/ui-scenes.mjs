@@ -40,6 +40,34 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await shot("host-retained-desktop");
   await evaluate("[...document.querySelectorAll('h2')].find(h => h.textContent === 'systemd services').closest('section').scrollIntoView({block:'start'})");
   await shot("host-retained-services-desktop");
+  await evaluate("window.fixture.hold.add('POST /api/hosts/private-host/jobs')");
+  await click("Request logs");
+  await wait("typeof window.fixture.holds['POST /api/hosts/private-host/jobs'] === 'function' && document.querySelector('.service-requests').getAttribute('aria-busy') === 'true'");
+  await shot("host-service-pending-desktop");
+  await evaluate("window.fixture.holds['POST /api/hosts/private-host/jobs']()");
+  await wait("document.querySelector('.service-requests .status-notice').innerText.includes('Request queued')");
+  await shot("host-service-queued-desktop");
+  await evaluate(`(() => {
+    const input = document.querySelector('.host-inventory-form input[name=name]');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'edge-01 renamed');
+    input.dispatchEvent(new Event('input', {bubbles:true}));
+    window.fixture.failWrites.add('PATCH /api/hosts/private-host');
+  })()`);
+  await evaluate("document.querySelector('.host-inventory-form').requestSubmit()");
+  await wait("document.querySelector('.host-inventory-form [role=alert]')?.textContent.includes('Fixture save unavailable')");
+  await section(".host-inventory-form");
+  await shot("host-inventory-feedback-desktop");
+  await evaluate("window.fixture.failWrites.clear(); [...document.querySelectorAll('.host-inventory-form button')].find(b => b.textContent === 'Reset').click(); document.querySelector('.host-mapping-form input[type=checkbox]').click()");
+  await evaluate(`(() => {
+    const source = window.fixture.canary.sources[0];
+    source.monitors.push({...structuredClone(source.monitors[0]), monitor: {...source.monitors[0].monitor, id: 'secondary', name: 'Secondary fixture monitor'}});
+    window.fixture.canary.mappings = [{hostId:'private-host',sourceId:'fixture-source',monitorId:'secondary'}];
+  })()`);
+  await wait("!!document.querySelector('.host-mapping-form .retained')");
+  await section(".host-mapping-form");
+  await shot("host-mapping-conflict-desktop");
+  await evaluate("[...document.querySelectorAll('.host-mapping-form button')].find(b => b.textContent === 'Load saved values').click(); window.fixture.canary.mappings = [{hostId:'private-host',sourceId:'fixture-source',monitorId:'unobserved'}]; window.fixture.canary.sources[0].monitors.pop()");
+  await wait("document.querySelector('.host-mapping-form input[type=checkbox]').checked && !document.querySelector('.host-mapping-form .retained')");
   await evaluate("Object.assign(window.fixture.hosts[0], window.fixture.freshHost); delete window.fixture.freshHost");
   await wait("!document.querySelector('.reading-snapshot')");
   await navigate("Projects");
@@ -85,6 +113,18 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await evaluate("document.querySelector('.sidebar').scrollTop = 0");
   await viewport(390, 844);
   await shot("fleet-mobile");
+  await evaluate("window.fixture.longFleet()");
+  await wait("document.querySelectorAll('.fleet-table tbody tr').length === 12");
+  await top();
+  await shot("fleet-long-mobile");
+  await evaluate(`(() => {
+    const elements = [...document.querySelectorAll('main, main *')];
+    window.fixture.textStyles = elements.map(e => [e, e.getAttribute('style'), parseFloat(getComputedStyle(e).fontSize)]);
+    window.fixture.textStyles.forEach(([e, , size]) => e.style.fontSize = size * 1.5 + 'px');
+  })()`);
+  await shot("fleet-text-enlarged-mobile");
+  await evaluate("window.fixture.textStyles.forEach(([e,style]) => style === null ? e.removeAttribute('style') : e.setAttribute('style',style)); delete window.fixture.textStyles; window.fixture.hosts.splice(3)");
+  await wait("document.querySelectorAll('.fleet-table tbody tr').length === 3");
   await evaluate("document.querySelector('.mobile-navigation').open = true");
   await shot("navigation-mobile");
   await viewport(390, 390);

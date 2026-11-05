@@ -20,7 +20,7 @@ jobs:
       - name: Server image, React bundle and unprivileged binary smoke
         run: docker build --target server --progress=plain -t phoenix:ci .
       - name: Dashboard browser regression fixtures
-        run: python3 scripts/validate.py --timeout 120 -- node scripts/browser-fixtures.mjs
+        run: python3 scripts/validate.py --timeout 150 -- node scripts/browser-fixtures.mjs
       - name: Export and package the tested Linux kit
         run: |
           python3 scripts/validate.py --timeout 300 -- docker build --target test-kit --output type=local,dest=.validation/test-kit .

@@ -18,6 +18,11 @@ import {
 import { Projects } from "./projects";
 import { GrantEditor } from "./grants";
 import {
+  HostInventoryForm,
+  MappingForm,
+  ServiceRequests,
+} from "./host-controls";
+import {
   NavigationProvider,
   RouteLink,
   useNavigation,
@@ -39,7 +44,10 @@ const list = (s: string) =>
     .filter(Boolean);
 const needsAttention = (host: Host) =>
   host.connectivity === "offline" ||
+  host.connectivity === "unknown" ||
+  host.connectivity === "never_seen" ||
   host.freshness === "stale" ||
+  host.freshness === "unknown" ||
   host.resourceHealth === "warning";
 function resourceSummary(reading?: Reading | null) {
   if (!reading) return "No measurements available";
@@ -408,6 +416,8 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
     })),
   };
   const mounted = useRef(false),
+    mutationInFlight = useRef(false),
+    refreshDetail = useRef<() => void>(() => {}),
     versions = useRef<Record<string, number>>({});
   useEffect(() => {
     mounted.current = true;
@@ -527,16 +537,18 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
     let alive = true;
     let timer: ReturnType<typeof setTimeout>;
     async function poll() {
+      const version = (versions.current.Detail =
+        (versions.current.Detail || 0) + 1);
       try {
         const d = await api<{ host: Host; samples: Reading[] }>(
           `/api/hosts/${selected}`,
         );
-        if (alive) {
+        if (alive && version === versions.current.Detail) {
           setDetail(d);
           setDetailError("");
         }
       } catch (e) {
-        if (alive) {
+        if (alive && version === versions.current.Detail) {
           setDetailError((e as Error).message);
           setDetail(
             (previous) =>
@@ -549,15 +561,23 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
           );
         }
       }
-      if (alive) timer = setTimeout(poll, 5000);
+      if (alive && version === versions.current.Detail)
+        timer = setTimeout(poll, 5000);
     }
+    refreshDetail.current = () => {
+      clearTimeout(timer);
+      void poll();
+    };
     void poll();
     return () => {
       alive = false;
       clearTimeout(timer);
+      refreshDetail.current = () => {};
     };
   }, [selected, user]);
   async function act(fn: () => Promise<void>) {
+    if (mutationInFlight.current) return;
+    mutationInFlight.current = true;
     const inDialog = modal !== null;
     setBusy(true);
     if (inDialog) setModalError("");
@@ -565,7 +585,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
     setNotice("");
     try {
       await fn();
-      await refresh();
+      if (mounted.current) void refresh();
     } catch (e) {
       if (inDialog) {
         let recovery = "";
@@ -584,7 +604,8 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
         setModalError((e as Error).message + recovery);
       } else setError((e as Error).message);
     } finally {
-      setBusy(false);
+      mutationInFlight.current = false;
+      if (mounted.current) setBusy(false);
     }
   }
   async function job(action: string, args: object = {}) {
@@ -945,7 +966,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                     disabled={!sourceLoaded.Hosts}
                     aria-pressed={attentionOnly}
                     onClick={() => setAttentionOnly(!attentionOnly)}
-                    title="Offline agents, stale readings and resource warnings. Canary uptime is separate."
+                    title="Offline or unknown agents, stale or missing readings, and resource warnings. Canary uptime is separate."
                   >
                     Agent / readings issues (
                     {sourceLoaded.Hosts ? attentionCount : "…"})
@@ -960,8 +981,8 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                 </div>
                 {attentionOnly && (
                   <p className="filter-context" role="status">
-                    Offline agents, stale readings or resource warnings. Canary
-                    uptime is separate.{" "}
+                    Offline or unknown agents, stale or missing readings, or
+                    resource warnings. Canary uptime is separate.{" "}
                     <button
                       className="text-link"
                       onClick={() => setAttentionOnly(false)}
@@ -1070,16 +1091,18 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                                   </span>
                                 )}
                               </div>
-                              <small>
-                                {h.osVersion || "Awaiting enrollment"} ·{" "}
-                                {h.addresses[0] || "No address"}
-                              </small>
-                              <div>
-                                {h.groups.map((g) => (
-                                  <span className="tag" key={g}>
-                                    {g}
-                                  </span>
-                                ))}
+                              <div className="host-metadata">
+                                <small>
+                                  {h.osVersion || "Awaiting enrollment"} ·{" "}
+                                  {h.addresses[0] || "No address"}
+                                </small>
+                                <div>
+                                  {h.groups.map((g) => (
+                                    <span className="tag" key={g}>
+                                      {g}
+                                    </span>
+                                  ))}
+                                </div>
                               </div>
                             </td>
                             <td
@@ -1087,7 +1110,10 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                               aria-colindex={2}
                               data-label="Canary uptime"
                             >
-                              <Tone value={uptimeStatus(h)} />
+                              <Tone
+                                value={uptimeStatus(h)}
+                                mobilePrefix="Canary"
+                              />
                               <small>
                                 {mappings(h).length} mapped monitors
                               </small>
@@ -1097,7 +1123,10 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                               aria-colindex={3}
                               data-label="Agent connection"
                             >
-                              <Tone value={h.connectivity} />
+                              <Tone
+                                value={h.connectivity}
+                                mobilePrefix="Agent"
+                              />
                               <small>
                                 Contact <Time value={h.lastContact} />
                               </small>
@@ -1340,7 +1369,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                         retained={retainedReading}
                         value={
                           reading.cpuPercent === null
-                            ? "Sampling…"
+                            ? "Not measured"
                             : `${reading.cpuPercent.toFixed(1)}%`
                         }
                         detail={`Measured ${stamp(reading.measuredAt)}`}
@@ -1498,46 +1527,17 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                                   aria-colindex={3}
                                   data-label="Agent requests"
                                 >
-                                  {current.connectivity !== "connected" &&
-                                    user.role !== "viewer" && (
-                                      <small className="agent-request-context">
-                                        Agent{" "}
-                                        {current.connectivity.replaceAll(
-                                          "_",
-                                          " ",
-                                        )}
-                                        . Connection required.
-                                      </small>
-                                    )}
-                                  <div className="button-row">
-                                    {user.role !== "viewer" && (
-                                      <>
-                                        <button
-                                          onClick={() =>
-                                            void job("logs.read", {
-                                              service: s.name,
-                                            })
-                                          }
-                                        >
-                                          Logs
-                                        </button>
-                                        <button
-                                          onClick={() => {
-                                            if (
-                                              window.confirm(
-                                                `Request a restart of ${s.name} on ${current.name}? The agent's local allowlist must permit it.`,
-                                              )
-                                            )
-                                              void job("service.restart", {
-                                                service: s.name,
-                                              });
-                                          }}
-                                        >
-                                          Restart
-                                        </button>
-                                      </>
-                                    )}
-                                  </div>
+                                  {user.role !== "viewer" ? (
+                                    <ServiceRequests
+                                      key={current.id + "/" + s.name}
+                                      host={current}
+                                      service={s.name}
+                                      onQueued={() => void refresh()}
+                                      onVerify={() => setModal("auth")}
+                                    />
+                                  ) : (
+                                    <small>Read-only</small>
+                                  )}
                                 </td>
                               </tr>
                             ))}
@@ -1596,18 +1596,16 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                   <div className="panel-body">
                     {user.role === "admin" ? (
                       <MappingForm
+                        key={current.id}
                         host={current}
                         canary={canary}
-                        save={(body) =>
-                          void act(async () => {
-                            await api(
-                              `/api/hosts/${current.id}/mappings`,
-                              "PUT",
-                              body,
-                            );
-                            setNotice("Monitor mappings saved.");
-                          })
-                        }
+                        loaded={!!sourceLoaded.Canary}
+                        unavailable={!!sourceErrors.Canary}
+                        onSaved={() => {
+                          refreshDetail.current();
+                          void refresh();
+                        }}
+                        onVerify={() => setModal("auth")}
                       />
                     ) : (
                       mappings(current).map((m) => (
@@ -1636,43 +1634,15 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                             "Awaiting enrollment"}
                         </code>
                       </p>
-                      <Form
+                      <HostInventoryForm
                         key={current.id}
-                        onSubmit={(e) => {
-                          const f = field(e);
-                          void act(async () => {
-                            await api(`/api/hosts/${current.id}`, "PATCH", {
-                              name: f.get("name"),
-                              tags: list(String(f.get("tags"))),
-                              groups: list(String(f.get("groups"))),
-                            });
-                            setNotice("Inventory saved.");
-                          });
+                        host={current}
+                        onSaved={() => {
+                          refreshDetail.current();
+                          void refresh();
                         }}
-                      >
-                        <label>
-                          Display name
-                          <input
-                            name="name"
-                            defaultValue={current.name}
-                            required
-                          />
-                        </label>
-                        <label>
-                          Tags (comma separated)
-                          <input
-                            name="tags"
-                            defaultValue={current.tags.join(", ")}
-                          />
-                        </label>
-                        <label>
-                          Groups (changes permission scopes)
-                          <input
-                            name="groups"
-                            defaultValue={current.groups.join(", ")}
-                          />
-                        </label>
-                      </Form>
+                        onVerify={() => setModal("auth")}
+                      />
                     </div>
                   </section>
                 )}
@@ -2203,38 +2173,48 @@ function History({ samples }: { samples: Reading[] }) {
       </p>
       {valid.length >= 2 && (
         <>
-          <svg
-            viewBox="0 0 1000 180"
-            preserveAspectRatio="none"
-            role="img"
-            aria-label="CPU usage history, percent from 0 to 100. Gaps have no line."
-          >
-            <path className="grid" d="M20 20H980M20 90H980M20 160H980" />
-            {parts.map((p, i) => (
-              <polyline
-                key={i}
-                points={p}
-                fill="none"
-                className="history-line"
-              />
-            ))}
-            {valid.map((sample, index) => (
-              <circle
-                key={index}
-                cx={
-                  20 + ((sample.measuredAt - lo) / Math.max(1, hi - lo)) * 960
-                }
-                cy={160 - sample.cpuPercent! * 1.4}
-                r={3}
-                vectorEffect="non-scaling-stroke"
-                className="history-dot"
-              />
-            ))}
-          </svg>
-          <div className="history-labels">
-            <small>{stamp(lo)}</small>
-            <small>0–100% CPU · no interpolation across gaps</small>
-            <small>{stamp(hi)}</small>
+          <div className="history-chart">
+            <div className="history-axis" aria-hidden="true">
+              <span>100%</span>
+              <span>50%</span>
+              <span>0%</span>
+            </div>
+            <div className="history-plot">
+              <svg
+                viewBox="0 0 1000 180"
+                preserveAspectRatio="none"
+                role="img"
+                aria-label="CPU usage history, percent from 0 to 100. Gaps have no line."
+              >
+                <path className="grid" d="M20 20H980M20 90H980M20 160H980" />
+                {parts.map((p, i) => (
+                  <polyline
+                    key={i}
+                    points={p}
+                    fill="none"
+                    className="history-line"
+                  />
+                ))}
+              </svg>
+              {valid.map((sample, index) => (
+                <span
+                  key={index}
+                  className="history-point"
+                  aria-hidden="true"
+                  style={{
+                    left: `${(20 + ((sample.measuredAt - lo) / Math.max(1, hi - lo)) * 960) / 10}%`,
+                    top: `${(160 - sample.cpuPercent! * 1.4) / 1.8}%`,
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+          <div className="history-ticks" aria-hidden="true">
+            <time dateTime={new Date(lo).toISOString()}>{stamp(lo)}</time>
+            <time dateTime={new Date((lo + hi) / 2).toISOString()}>
+              {new Date((lo + hi) / 2).toLocaleTimeString()}
+            </time>
+            <time dateTime={new Date(hi).toISOString()}>{stamp(hi)}</time>
           </div>
         </>
       )}
@@ -2394,73 +2374,6 @@ function Activity({
         </ol>
       )}
     </section>
-  );
-}
-function MappingForm({
-  host,
-  canary,
-  save,
-}: {
-  host: Host;
-  canary: Canary;
-  save: (b: unknown) => void;
-}) {
-  const [selected, setSelected] = useState<string[]>([]);
-  useEffect(
-    () =>
-      setSelected(
-        canary.mappings
-          .filter((m) => m.hostId === host.id)
-          .map((m) => `${m.sourceId}/${m.monitorId}`),
-      ),
-    [host.id, JSON.stringify(canary.mappings)],
-  );
-  if (!canary.sources.length)
-    return (
-      <p className="muted">
-        Configure a verified Canary node source on the server first.
-      </p>
-    );
-  return (
-    <Form
-      onSubmit={(e) => {
-        e.preventDefault();
-        save({
-          mappings: selected.map((v) => {
-            const [sourceId, monitorId] = v.split("/");
-            return { sourceId, monitorId };
-          }),
-        });
-      }}
-      submit="Save monitor mappings"
-    >
-      {canary.sources.map((s) => (
-        <fieldset key={s.id}>
-          <legend>
-            {s.id} · {s.node.name}
-          </legend>
-          {s.monitors.map((m) => {
-            const value = `${s.id}/${m.monitor.id}`;
-            return (
-              <label className="check" key={value}>
-                <input
-                  type="checkbox"
-                  checked={selected.includes(value)}
-                  onChange={(e) =>
-                    setSelected((v) =>
-                      e.target.checked
-                        ? [...v, value]
-                        : v.filter((x) => x !== value),
-                    )
-                  }
-                />
-                {m.monitor.name} <code>{m.monitor.id}</code>
-              </label>
-            );
-          })}
-        </fieldset>
-      ))}
-    </Form>
   );
 }
 function Access({ hosts, onVerify }: { hosts: Host[]; onVerify: () => void }) {

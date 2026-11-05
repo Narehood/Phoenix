@@ -53,7 +53,7 @@ function installFixture() {
   };
   const control = window.fixture = { role: "admin", hosts: fixtureHosts, offline: false, htmlFailure: false, logoutFailure: 0, grantWrites: 0, holdHosts: false, releaseHosts: null,
     // Project, GitHub and grant stores start empty: nothing is preseeded in the product.
-    usersFail: true, recent: true, authFailure: 0, githubFail: false, syncStatus: 429, projects: {}, events: {}, githubViews: {}, githubPuts: [], failSources: new Set(), createdUsers: [],
+    usersFail: true, recent: true, authFailure: 0, githubFail: false, syncStatus: 429, projects: {}, events: {}, githubViews: {}, githubPuts: [], failSources: new Set(), failWrites: new Set(), createdUsers: [], jobs: [], canary,
     grantStore: {
       "operator-fixture": [{ scopeType: "host", scope: "viewer-host", action: "host.read" }, { scopeType: "project", scope: "fixture-project", action: "project.read" }],
       "viewer-fixture": [{ scopeType: "host", scope: "viewer-host", action: "host.read" }],
@@ -73,6 +73,12 @@ function installFixture() {
   control.populateHistory = () => {
     const at = Date.now();
     control.samples = [12, 64, null, 21].map((cpuPercent, i) => ({...reading, cpuPercent, measuredAt: at - (i > 1 ? i + 3 : i) * 30000, collectedAt: at - (i > 1 ? i + 3 : i) * 30000}));
+  };
+  control.longFleet = () => {
+    for (let i = fixtureHosts.length; i < 12; i++) {
+      const h = host(`extra-${i}`, `worker-${String(i + 1).padStart(2, "0")}`);
+      h.groups = ["Production"]; fixtureHosts.push(h);
+    }
   };
   const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
   const recentRequired = () => json({ error: "recent password and MFA required" }, 403);
@@ -200,6 +206,7 @@ function installFixture() {
     if (control.role === "signedout") return json({ error: "sign in required" }, 401);
     const admin = control.role === "admin";
     if (control.failSources.has(path)) return json({error: "Fixture source unavailable: " + path}, 503);
+    if (control.failWrites.has(method + " " + path)) return json({error: "Fixture save unavailable; your draft is kept"}, 503);
     if (path === "/api/session") return json({ user: user(control.role), csrfToken: "fixture-csrf" });
     if (path === "/api/auth/recent") {
       if (control.authFailure) return json({ error: "Fixture verification unavailable" }, control.authFailure);
@@ -243,10 +250,35 @@ function installFixture() {
       }
       return json(snapshot);
     }
+    const hostWrite = path.match(/^\/api\/hosts\/([^/]+)(\/mappings|\/jobs)?$/);
+    if (hostWrite && method !== "GET") {
+      const h = fixtureHosts.find(h => h.id === hostWrite[1]);
+      if (!admin || !h) return json({error: "action forbidden"}, 403);
+      if (!hostWrite[2] && method === "PATCH") {
+        Object.assign(h, {name: body.name, tags: body.tags, groups: body.groups});
+        return json({updated: true});
+      }
+      if (hostWrite[2] === "/mappings" && method === "PUT") {
+        if (body.mappings.length > 20) return json({error: "mapping limit exceeded"}, 400);
+        canary.mappings = [...canary.mappings.filter(m => m.hostId !== h.id), ...body.mappings.map(m => ({...m, hostId: h.id}))];
+        return json({mappings: body.mappings});
+      }
+      if (hostWrite[2] === "/jobs" && method === "POST") {
+        if (!h.verified || h.revoked) return json({error: "agent identity unavailable"}, 409);
+        if (!["logs.read", "service.restart"].includes(body.action)) return json({error: "unexpected fixture action"}, 400);
+        if (body.action === "service.restart" && (!control.recent || body.confirm !== h.id)) return recentRequired();
+        if (control.jobs.length >= 8) return json({error: "fixture job bound reached"}, 409);
+        const createdAt = Date.now();
+        const job = {id: `fixture-job-${control.jobs.length + 1}`, hostId: h.id, action: body.action, args: body.args, state: "queued", createdAt, expiresAt: createdAt + 300000, result: ""};
+        control.jobs.push(job);
+        return json(job, 201);
+      }
+    }
     if (path === "/api/hosts/private-host") { refreshEvidence(); return admin ? json({ host: privateHost, samples: control.samples }) : json({ error: "action forbidden" }, 403); }
     if (path === "/api/hosts/viewer-host") { refreshEvidence(); return json({ host: viewerHost, samples: [] }); }
     if (path === "/api/canary") { refreshEvidence(); return json(admin ? canary : emptyCanary); }
-    if (path === "/api/jobs" || path === "/api/audit") return json([]);
+    if (path === "/api/jobs") return json(control.jobs.filter(j => admin || j.hostId === viewerHost.id));
+    if (path === "/api/audit") return json([]);
     return json({ error: "unexpected fixture request" }, 404);
   };
 }
@@ -452,11 +484,13 @@ try {
   await wait("document.querySelector('.attention-filter').getAttribute('aria-pressed') === 'true' && document.querySelectorAll('.fleet-table tbody tr').length === 1 && document.querySelector('.fleet-table').innerText.includes('ADMIN-ONLY-HOST')");
   assert.ok(await evaluate("document.querySelector('.compact-freshness').innerText.toLowerCase().includes('fresh readings')"), "Resource warning incorrectly changed independent reading freshness");
   assert.ok(await evaluate("document.querySelector('.mobile-resource-warning').innerText.includes('CPU 96.0%')"), "Resource warning hides its current measurement");
-  await evaluate("window.fixture.hosts[0].resourceHealth = 'normal'; window.fixture.hosts[0].latest.cpuPercent = 12");
+  await evaluate("window.fixture.hosts[0].resourceHealth = 'normal'; window.fixture.hosts[0].latest.cpuPercent = 12; window.fixture.hosts[1].connectivity = 'unknown'; window.fixture.hosts[1].freshness = 'unknown'");
+  await wait("document.querySelectorAll('.fleet-table tbody tr').length === 1 && document.querySelector('.fleet-table tbody').innerText.includes('Viewer fixture host')");
+  await evaluate("window.fixture.hosts[1].connectivity = 'connected'; window.fixture.hosts[1].freshness = 'fresh'");
   await wait("document.body.innerText.includes('No matching hosts')");
   await click("Show all hosts");
   await wait("document.querySelectorAll('.fleet-table tbody tr').length === 2");
-  pass("collapsed mobile cards expose resource warnings and attention filtering preserves independent freshness");
+  pass("collapsed mobile cards expose resource-warning causes, include unknown evidence in the issues filter and preserve independent freshness");
   await click("Just now");
   assert.ok(await evaluate("(() => {const b = [...document.querySelectorAll('.time-trigger')].find(b => b.getAttribute('aria-expanded') === 'true'); const exact = b && document.getElementById(b.getAttribute('aria-controls')); return exact?.checkVisibility() && exact.textContent.length > 15;})()"), "Exact operational times are not available by tap");
   await click("Just now");
@@ -472,8 +506,69 @@ try {
   await wait("!!document.querySelector('.history svg')");
   await evaluate("document.querySelector('.history-data').open = true");
   assert.ok(await evaluate("document.querySelector('.history-summary').innerText.includes('12.0–64.0%') && document.querySelector('.history-data').innerText.includes('Not measured') && document.querySelector('.history-data').innerText.includes('Gap before this reading')"), "Populated CPU history lacks equivalent values or missing-data context");
+  assert.ok(await evaluate("[...document.querySelectorAll('.history-axis span')].map(s => s.textContent).join(',') === '100%,50%,0%' && [...document.querySelectorAll('.history-point')].every(p => p.getBoundingClientRect().width >= 7) && document.querySelectorAll('.history-ticks time').length === 3"), "CPU chart lacks readable reference values, time ticks or screen-sized markers");
   await evaluate("window.fixture.samples = []");
   pass("CPU history exposes a range summary and bounded chronological readings including missing values and gaps");
+  await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false }, sessionId);
+  await setValue('form[aria-label="Host inventory"] input[name=name]', 'Unsaved host draft');
+  await evaluate("document.querySelector('.host-mapping-form input[type=checkbox]').click(); window.confirm = () => false");
+  await click("Fleet overview");
+  assert.ok(await evaluate("location.hash === '#/hosts/private-host' && document.querySelector('.host-inventory-form input[name=name]').value === 'Unsaved host draft' && !document.querySelector('.host-mapping-form input[type=checkbox]').checked"), "Host drafts were lost on declined navigation");
+  await evaluate(`(() => {
+    window.fixture.hosts[0].name = 'External host update';
+    const source = window.fixture.canary.sources[0];
+    source.monitors.push({...structuredClone(source.monitors[0]), monitor: {...source.monitors[0].monitor, id: 'secondary', name: 'Secondary fixture monitor'}});
+    window.fixture.canary.mappings = [{hostId:'private-host',sourceId:'fixture-source',monitorId:'secondary'}];
+  })()`);
+  await wait("[...document.querySelectorAll('.host-form-feedback .retained')].length === 2");
+  assert.ok(await evaluate("document.querySelector('.host-inventory-form input[name=name]').value === 'Unsaved host draft' && [...document.querySelectorAll('.host-mapping-form input[type=checkbox]')].every(c => !c.checked)"), "Polling replaced a dirty host or mapping draft");
+  await evaluate("document.querySelectorAll('.host-form-feedback .retained button:first-of-type').forEach(b => b.click())");
+  pass("host inventory and monitor mapping drafts block navigation and survive independently changed saved values");
+  await evaluate("window.fixture.failWrites.add('PATCH /api/hosts/private-host')");
+  await submit("Host inventory");
+  await wait("document.querySelector('.host-inventory-form [role=alert]')?.innerText.includes('Fixture save unavailable')");
+  assert.equal(await evaluate("document.querySelector('.host-inventory-form input[name=name]').value"), "Unsaved host draft");
+  await evaluate("window.fixture.failWrites.clear(); window.fixture.hold.add('PATCH /api/hosts/private-host')");
+  await submit("Host inventory");
+  await wait("typeof window.fixture.holds['PATCH /api/hosts/private-host'] === 'function' && document.querySelector('.host-inventory-form fieldset').disabled");
+  const inventoryWrites = await evaluate("window.fixture.requests.filter(r => r.method === 'PATCH').length");
+  await submit("Host inventory");
+  assert.equal(await evaluate("window.fixture.requests.filter(r => r.method === 'PATCH').length"), inventoryWrites, "Pending inventory was submitted twice");
+  await evaluate("window.fixture.holds['PATCH /api/hosts/private-host']()");
+  await wait("document.querySelector('.host-inventory-form .status-notice').innerText.includes('Host inventory saved') && !document.querySelector('.host-inventory-form fieldset').disabled");
+  await evaluate("window.fixture.hold.add('PUT /api/hosts/private-host/mappings')");
+  await submit("Host monitor mappings");
+  await wait("typeof window.fixture.holds['PUT /api/hosts/private-host/mappings'] === 'function' && document.querySelector('.host-mapping-form fieldset').disabled");
+  await submit("Host monitor mappings");
+  assert.equal(await evaluate("window.fixture.requests.filter(r => r.method === 'PUT' && r.path.endsWith('/mappings')).length"), 1, "Pending mappings were submitted twice");
+  await evaluate("window.fixture.holds['PUT /api/hosts/private-host/mappings']()");
+  await wait("document.querySelector('.host-mapping-form .status-notice').innerText.includes('Monitor mappings saved') && window.fixture.canary.mappings.length === 0");
+  pass("host saves retain failed drafts, freeze submitted values, reject duplicate submissions and report results beside each form");
+
+  await evaluate("window.fixture.hold.add('POST /api/hosts/private-host/jobs')");
+  await click("Request logs");
+  await wait("typeof window.fixture.holds['POST /api/hosts/private-host/jobs'] === 'function' && document.querySelector('.service-requests').getAttribute('aria-busy') === 'true'");
+  assert.ok(await evaluate("[...document.querySelectorAll('.service-requests button')].every(b => b.disabled) && document.querySelector('.service-pending').innerText.includes('No execution is confirmed')"), "Pending service request lacks local progress or leaves repeat submission enabled");
+  await evaluate("document.querySelector('.service-requests button').click(); document.querySelector('.service-requests button').click()");
+  assert.equal(await evaluate("window.fixture.requests.filter(r => r.method === 'POST' && r.path.endsWith('/jobs')).length"), 1);
+  await evaluate("window.fixture.holds['POST /api/hosts/private-host/jobs']()");
+  await wait("document.querySelector('.service-requests .status-notice').innerText.includes('Request queued')");
+  assert.ok(await evaluate("location.hash === '#/hosts/private-host' && document.querySelector('.service-requests a').getAttribute('href') === '#/jobs' && window.fixture.jobs[0].expiresAt - window.fixture.jobs[0].createdAt === 300000"), "Queued receipt lost context or did not explain a bounded job");
+  await evaluate("window.confirm = () => false");
+  await click("Restart");
+  assert.equal(await evaluate("window.fixture.jobs.length"), 1, "Cancelled restart queued a request");
+  await evaluate("window.confirm = () => true; window.fixture.recent = false");
+  await click("Restart");
+  await wait("document.querySelector('.service-requests [role=alert]')?.innerText.includes('Verify identity')");
+  assert.equal(await evaluate("window.fixture.jobs.length"), 1, "Restart bypassed recent verification in fixture");
+  await evaluate("window.fixture.recent = true; window.fixture.hold.add('POST /api/hosts/private-host/jobs')");
+  await click("Restart");
+  await wait("typeof window.fixture.holds['POST /api/hosts/private-host/jobs'] === 'function'");
+  await evaluate("window.fixture.holds['POST /api/hosts/private-host/jobs']()");
+  await wait("window.fixture.jobs.length === 2 && document.querySelector('.service-requests .status-notice').innerText.includes('Request queued')");
+  pass("service requests prevent repeat clicks, retain local progress/receipts and preserve restart confirmation and recent-verification gates");
+  await evaluate("window.fixture.hosts[0].name = 'ADMIN-ONLY-HOST'; window.fixture.canary.mappings = [{hostId:'private-host',sourceId:'fixture-source',monitorId:'unobserved'}]");
+  await wait("document.querySelector('h1')?.textContent === 'ADMIN-ONLY-HOST' && document.querySelector('.host-mapping-form input[value=\"fixture-source/unobserved\"]').checked");
   await click("← All hosts");
   await wait("!!document.querySelector('.fleet-table')");
   await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false }, sessionId);
@@ -545,9 +640,10 @@ try {
   await click("Fleet overview");
   await click("ADMIN-ONLY-HOST");
   await wait("document.body.innerText.includes('ADMIN-ONLY-PROCESS')");
-  await evaluate("window.fixture.offline = true");
+  await evaluate("window.fixture.hosts[0].latest.cpuPercent = null; window.fixture.offline = true");
   await wait("!!document.querySelector('[role=alert]') && document.querySelectorAll('.metrics .chip.good').length === 0 && [...document.querySelectorAll('.metrics .chip')].some(c => c.textContent.includes('stale'))");
   assert.ok(await evaluate("document.querySelector('.reading-snapshot')?.innerText.includes('retained snapshot') && document.querySelectorAll('.retained-label').length === 4 && [...document.querySelectorAll('th')].some(h => h.textContent === 'Last known state') && document.body.innerText.includes('Last known service snapshot')"), "Stale host readings or service states are presented without retained qualification");
+  // The prior response may still contain CPU 12; a separate fresh null snapshot is checked below after recovery.
   await capture("02-disconnected-dashboard");
   await evaluate("window.fixture.offline = false; window.fixture.htmlFailure = true");
   await wait("document.querySelector('[role=alert]')?.innerText.includes('Request failed (502)')");
@@ -556,6 +652,12 @@ try {
   pass("failed polling invalidates cached host and Canary health");
 
   await evaluate("window.fixture.htmlFailure = false; window.fixture.offline = false");
+  await click("Fleet overview");
+  await click("ADMIN-ONLY-HOST");
+  await wait("document.querySelector('.host-resources')?.innerText.includes('Not measured')");
+  assert.ok(await evaluate("!document.querySelector('.host-resources').innerText.includes('Sampling')"), "Missing CPU implies active sampling");
+  await evaluate("window.fixture.hosts[0].latest.cpuPercent = 12");
+  pass("a missing CPU value is not presented as an active sampling operation");
 
   // Projects: empty inventory, administrator registration and metadata conflicts.
   await click("Projects");
