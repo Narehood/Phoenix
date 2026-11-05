@@ -108,14 +108,34 @@ export function JobOutcome({
               {job.hostName || job.hostId}
             </RouteLink>
           </p>
-          <small>
-            Host ID <code>{job.hostId}</code> · action <code>{job.action}</code>
-          </small>
         </div>
       )}
       <details className="job-identifiers">
         <summary>Job identity</summary>
-        <code className="wrap">{id}</code>
+        <dl className="job-identity-fields">
+          <div>
+            <dt>Job ID</dt>
+            <dd>
+              <code className="wrap">{id}</code>
+            </dd>
+          </div>
+          {job && (
+            <>
+              <div>
+                <dt>Host ID</dt>
+                <dd>
+                  <code className="wrap">{job.hostId}</code>
+                </dd>
+              </div>
+              <div>
+                <dt>Action key</dt>
+                <dd>
+                  <code>{job.action}</code>
+                </dd>
+              </div>
+            </>
+          )}
+        </dl>
       </details>
       <div className="job-status-tools">
         <button

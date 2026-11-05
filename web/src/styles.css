@@ -214,12 +214,12 @@ nav small {
   width: 100%;
 }
 .sidebar-bottom > p {
-  font-size: 11px;
+  font-size: 13px;
   padding: 16px 10px 5px;
   color: var(--ink-muted);
 }
 .companion {
-  font-size: 11px;
+  font-size: 13px;
   padding: 13px 10px;
   border: 1px solid #ffffff16;
   border-radius: 8px;
@@ -245,18 +245,19 @@ nav small {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 4px;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 .account small {
   display: block;
   color: var(--ink-muted);
-  font-size: 10px;
+  font-size: 13px;
 }
 .account button {
-  padding: 5px;
+  padding: 8px 10px;
   background: transparent;
   color: var(--ink-text);
-  font-size: 10px;
+  font-size: 13px;
   border: none;
 }
 .workspace {
@@ -656,7 +657,7 @@ footer {
   border-top: 1px solid var(--border);
   margin: 10px 32px 0;
   padding: 20px 0;
-  font-size: 11px;
+  font-size: 13px;
   color: var(--text-3);
   display: flex;
   justify-content: space-between;
@@ -2372,6 +2373,89 @@ textarea:disabled {
   font-size: 13px;
   color: var(--text-2);
 }
+.job-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+  padding: 16px 20px 12px;
+}
+.job-filters label {
+  display: grid;
+  gap: 5px;
+  font-size: 13px;
+  font-weight: 600;
+  min-width: 0;
+  flex: 1 1 140px;
+}
+.job-filters > label:first-child {
+  flex: 2 1 240px;
+}
+.job-filters :is(input, select) {
+  width: 100%;
+  font-weight: 400;
+}
+.job-filter-options {
+  flex: 2 1 280px;
+}
+.job-filter-fields {
+  display: flex;
+  gap: 12px;
+}
+.job-filter-count {
+  margin: 0;
+  padding: 0 20px 12px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.job-cancel {
+  display: inline-block;
+  vertical-align: middle;
+}
+.job-cancel > small {
+  max-width: 240px;
+  white-space: normal;
+  margin-top: 6px;
+}
+.job-identity-fields {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0;
+}
+.job-identity-fields > div {
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr);
+  gap: 12px;
+}
+.job-identity-fields dt {
+  color: var(--text-2);
+}
+.job-identity-fields dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.metrics:is(.host-status, .host-resources) {
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+.metrics:is(.host-status, .host-resources) .metric {
+  padding: 12px 16px;
+  min-height: 0;
+  gap: 4px;
+  border: 0;
+  border-right: 1px solid var(--border);
+  border-radius: 0;
+}
+.metrics:is(.host-status, .host-resources) .metric:last-child {
+  border-right: 0;
+}
+.host-status .metric > small {
+  font-size: 13px;
+}
 .job-identifiers {
   margin: 8px 0;
 }
@@ -2418,6 +2502,101 @@ textarea:disabled {
   font-size: 14px;
 }
 @media (max-width: 720px) {
+  .job-filters {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 12px 14px;
+    gap: 8px 12px;
+  }
+  .job-filters > label:first-child,
+  .job-filter-options,
+  .job-filters > button {
+    grid-column: 1 / -1;
+  }
+  .job-filter-options > summary {
+    display: list-item;
+    min-height: 44px;
+    padding: 10px 0;
+    cursor: pointer;
+    color: var(--text-2);
+  }
+  .job-filter-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .job-filters :is(input, select) {
+    min-height: 44px;
+    font-size: 16px;
+    padding: 8px;
+  }
+  .job-filter-count {
+    padding: 0 14px 10px;
+  }
+  .jobs-table tbody tr {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 4px 14px;
+  }
+  .jobs-table td[data-label="Action"] {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .jobs-table td[data-label="State"] {
+    grid-column: 2;
+    grid-row: 1;
+    align-items: end;
+  }
+  .jobs-table td[data-label="State"]::before,
+  .jobs-table td[data-label="Outcome"]::before {
+    display: none;
+  }
+  .jobs-table td[data-label="Host"] {
+    grid-column: 1;
+    grid-row: 2;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    min-height: 44px;
+    gap: 4px 8px;
+  }
+  .jobs-table td[data-label="Created"] {
+    grid-column: 2;
+    grid-row: 2;
+    justify-content: end;
+  }
+  .jobs-table td[data-label="Created"]::before {
+    display: none;
+  }
+  .jobs-table td[data-label="Created"] .time-trigger::before {
+    content: "Created " / "";
+  }
+  .jobs-table td[data-label="Outcome"] {
+    gap: 0 14px;
+  }
+  .job-cancel {
+    flex: 1;
+    font-size: 13px;
+  }
+  .job-cancel > summary {
+    display: list-item;
+    min-height: 44px;
+    padding: 12px 0;
+    color: var(--text-2);
+    cursor: pointer;
+  }
+  .job-cancel > small {
+    max-width: none;
+  }
+  .metrics:is(.host-status, .host-resources) .metric {
+    padding: 10px;
+    gap: 3px;
+  }
+  .metrics:is(.host-status, .host-resources) .metric:nth-child(even) {
+    border-right: 0;
+  }
+  .metrics:is(.host-status, .host-resources) .metric:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--border);
+  }
   .host-section-links {
     gap: 0 16px;
     margin-top: -4px;
@@ -2459,13 +2638,17 @@ textarea:disabled {
     display: block;
     margin-bottom: 4px;
   }
-  .jobs-table td[data-label="Created"],
   .jobs-table td[data-label="Outcome"] {
     grid-column: 1 / -1;
     flex-direction: row;
     align-items: center;
     flex-wrap: wrap;
     gap: 8px;
+  }
+  .jobs-table td[data-label="Created"] {
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
   }
   .jobs-table td[data-label="Outcome"] > small {
     flex-basis: 100%;

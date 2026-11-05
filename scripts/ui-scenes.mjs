@@ -201,7 +201,7 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await evaluate("document.querySelector('.mobile-navigation').open = false");
   await evaluate("window.fixture.hosts[1].resourceHealth = 'warning'; window.fixture.hosts[1].latest.cpuPercent = 96");
   await wait("document.querySelector('.attention-filter')?.textContent.includes('(2)')");
-  await click("Agent / readings issues");
+  await click("Agent & resource issues");
   await wait("document.querySelectorAll('.fleet-table tbody tr').length === 2");
   await top();
   await shot("fleet-attention-mobile");
@@ -223,6 +223,27 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await wait("!!document.querySelector('.jobs-table')");
   await top();
   await shot("jobs-mobile");
+  await evaluate("document.querySelector('.job-cancel > summary').click()");
+  await shot("jobs-request-controls-mobile");
+  await evaluate("document.querySelector('.job-cancel > summary').click()");
+  await evaluate(`(() => {
+    document.querySelector('.job-filter-options > summary').click();
+    const input = document.querySelector('input[name=jobSearch]');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'phoenix-acceptance');
+    input.dispatchEvent(new Event('input', {bubbles:true}));
+    const select = document.querySelector('select[name=jobAction]');
+    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(select, 'logs.read');
+    select.dispatchEvent(new Event('change', {bubbles:true}));
+  })()`);
+  await wait("document.querySelectorAll('.jobs-table tbody tr').length === 1 && document.querySelector('.job-filter-count').innerText.includes('1 of 3')");
+  await shot("jobs-filtered-mobile");
+  await viewport(1440, 1000);
+  await top();
+  await shot("jobs-filtered-desktop");
+  await click("Clear filters");
+  await viewport(390, 844);
+  await wait("document.querySelectorAll('.jobs-table tbody tr').length === 3");
+  await top();
   await click("View outcome");
   await wait("!!document.querySelector('dialog[open] .job-target')");
   await shot("job-outcome-mobile");

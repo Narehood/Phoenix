@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { api, csrf, ApiError } from "./api";
 import type { Audit, Canary, Host, Job, Reading, User, Monitor } from "./types";
 import {
@@ -1015,7 +1015,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                     onClick={() => setAttentionOnly(!attentionOnly)}
                     title="Offline or unknown agents, stale or missing readings, and resource warnings. Canary uptime is separate."
                   >
-                    Agent / readings issues (
+                    Agent & resource issues (
                     {sourceLoaded.Hosts ? attentionCount : "…"})
                   </button>
                   <input
@@ -1813,6 +1813,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                   </div>
                 </details>
                 <Jobs
+                  loaded={!!sourceLoaded.Jobs}
                   unavailable={!!sourceErrors.Jobs}
                   jobs={hostJobs}
                   hosts={hosts}
@@ -1827,6 +1828,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                   id="host-jobs"
                 />
                 <Activity
+                  loaded={!!sourceLoaded.Activity}
                   unavailable={!!sourceErrors.Activity}
                   audit={audit.filter((a) => a.hostId === current.id)}
                 />
@@ -1845,6 +1847,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                 </div>
               </div>
               <Jobs
+                loaded={!!sourceLoaded.Jobs}
                 unavailable={!!sourceErrors.Jobs}
                 jobs={jobs}
                 hosts={hosts}
@@ -1868,7 +1871,11 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                   </p>
                 </div>
               </div>
-              <Activity audit={audit} unavailable={!!sourceErrors.Activity} />
+              <Activity
+                loaded={!!sourceLoaded.Activity}
+                audit={audit}
+                unavailable={!!sourceErrors.Activity}
+              />
             </>
           )}
           {view === "canary" && (
@@ -2386,23 +2393,135 @@ function Jobs({
   hosts,
   cancel,
   id,
+  loaded,
   unavailable = false,
 }: {
   jobs: Job[];
   hosts: Host[];
   cancel: (id: string) => void;
   id?: string;
+  loaded: boolean;
   unavailable?: boolean;
 }) {
+  const [query, setQuery] = useState(""),
+    [state, setState] = useState(""),
+    [action, setAction] = useState("");
+  const boundsId = useId();
+  const hostName = (job: Job) =>
+    hosts.find((host) => host.id === job.hostId)?.name ||
+    job.hostName ||
+    job.hostId;
+  const filtered = jobs.filter(
+    (job) =>
+      (!state || job.state === state) &&
+      (!action || job.action === action) &&
+      `${job.id} ${hostName(job)} ${job.hostId} ${jobAction(job.action)} ${job.action} ${job.args.service || ""} ${job.args.diagnostic || ""}`
+        .toLowerCase()
+        .includes(query.trim().toLowerCase()),
+  );
+  const clearFilters = () => {
+    setQuery("");
+    setState("");
+    setAction("");
+  };
   return (
-    <section className="panel" id={id}>
+    <section className="panel jobs-panel" id={id}>
       <div className="panel-heading">
         <h2>Jobs</h2>
-        <span className="muted">Latest 200 · output permission required</span>
+        <span className="muted" id={boundsId}>
+          Within latest 200 · output permission required
+        </span>
       </div>
+      <form
+        className="job-filters"
+        role="search"
+        aria-label="Filter jobs"
+        aria-describedby={boundsId}
+        onSubmit={(event) => event.preventDefault()}
+      >
+        <label>
+          Search jobs
+          <input
+            type="search"
+            name="jobSearch"
+            placeholder="Host, target or job ID…"
+            value={query}
+            disabled={!loaded || !jobs.length}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </label>
+        <ResponsiveDetails
+          className="job-filter-options"
+          label={`State & action${state || action ? " · filtered" : ""}`}
+        >
+          <div className="job-filter-fields">
+            <label>
+              State
+              <select
+                name="jobState"
+                value={state}
+                disabled={!loaded || !jobs.length}
+                onChange={(event) => setState(event.target.value)}
+              >
+                <option value="">All states</option>
+                {[...new Set([state, ...jobs.map((job) => job.state)])]
+                  .filter(Boolean)
+                  .sort()
+                  .map((value) => (
+                    <option key={value} value={value}>
+                      {value.charAt(0).toUpperCase() +
+                        value.slice(1).replaceAll("_", " ")}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <label>
+              Action
+              <select
+                name="jobAction"
+                value={action}
+                disabled={!loaded || !jobs.length}
+                onChange={(event) => setAction(event.target.value)}
+              >
+                <option value="">All actions</option>
+                {[...new Set([action, ...jobs.map((job) => job.action)])]
+                  .filter(Boolean)
+                  .sort()
+                  .map((value) => (
+                    <option key={value} value={value}>
+                      {jobAction(value)}
+                    </option>
+                  ))}
+              </select>
+            </label>
+          </div>
+        </ResponsiveDetails>
+        {(query || state || action) && (
+          <button type="button" onClick={clearFilters}>
+            Clear filters
+          </button>
+        )}
+      </form>
+      {!!jobs.length && (
+        <p className="job-filter-count" role="status">
+          {filtered.length} of {jobs.length} loaded jobs
+          {unavailable ? " · retained history; source unavailable" : ""}
+        </p>
+      )}
       {!jobs.length ? (
         <Empty>
-          {unavailable ? "Job history unavailable." : "No management jobs yet."}
+          {unavailable
+            ? "Job history unavailable."
+            : !loaded
+              ? "Loading job history…"
+              : "No management jobs yet."}
+        </Empty>
+      ) : !filtered.length ? (
+        <Empty>
+          No matching jobs within the latest 200.{" "}
+          <button type="button" onClick={clearFilters}>
+            Clear filters
+          </button>
         </Empty>
       ) : (
         <div className="table-scroll">
@@ -2434,7 +2553,7 @@ function Jobs({
               </tr>
             </thead>
             <tbody role="rowgroup">
-              {jobs.map((j) => (
+              {filtered.map((j) => (
                 <tr role="row" key={j.id}>
                   <td role="cell" aria-colindex={1} data-label="Action">
                     <strong>{jobAction(j.action)}</strong>
@@ -2443,7 +2562,7 @@ function Jobs({
                     )}
                   </td>
                   <td role="cell" aria-colindex={2} data-label="Host">
-                    {hosts.find((h) => h.id === j.hostId)?.name || j.hostId}
+                    {hostName(j)}
                   </td>
                   <td role="cell" aria-colindex={3} data-label="State">
                     <Tone value={j.state} />
@@ -2464,7 +2583,16 @@ function Jobs({
                     )}
                     {["queued", "dispatched"].includes(j.state) &&
                       !j.cancelRequested && (
-                        <>
+                        <ResponsiveDetails
+                          className="job-cancel"
+                          label={
+                            unavailable || j.canCancel === undefined
+                              ? "Cancellation unavailable"
+                              : j.canCancel
+                                ? "Manage request"
+                                : "Cancellation restricted"
+                          }
+                        >
                           <button
                             disabled={unavailable || j.canCancel !== true}
                             onClick={() => cancel(j.id)}
@@ -2475,10 +2603,10 @@ function Jobs({
                             <small>
                               {unavailable || j.canCancel === undefined
                                 ? "Cancellation permission unavailable"
-                                : "Cancellation not permitted"}
+                                : "Cancellation not permitted. Ask an administrator for cancellation access to this host."}
                             </small>
                           )}
-                        </>
+                        </ResponsiveDetails>
                       )}
                   </td>
                 </tr>
@@ -2492,9 +2620,11 @@ function Jobs({
 }
 function Activity({
   audit,
+  loaded,
   unavailable = false,
 }: {
   audit: Audit[];
+  loaded: boolean;
   unavailable?: boolean;
 }) {
   return (
@@ -2507,7 +2637,9 @@ function Activity({
         <Empty>
           {unavailable
             ? "Activity history unavailable."
-            : "No activity in view."}
+            : !loaded
+              ? "Loading activity history…"
+              : "No activity in view."}
         </Empty>
       ) : (
         <ol className="timeline">

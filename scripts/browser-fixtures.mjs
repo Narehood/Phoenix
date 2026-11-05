@@ -58,7 +58,7 @@ function installFixture() {
       "operator-fixture": [{ scopeType: "host", scope: "viewer-host", action: "host.read" }, { scopeType: "project", scope: "fixture-project", action: "project.read" }],
       "viewer-fixture": [{ scopeType: "host", scope: "viewer-host", action: "host.read" }],
     },
-    lastGrantPut: null, shared: ["fixture-project"], requests: [], hold: new Set(new URLSearchParams(location.search).has("hold") ? ["/api/hosts", "/api/canary"] : []), holds: {}, samples: [reading] };
+    lastGrantPut: null, shared: ["fixture-project"], requests: [], hold: new Set(new URLSearchParams(location.search).has("hold") ? ["/api/hosts", "/api/canary", "/api/jobs", "/api/audit"] : []), holds: {}, samples: [reading] };
   const refreshEvidence = () => {
     for (const h of fixtureHosts) {
       if (h.connectivity === "connected") h.lastContact = Date.now();
@@ -415,10 +415,25 @@ try {
   assert.ok(await evaluate("[...document.querySelectorAll('.metric')].find(m => m.innerText.includes('Canary sources'))?.innerText.includes('Loading')"), "A successful host read implies Canary configuration");
   await evaluate("window.fixture.holds['/api/canary']()");
   await wait("[...document.querySelectorAll('.metric')].find(m => m.innerText.includes('Canary sources'))?.innerText.includes('1 / 1')");
+  await click("Remote jobs");
+  await wait("document.querySelector('.jobs-panel')?.innerText.includes('Loading job history') && typeof window.fixture.holds['/api/jobs'] === 'function'");
+  assert.ok(await evaluate("!document.body.innerText.includes('No management jobs yet') && document.querySelector('.job-filters input').disabled"), "Pending first job read implies empty history or enables filtering");
+  if (visual) await capture("jobs-loading-desktop");
+  await evaluate("window.fixture.holds['/api/jobs']()");
+  await wait("document.querySelector('.jobs-panel')?.innerText.includes('No management jobs yet')");
+  await click("Activity & audit");
+  await wait("document.body.innerText.includes('Loading activity history') && typeof window.fixture.holds['/api/audit'] === 'function'");
+  assert.ok(await evaluate("!document.body.innerText.includes('No activity in view')"), "Pending first activity read implies confirmed absence");
+  if (visual) await capture("activity-loading-desktop");
+  await evaluate("window.fixture.holds['/api/audit']()");
+  await wait("document.body.innerText.includes('No activity in view')");
+  await click("Fleet overview");
+  await wait("!!document.querySelector('.fleet-table')");
   if (visual) {
     await captureUI({ send, sessionId, evaluate, wait, click, capture });
   } else {
   pass("first host and Canary loads remain unknown until each source independently responds");
+  pass("job and activity history show first-read loading before independently confirmed empty results");
   // Native modal focus, background inertness and durable in-dialog errors.
   await click("Verify identity");
   await wait("document.querySelector('dialog[open]') && document.activeElement?.name === 'password'");
@@ -505,7 +520,7 @@ try {
   await evaluate("window.fixture.hosts[0].resourceHealth = 'warning'; window.fixture.hosts[0].latest.cpuPercent = 96");
   await wait("document.querySelector('.attention-filter')?.textContent.includes('(1)') && [...document.querySelectorAll('.mobile-resource-warning .chip')].some(c => c.checkVisibility() && c.textContent.includes('Resource warning'))");
   assert.equal(await evaluate("document.querySelector('.resource-details').open"), false, "Resource-warning proof needs a collapsed card");
-  await click("Agent / readings issues");
+  await click("Agent & resource issues");
   await wait("document.querySelector('.attention-filter').getAttribute('aria-pressed') === 'true' && document.querySelectorAll('.fleet-table tbody tr').length === 1 && document.querySelector('.fleet-table').innerText.includes('ADMIN-ONLY-HOST')");
   assert.ok(await evaluate("document.querySelector('.compact-freshness').innerText.toLowerCase().includes('fresh readings')"), "Resource warning incorrectly changed independent reading freshness");
   assert.ok(await evaluate("document.querySelector('.resource-details > summary').innerText.includes('CPU 96.0%') && !document.querySelector('.mobile-resource-warning').innerText.includes('CPU')"), "Resource warning hides or duplicates its current measurement");
@@ -645,8 +660,24 @@ try {
   await wait("document.querySelector('#host-jobs td[data-label=Outcome] button')?.disabled && document.querySelector('#host-jobs').innerText.includes('Cancellation not permitted')");
   await click("Remote jobs");
   await wait("location.hash === '#/jobs' && [...document.querySelectorAll('#content button')].some(b => b.textContent === 'Cancel' && b.disabled)");
+  await setValue("input[name=jobSearch]", "NO-MATCHING-FIXTURE");
+  await wait("document.querySelector('.jobs-panel').innerText.includes('No matching jobs within the latest 200') && !document.querySelector('.jobs-table')");
+  assert.ok(await evaluate("!document.querySelector('.jobs-panel').innerText.includes('No management jobs yet')"), "A zero-match filter implies empty job history");
+  await click("Clear filters");
+  await setValue("select[name=jobAction]", "logs.read");
+  await setValue("select[name=jobState]", "succeeded");
+  await wait("!document.querySelector('.jobs-table')");
+  await setValue("select[name=jobState]", "queued");
+  await setValue("input[name=jobSearch]", "private-host");
+  await wait("document.querySelectorAll('.jobs-table tbody tr').length === 1 && document.querySelector('.jobs-table tbody a').getAttribute('href') === '#/jobs/fixture-job-1'");
+  assert.ok(await evaluate("document.querySelector('.job-filter-count').innerText.includes('1 of 2') && document.querySelector('.jobs-panel .panel-heading').innerText.includes('Within latest 200')"), "Job filters hide their bounded scope or fail to combine target, action and state");
+  await click("Clear filters");
+  await wait("document.querySelectorAll('.jobs-table tbody tr').length === 2");
+  pass("job search and combined state/action filters narrow authorized loaded history and distinguish no matches from no history");
   await send("Emulation.setDeviceMetricsOverride", {width:390,height:844,deviceScaleFactor:1,mobile:true}, sessionId);
   await evaluate("new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)))");
+  await evaluate("document.querySelector('.job-cancel summary').click()");
+  await wait("document.querySelector('.job-cancel small')?.checkVisibility()");
   assert.ok(await evaluate("document.documentElement.scrollWidth <= innerWidth && document.querySelector('.jobs-table').parentElement.scrollWidth <= document.querySelector('.jobs-table').parentElement.clientWidth && document.querySelector('.jobs-table td[data-label=Outcome] button').disabled"), "Mobile jobs require sideways scrolling or enable an ungranted cancellation");
   const jobHeaders = (await send("Accessibility.getFullAXTree", {}, sessionId)).nodes.filter(n => !n.ignored && n.role?.value === "columnheader").map(n => String(n.name?.value || "").trim().replace(/\s+/g, " ").toLowerCase());
   for(const label of ["Action","Host","State","Created","Outcome"]) assert.ok(jobHeaders.includes(label.toLowerCase()), `Mobile jobs lost its accessible ${label} header; accessible headers: ${JSON.stringify(jobHeaders)}`);
