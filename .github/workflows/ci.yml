@@ -17,10 +17,21 @@ jobs:
       - uses: actions/checkout@v4
       - name: Fixture, authorization, mTLS, job and race checks in Debian container
         run: docker build --target validate --progress=plain .
-      - name: Server image and React bundle
+      - name: Server image, React bundle and unprivileged binary smoke
         run: docker build --target server --progress=plain -t phoenix:ci .
       - name: Dashboard browser regression fixtures
         run: python3 scripts/validate.py --timeout 120 -- node scripts/browser-fixtures.mjs
+      - name: Export and package the tested Linux kit
+        run: |
+          python3 scripts/validate.py --timeout 300 -- docker build --target test-kit --output type=local,dest=.validation/test-kit .
+          python3 scripts/validate.py --timeout 120 -- python3 scripts/test_kit.py "$GITHUB_SHA"
+      - name: Retain development test kit
+        uses: actions/upload-artifact@v4
+        with:
+          name: phoenix-linux-amd64-test-kit
+          path: .validation/test-kit-artifact/
+          if-no-files-found: error
+          retention-days: 7
       - name: Retain bounded browser evidence
         if: always()
         uses: actions/upload-artifact@v4

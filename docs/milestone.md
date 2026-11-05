@@ -27,6 +27,12 @@ acceptance and production release gates remain required.
 
 ## Infrastructure milestone
 
+The current test-readiness follow-up adds a downloadable Linux test kit,
+unprivileged built-binary smoke/isolated restore coverage and helper-policy
+fixtures. See the [tester handoff](testing.md). Execution evidence is tracked in
+[validation](validation.md); these checks do not complete installed-host, manual
+browser or live-integration acceptance.
+
 The full goal includes fleet inventory, telemetry, processes, services, bounded logs/history, durable approved commands, service management, explicit reboot, secure lifecycle enrollment, permissions, independent Canary status and GitHub repository health. Windows, additional transports, start/stop actions, broader diagnostics and GitHub integration follow the first Debian slice; they remain product scope.
 
 Implemented slice validated through the Linux fixtures on checkpoint `6fb3ce9`; the session-revocation, administrator-only mapping and helper-timeout regressions subsequently passed the fixture/race stages on `de67ade`. That run's browser stage failed during Chrome startup. Later changes require the current PR check; checkmarks below are not claims of actual-host or complete browser acceptance ([evidence](validation.md#recorded-results)):

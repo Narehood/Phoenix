@@ -1,6 +1,6 @@
 # Installation, configuration, backup and recovery
 
-This is a development milestone for a single Linux server and Debian/systemd agents. Run the fixture/container gates before installing it on infrastructure. No production deployment, live Debian helper operation or workstation administrative operation was performed during development. Windows and SSH are unimplemented.
+This is a development milestone for a single Linux server and Debian/systemd agents. Run the fixture/container gates before installing it on infrastructure. Use the [test handoff](testing.md) for checksummed development artifacts and the manual test matrix. No production deployment, live Debian helper operation or workstation administrative operation was performed during development. Windows and SSH are unimplemented.
 
 ## Register projects and connect GitHub
 

@@ -61,10 +61,23 @@ type publicError struct {
 func (e publicError) Error() string       { return e.message }
 func fail(code int, message string) error { return publicError{code, message} }
 
-func New(c Config) (*Server, error) {
+func validateConfig(c Config) error {
 	u, e := url.Parse(c.Origin)
-	if e != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Path != "" {
-		return nil, errors.New("origin must be exact HTTPS origin without a path")
+	if e != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.ForceQuery || strings.Contains(c.Origin, "#") || u.Path != "" {
+		return errors.New("origin must be exact HTTPS origin without a path")
+	}
+	if c.DataDir == "" || c.IdentityDir == "" {
+		return errors.New("data and identity directories are required")
+	}
+	if (c.TLSCert == "") != (c.TLSKey == "") {
+		return errors.New("TLS certificate and key must be configured together")
+	}
+	return nil
+}
+
+func New(c Config) (*Server, error) {
+	if e := validateConfig(c); e != nil {
+		return nil, e
 	}
 	db, e := store.Open(filepath.Join(c.DataDir, "phoenix.db"))
 	if e != nil {
@@ -118,6 +131,10 @@ func New(c Config) (*Server, error) {
 }
 
 func Init(c Config) (string, error) {
+	// Reject configuration mistakes before creating irreplaceable identity files.
+	if e := validateConfig(c); e != nil {
+		return "", e
+	}
 	if e := os.MkdirAll(c.IdentityDir, 0700); e != nil {
 		return "", e
 	}

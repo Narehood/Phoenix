@@ -4,6 +4,27 @@ Evidence is separated into compilation, fixture execution, actual Debian/systemd
 
 ## Recorded results
 
+**Debian test-readiness follow-up:** the new Docker `smoke` stage runs the built
+server/agent as UID 10001 with fresh temporary state and loopback-only TLS. It
+covers MFA/session setup, project registration, CLI enrollment and fingerprint
+approval, real container procfs samples, a fixed diagnostic receipt, and stopped
+backup/isolated restore with offline session recovery. Helper policy fixtures
+exercise file trust, bounded reads and action/deadline validation without calling
+systemctl. Invalid server configuration is rejected before retained identity
+creation. The CI workflow exports a checksummed development test kit only after
+its fixture, smoke and browser gates pass. These additions require a passing
+current-head Linux CI result; source compilation alone is not execution evidence.
+See [testing](testing.md) for the kit and manual acceptance matrix. No actual
+Debian/systemd host, installed helper or live integration has been exercised by
+this follow-up.
+
+Local guarded Linux amd64 test-package cross-compilation and Linux-targeted
+`go vet ./...` passed for this follow-up on 2026-11-04 (62.78 and 22.25 seconds).
+The largest sampled compile scratch was 31,505,106 bytes, the idle compiler cache
+remained below 256 MiB, and the external compiler cache stayed at 14,702 bytes.
+Python syntax checks passed. No Windows application/test executable ran; Docker
+is unavailable locally, so runtime/smoke/browser/packaging results require CI.
+
 **Validated project/GitHub source checkpoint:** on
 `095b2a844800ab3ec9844bce0ab5e35c2adf1cc6`, [Linux run 41699709962](https://github.com/Narehood/Phoenix/actions/runs/41699709962)
 passed all Debian CGO fixtures, Linux vet, all race packages (including both

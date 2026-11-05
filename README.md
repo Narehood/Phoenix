@@ -20,6 +20,7 @@ The Projects dashboard provides an empty-by-default registry for operator-suppli
 - [Installation, backup and recovery](docs/operations.md)
 - [Canary contract evidence](docs/canary.md)
 - [Validation and Debian acceptance](docs/validation.md)
+- [Test builds and manual tester handoff](docs/testing.md)
 
 For a first installation, follow [operations](docs/operations.md): build the Linux container, configure the exact HTTPS origin, initialize the retained identity, trust the public CA through a trusted channel, then complete password/MFA setup. Enroll agents with private invitation files and verify their certificate fingerprints before approving management access.
 
