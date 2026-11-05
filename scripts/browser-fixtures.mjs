@@ -537,7 +537,7 @@ try {
   await evaluate("window.fixture.samples = []");
   pass("CPU history exposes a range summary and bounded chronological readings including missing values and gaps");
   for (const id of ["host-overview", "host-history", "host-services", "host-processes", "host-configuration", "host-jobs"]) {
-    await evaluate(`const picker = document.querySelector('.host-section-links select'); picker.value = ${JSON.stringify(id)}; picker.dispatchEvent(new Event('change', {bubbles:true}))`);
+    await evaluate(`(() => { const picker = document.querySelector('.host-section-links select'); picker.value = ${JSON.stringify(id)}; picker.dispatchEvent(new Event('change', {bubbles:true})); })()`);
     await wait(`!!document.activeElement.closest('#${id}') && location.hash === '#/hosts/private-host'`);
     assert.ok(await evaluate(`(() => { const r = document.getElementById(${JSON.stringify(id)}).getBoundingClientRect(); return r.top >= document.querySelector('.topbar').getBoundingClientRect().bottom && r.top < innerHeight; })()`), `Host section ${id} is obscured by the sticky header or outside the viewport`);
   }
