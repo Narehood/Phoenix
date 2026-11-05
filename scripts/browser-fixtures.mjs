@@ -375,7 +375,8 @@ try {
     // Keep bounded, fixture-only state and the failed view for CI diagnosis.
     try {
       const state = await evaluate(`({route:location.hash.slice(0,200), heading:document.querySelector('h1')?.textContent?.slice(0,100), resources:document.querySelector('.host-resources')?.textContent?.slice(0,600), warnings:document.querySelector('.source-warning')?.textContent?.slice(0,600), fixtureCPU:window.fixture?.hosts?.[0]?.latest?.cpuPercent, offline:window.fixture?.offline, htmlFailure:window.fixture?.htmlFailure, holds:Object.keys(window.fixture?.holds || {}).slice(0,8).map(path => path.slice(0,180)), recentRequests:window.fixture?.requests?.slice(-8).map(({method,path}) => ({method,path:path.slice(0,180)}))})`);
-      const report = JSON.stringify({condition:expression.slice(0,1500), state, runtimeErrors:errors.slice(-3).map(error => String(error).slice(0,512))}, null, 2);
+      const scroll = await evaluate("({actual:scrollY,expected:window.fixture?.returnScroll,mode:history.scrollRestoration,activeHref:document.activeElement?.getAttribute('href')?.slice(0,200)})");
+      const report = JSON.stringify({condition:expression.slice(0,1500), state, scroll, runtimeErrors:errors.slice(-3).map(error => String(error).slice(0,512))}, null, 2);
       if (Buffer.byteLength(report) <= 16384) writeFileSync(join(evidence, "failure-state.json"), report);
     } catch {}
     try { await capture("99-failure"); } catch {}
@@ -698,8 +699,7 @@ try {
   await evaluate("window.fixture.returnScroll = scrollY; const link = document.querySelector('#host-jobs td[data-label=Outcome] > a'); link.focus({preventScroll:true}); link.click()");
   await wait("location.hash === '#/jobs/fixture-job-1' && !!document.querySelector('dialog[open]')");
   await evaluate("const close = document.querySelector('dialog .close'); close.click(); close.click()");
-  await wait("location.hash === '#/hosts/private-host' && document.querySelector('#host-jobs input[name=jobSearch]')?.value === 'fixture-job-1' && document.querySelectorAll('#host-jobs tbody tr').length === 1 && document.activeElement.getAttribute('href') === '#/jobs/fixture-job-1'");
-  assert.ok(await evaluate("Math.abs(scrollY - window.fixture.returnScroll) <= 2"), "Closing a host job outcome loses the list scroll position");
+  await wait("location.hash === '#/hosts/private-host' && document.querySelector('#host-jobs input[name=jobSearch]')?.value === 'fixture-job-1' && document.querySelectorAll('#host-jobs tbody tr').length === 1 && document.activeElement.getAttribute('href') === '#/jobs/fixture-job-1' && Math.abs(scrollY - window.fixture.returnScroll) <= 2");
   await click("Clear filters");
   pass("outcome closing restores host filters, scroll and focus, while direct job links fall back to global jobs");
   await evaluate("window.fixture.hostPermissions = ['host.read','logs.read']");

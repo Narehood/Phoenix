@@ -56,18 +56,21 @@ export function routeHref(route: Route) {
   return `#/${pages.has(route.view) ? route.view : "fleet"}`;
 }
 function focusHeading(scrollY = 0, outcomeHref?: string) {
-  const frame = requestAnimationFrame(() => {
-    const heading =
-      (outcomeHref &&
-        [
-          ...document.querySelectorAll<HTMLAnchorElement>("#content a[href]"),
-        ].find((link) => link.getAttribute("href") === outcomeHref)) ||
-      document.querySelector<HTMLElement>("#content h1");
-    if (heading) {
-      if (!(heading instanceof HTMLAnchorElement)) heading.tabIndex = -1;
-      heading.focus({ preventScroll: true });
-    }
-    window.scrollTo(0, scrollY);
+  let frame = requestAnimationFrame(() => {
+    // Returning a route also remounts its list. Restore after its layout frame.
+    frame = requestAnimationFrame(() => {
+      const heading =
+        (outcomeHref &&
+          [
+            ...document.querySelectorAll<HTMLAnchorElement>("#content a[href]"),
+          ].find((link) => link.getAttribute("href") === outcomeHref)) ||
+        document.querySelector<HTMLElement>("#content h1");
+      if (heading) {
+        if (!(heading instanceof HTMLAnchorElement)) heading.tabIndex = -1;
+        heading.focus({ preventScroll: true });
+      }
+      window.scrollTo(0, scrollY);
+    });
   });
   return () => cancelAnimationFrame(frame);
 }
@@ -153,6 +156,9 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
     } else navigate({ view: "jobs" }, { replace: true });
   }, [navigate]);
   useEffect(() => {
+    // This router owns scrolling; browser history must not overwrite a restore.
+    const previousScrollRestoration = history.scrollRestoration;
+    history.scrollRestoration = "manual";
     if (location.hash !== routeHref(current.current))
       history.replaceState(null, "", routeHref(current.current));
     const changed = () => {
@@ -191,6 +197,7 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
     window.addEventListener("hashchange", changed);
     window.addEventListener("beforeunload", unloading);
     return () => {
+      history.scrollRestoration = previousScrollRestoration;
       window.removeEventListener("popstate", changed);
       window.removeEventListener("hashchange", changed);
       window.removeEventListener("beforeunload", unloading);
