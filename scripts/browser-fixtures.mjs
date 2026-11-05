@@ -363,6 +363,13 @@ try {
       if (await evaluate(`Boolean(${expression})`)) return;
       await new Promise((done) => setTimeout(done, 100));
     }
+    // Keep bounded, fixture-only state and the failed view for CI diagnosis.
+    try {
+      const state = await evaluate(`({route:location.hash.slice(0,200), heading:document.querySelector('h1')?.textContent?.slice(0,100), resources:document.querySelector('.host-resources')?.textContent?.slice(0,600), warnings:document.querySelector('.source-warning')?.textContent?.slice(0,600), fixtureCPU:window.fixture?.hosts?.[0]?.latest?.cpuPercent, offline:window.fixture?.offline, htmlFailure:window.fixture?.htmlFailure, holds:Object.keys(window.fixture?.holds || {}).slice(0,8).map(path => path.slice(0,180)), recentRequests:window.fixture?.requests?.slice(-8).map(({method,path}) => ({method,path:path.slice(0,180)}))})`);
+      const report = JSON.stringify({condition:expression.slice(0,1500), state, runtimeErrors:errors.slice(-3).map(error => String(error).slice(0,512))}, null, 2);
+      if (Buffer.byteLength(report) <= 16384) writeFileSync(join(evidence, "failure-state.json"), report);
+    } catch {}
+    try { await capture("99-failure"); } catch {}
     throw new Error(`Browser assertion timed out: ${expression}`);
   };
   const click = async (text) => {
@@ -720,7 +727,7 @@ try {
   await click("Fleet overview");
   await click("ADMIN-ONLY-HOST");
   await wait("document.body.innerText.includes('ADMIN-ONLY-PROCESS')");
-  await evaluate("window.fixture.hosts[0].latest.cpuPercent = null; window.fixture.offline = true");
+  await evaluate("window.fixture.hosts[0].latest.cpuPercent = null; window.fixture.hosts[0].resourceHealth = 'unknown'; window.fixture.offline = true");
   await wait("!!document.querySelector('[role=alert]') && document.querySelectorAll('.metrics .chip.good').length === 0 && [...document.querySelectorAll('.metrics .chip')].some(c => c.textContent.includes('stale'))");
   assert.ok(await evaluate("document.querySelector('.reading-snapshot')?.innerText.includes('retained snapshot') && document.querySelectorAll('.retained-label').length === 4 && [...document.querySelectorAll('th')].some(h => h.textContent === 'Last known state') && document.body.innerText.includes('Last known service snapshot')"), "Stale host readings or service states are presented without retained qualification");
   // The prior response may still contain CPU 12; a separate fresh null snapshot is checked below after recovery.
@@ -733,10 +740,13 @@ try {
 
   await evaluate("window.fixture.htmlFailure = false; window.fixture.offline = false");
   await click("Fleet overview");
+  // Source recovery removes a banner and changes row positions. Navigate only
+  // after the successful null-CPU response has reached the fleet.
+  await wait("location.hash === '#/fleet' && !document.querySelector('.source-warning') && document.querySelector('.fleet-table tbody tr:first-child td[data-label=Resources]')?.innerText.includes('Unknown')");
   await click("ADMIN-ONLY-HOST");
   await wait("document.querySelector('.host-resources')?.innerText.includes('Not measured')");
   assert.ok(await evaluate("!document.querySelector('.host-resources').innerText.includes('Sampling')"), "Missing CPU implies active sampling");
-  await evaluate("window.fixture.hosts[0].latest.cpuPercent = 12");
+  await evaluate("window.fixture.hosts[0].latest.cpuPercent = 12; window.fixture.hosts[0].resourceHealth = 'normal'");
   pass("a missing CPU value is not presented as an active sampling operation");
 
   // Projects: empty inventory, administrator registration and metadata conflicts.
