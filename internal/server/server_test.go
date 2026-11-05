@@ -318,6 +318,9 @@ func TestRevocationRotationAndWrongCertificates(t *testing.T) {
 	a.client = f.agentClient(identity, string(key))
 	f.exchange(a, nil, nil, "")
 	f.call("POST", "/api/hosts/"+a.id+"/revoke", map[string]string{"confirm": a.id}, 200, nil)
+	// Revocation closes existing agent connections. Check authorization over a
+	// fresh connection instead of racing the old keep-alive socket's teardown.
+	a.client.CloseIdleConnections()
 	f.request(a.client, f.agents.URL, "POST", "/agent/exchange", core.Exchange{Protocol: 1}, 401, nil, "")
 	f.call("POST", "/api/hosts/"+a.id+"/jobs", map[string]any{"action": "diagnostic", "args": core.Args{Diagnostic: "system.summary"}}, 409, nil)
 	wrong, e := security.NewCA()
