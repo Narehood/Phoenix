@@ -17,6 +17,7 @@ import {
 } from "./ui";
 import { Projects } from "./projects";
 import { GrantEditor } from "./grants";
+import { JobOutcome } from "./jobs";
 import {
   HostInventoryForm,
   MappingForm,
@@ -397,7 +398,6 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
     [attentionOnly, setAttentionOnly] = useState(false),
     [verificationUntil, setVerificationUntil] = useState(0),
     [verificationExpired, setVerificationExpired] = useState(false),
-    [result, setResult] = useState<Job | null>(null),
     [modal, setModal] = useState<
       "enroll" | "reboot" | "revoke" | "auth" | null
     >(null),
@@ -1102,7 +1102,6 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                                       value="warning"
                                       label="Resource warning"
                                     />
-                                    <small>{resourceSummary(h.latest)}</small>
                                   </span>
                                 )}
                               </div>
@@ -1179,8 +1178,16 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                                         "Last known · "}
                                       {resourceSummary(h.latest)}
                                     </span>
+                                    <span className="resource-expanded-label">
+                                      Resource details
+                                    </span>
                                     <span className="resource-disclosure-action">
-                                      Details
+                                      <span className="resource-closed-action">
+                                        Details
+                                      </span>
+                                      <span className="resource-open-action">
+                                        Hide
+                                      </span>
                                     </span>
                                   </>
                                 }
@@ -1391,7 +1398,43 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                         : `Your permitted requests: ${permittedRequests.join(", ") || "none"}. Each request is checked again when submitted.`}
                     </p>
                   )}
-                <div className="metrics host-status">
+                <nav className="host-section-links" aria-label="Host sections">
+                  {[
+                    ["Overview", "host-overview"],
+                    ["CPU history", "host-history"],
+                    ["Services", "host-services"],
+                    ["Processes", "host-processes"],
+                    ["Configuration", "host-configuration"],
+                    ["Jobs", "host-jobs"],
+                  ]
+                    .filter(([, id]) => id !== "host-history" || reading)
+                    .map(([label, id]) => (
+                      <button
+                        key={id}
+                        type="button"
+                        className="text-link"
+                        onClick={() => {
+                          const section = document.getElementById(id);
+                          if (!section) return;
+                          if (section instanceof HTMLDetailsElement)
+                            section.open = true;
+                          const target =
+                            section.querySelector<HTMLElement>("h2,summary") ||
+                            section;
+                          target.tabIndex = -1;
+                          target.focus({ preventScroll: true });
+                          section.scrollIntoView({ block: "start" });
+                        }}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                </nav>
+                <div
+                  className="metrics host-status"
+                  id="host-overview"
+                  tabIndex={-1}
+                >
                   <Metric
                     label="Canary uptime"
                     value={<Tone value={uptimeStatus(current)} />}
@@ -1499,7 +1542,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                         {reading.collectionErrors.join("; ")}
                       </p>
                     )}
-                    <section className="panel cpu-history">
+                    <section className="panel cpu-history" id="host-history">
                       <div className="panel-heading">
                         <h2>CPU history</h2>
                         <span className="muted">
@@ -1511,7 +1554,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                   </>
                 )}
                 <div className="host-observations">
-                  <section className="panel">
+                  <section className="panel" id="host-services">
                     <div className="panel-heading">
                       <h2>systemd services</h2>
                       <span className="muted">
@@ -1615,7 +1658,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                       </p>
                     )}
                   </section>
-                  <section className="panel">
+                  <section className="panel" id="host-processes">
                     <div className="panel-heading">
                       <h2>Processes</h2>
                       <span className="muted">
@@ -1649,74 +1692,83 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                     )}
                   </section>
                 </div>
-                <section className="panel">
-                  <div className="panel-heading">
-                    <h2>Canary monitor mapping</h2>
-                    <span className="muted">Source + monitor identity</span>
-                  </div>
-                  <div className="panel-body">
-                    {user.role === "admin" ? (
-                      <MappingForm
-                        key={current.id}
-                        host={current}
-                        canary={canary}
-                        loaded={!!sourceLoaded.Canary}
-                        unavailable={!!sourceErrors.Canary}
-                        onSaved={() => {
-                          refreshDetail.current();
-                          void refresh();
-                        }}
-                        onVerify={() => setModal("auth")}
-                      />
-                    ) : (
-                      mappings(current).map((m) => (
-                        <p key={`${m.mapping.sourceId}/${m.mapping.monitorId}`}>
-                          {m.mapping.sourceId} /{" "}
-                          {m.monitor?.monitor.name || m.mapping.monitorId}
-                        </p>
-                      ))
+                <details
+                  className="panel disclosure host-configuration"
+                  id="host-configuration"
+                  key={current.id}
+                >
+                  <summary>
+                    Host configuration
+                    <span>Monitor mappings and inventory</span>
+                  </summary>
+                  <div className="disclosure-body">
+                    <section className="panel">
+                      <div className="panel-heading">
+                        <h2>Canary monitor mapping</h2>
+                        <span className="muted">Source + monitor identity</span>
+                      </div>
+                      <div className="panel-body">
+                        {user.role === "admin" ? (
+                          <MappingForm
+                            key={current.id}
+                            host={current}
+                            canary={canary}
+                            loaded={!!sourceLoaded.Canary}
+                            unavailable={!!sourceErrors.Canary}
+                            onSaved={() => {
+                              refreshDetail.current();
+                              void refresh();
+                            }}
+                            onVerify={() => setModal("auth")}
+                          />
+                        ) : (
+                          mappings(current).map((m) => (
+                            <p
+                              key={`${m.mapping.sourceId}/${m.mapping.monitorId}`}
+                            >
+                              {m.mapping.sourceId} /{" "}
+                              {m.monitor?.monitor.name || m.mapping.monitorId}
+                            </p>
+                          ))
+                        )}
+                      </div>
+                    </section>
+                    {user.role === "admin" && (
+                      <section className="panel">
+                        <div className="panel-heading">
+                          <h2>Inventory</h2>
+                          <span className="muted">
+                            Certificate generation {current.generation} · agent{" "}
+                            {current.agentVersion || "unknown"}
+                          </span>
+                        </div>
+                        <div className="panel-body">
+                          <p>
+                            Certificate fingerprint{" "}
+                            <code className="wrap">
+                              {current.certificateFingerprint ||
+                                "Awaiting enrollment"}
+                            </code>
+                          </p>
+                          <HostInventoryForm
+                            key={current.id}
+                            host={current}
+                            canEdit={!!hostPermissions?.includes("host.manage")}
+                            onSaved={() => {
+                              refreshDetail.current();
+                              void refresh();
+                            }}
+                            onVerify={() => setModal("auth")}
+                          />
+                        </div>
+                      </section>
                     )}
                   </div>
-                </section>
-                {user.role === "admin" && (
-                  <section className="panel">
-                    <div className="panel-heading">
-                      <h2>Inventory</h2>
-                      <span className="muted">
-                        Certificate generation {current.generation} · agent{" "}
-                        {current.agentVersion || "unknown"}
-                      </span>
-                    </div>
-                    <div className="panel-body">
-                      <p>
-                        Certificate fingerprint{" "}
-                        <code className="wrap">
-                          {current.certificateFingerprint ||
-                            "Awaiting enrollment"}
-                        </code>
-                      </p>
-                      <HostInventoryForm
-                        key={current.id}
-                        host={current}
-                        canEdit={!!hostPermissions?.includes("host.manage")}
-                        onSaved={() => {
-                          refreshDetail.current();
-                          void refresh();
-                        }}
-                        onVerify={() => setModal("auth")}
-                      />
-                    </div>
-                  </section>
-                )}
+                </details>
                 <Jobs
                   unavailable={!!sourceErrors.Jobs}
                   jobs={hostJobs}
                   hosts={hosts}
-                  open={(id) =>
-                    void act(async () =>
-                      setResult(await api<Job>(`/api/jobs/${id}`)),
-                    )
-                  }
                   cancel={(id) =>
                     void act(async () => {
                       await api(`/api/jobs/${id}/cancel`, "POST", {});
@@ -1725,7 +1777,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                       );
                     })
                   }
-                  canManage={user.role !== "viewer"}
+                  id="host-jobs"
                 />
                 <Activity
                   unavailable={!!sourceErrors.Activity}
@@ -1749,17 +1801,11 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                 unavailable={!!sourceErrors.Jobs}
                 jobs={jobs}
                 hosts={hosts}
-                open={(id) =>
-                  void act(async () =>
-                    setResult(await api<Job>(`/api/jobs/${id}`)),
-                  )
-                }
                 cancel={(id) =>
                   void act(async () => {
                     await api(`/api/jobs/${id}/cancel`, "POST", {});
                   })
                 }
-                canManage={user.role !== "viewer"}
               />
             </>
           )}
@@ -2109,51 +2155,12 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
           )}
         </Dialog>
       )}
-      {result && (
-        <Dialog
-          wide
-          onClose={() => setResult(null)}
-          title={
-            <>
-              {result.action} <Tone value={result.state} />
-            </>
-          }
-        >
-          <p>
-            Job <code>{result.id}</code>
-          </p>
-          <p>
-            Created {stamp(result.createdAt)} · dispatched{" "}
-            {stamp(result.dispatchedAt)} · finished {stamp(result.finishedAt)}
-          </p>
-          {result.action === "host.reboot" && (
-            <p>
-              New boot observed:{" "}
-              <b>{result.rebootObserved ? "Yes" : "Not observed"}</b>
-            </p>
-          )}
-          {result.result ? (
-            <>
-              <p>
-                Exit status {result.result.exitCode}{" "}
-                {result.result.truncated && "· output truncated"}
-              </p>
-              <h3>stdout</h3>
-              <pre>{result.result.stdout || "(empty)"}</pre>
-              <h3>stderr</h3>
-              <pre>{result.result.stderr || "(empty)"}</pre>
-            </>
-          ) : (
-            <p>
-              Output is pending or your account does not have the output
-              permission.
-            </p>
-          )}
-          <p className="muted">
-            Command output may contain secrets. It is accessible only with an
-            explicit output grant.
-          </p>
-        </Dialog>
+      {view === "jobs" && route.id && (
+        <JobOutcome
+          key={route.id}
+          id={route.id}
+          onClose={() => navigate({ view: "jobs" }, { replace: true })}
+        />
       )}
     </div>
   );
@@ -2325,20 +2332,18 @@ function History({ samples }: { samples: Reading[] }) {
 function Jobs({
   jobs,
   hosts,
-  open,
   cancel,
-  canManage,
+  id,
   unavailable = false,
 }: {
   jobs: Job[];
   hosts: Host[];
-  open: (id: string) => void;
   cancel: (id: string) => void;
-  canManage: boolean;
+  id?: string;
   unavailable?: boolean;
 }) {
   return (
-    <section className="panel">
+    <section className="panel" id={id}>
       <div className="panel-heading">
         <h2>Jobs</h2>
         <span className="muted">Latest 200 · output permission required</span>
@@ -2363,9 +2368,12 @@ function Jobs({
               {jobs.map((j) => (
                 <tr key={j.id}>
                   <td>
-                    <button className="text-link" onClick={() => open(j.id)}>
+                    <RouteLink
+                      className="text-link"
+                      to={{ view: "jobs", id: j.id }}
+                    >
                       {j.action}
-                    </button>
+                    </RouteLink>
                     <small>
                       {j.args.service || j.args.diagnostic || j.id.slice(0, 12)}
                     </small>
@@ -2385,9 +2393,23 @@ function Jobs({
                         {j.rebootObserved ? "observed" : "not observed"}
                       </small>
                     )}
-                    {canManage &&
-                      ["queued", "dispatched"].includes(j.state) && (
-                        <button onClick={() => cancel(j.id)}>Cancel</button>
+                    {["queued", "dispatched"].includes(j.state) &&
+                      !j.cancelRequested && (
+                        <>
+                          <button
+                            disabled={unavailable || j.canCancel !== true}
+                            onClick={() => cancel(j.id)}
+                          >
+                            Cancel
+                          </button>
+                          {(unavailable || j.canCancel !== true) && (
+                            <small>
+                              {unavailable || j.canCancel === undefined
+                                ? "Cancellation permission unavailable"
+                                : "Cancellation not permitted"}
+                            </small>
+                          )}
+                        </>
                       )}
                   </td>
                 </tr>

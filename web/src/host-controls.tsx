@@ -588,8 +588,8 @@ export function ServiceRequests({
             <span className="service-receipt-time">
               Request queued <Time value={receipt.createdAt} />
             </span>{" "}
-            <RouteLink to={{ view: "jobs" }}>
-              View outcome in Remote jobs →
+            <RouteLink to={{ view: "jobs", id: receipt.id }}>
+              View outcome →
             </RouteLink>
           </>
         ) : (

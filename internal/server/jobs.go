@@ -124,6 +124,21 @@ func (s *Server) createJob(w http.ResponseWriter, r *http.Request, u core.User) 
 	write(w, 201, j)
 	return nil
 }
+
+type jobView struct {
+	core.Job
+	CanCancel bool `json:"canCancel"`
+}
+
+func (s *Server) jobView(j core.Job, u core.User) (jobView, error) {
+	ok, e := s.allowed(u.ID, j.HostID, "jobs.cancel")
+	return viewJob(j, ok), e
+}
+
+func viewJob(j core.Job, canCancel bool) jobView {
+	return jobView{Job: j, CanCancel: canCancel && !j.CancelRequested && (j.State == "queued" || j.State == "dispatched")}
+}
+
 func (s *Server) listJobs(w http.ResponseWriter, r *http.Request, u core.User) error {
 	rows, e := s.DB.Query(`SELECT ` + jobColumns + ` FROM jobs ORDER BY created DESC LIMIT 200`)
 	if e != nil {
@@ -144,14 +159,23 @@ func (s *Server) listJobs(w http.ResponseWriter, r *http.Request, u core.User) e
 	if e != nil {
 		return e
 	}
-	out := []core.Job{}
+	out := []jobView{}
+	cancelByHost := map[string]bool{}
 	for _, j := range all {
 		ok, e := s.allowed(u.ID, j.HostID, "host.read")
 		if e != nil {
 			return e
 		}
 		if ok {
-			out = append(out, j)
+			canCancel, loaded := cancelByHost[j.HostID]
+			if !loaded {
+				canCancel, e = s.allowed(u.ID, j.HostID, "jobs.cancel")
+				if e != nil {
+					return e
+				}
+				cancelByHost[j.HostID] = canCancel
+			}
+			out = append(out, viewJob(j, canCancel))
 		}
 	}
 	write(w, 200, out)
@@ -176,7 +200,11 @@ func (s *Server) getJob(w http.ResponseWriter, r *http.Request, u core.User) err
 	if !ok {
 		j.Result = nil
 	}
-	write(w, 200, j)
+	view, e := s.jobView(j, u)
+	if e != nil {
+		return e
+	}
+	write(w, 200, view)
 	return nil
 }
 func (s *Server) cancelJob(w http.ResponseWriter, r *http.Request, u core.User) error {

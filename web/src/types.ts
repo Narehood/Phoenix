@@ -72,6 +72,7 @@ export type Job = {
   dispatchedAt: number;
   finishedAt: number;
   cancelRequested: boolean;
+  canCancel?: boolean;
   rebootObserved: boolean;
   result?: Result;
 };

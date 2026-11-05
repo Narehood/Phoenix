@@ -15,7 +15,7 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   };
   const top = () => evaluate("window.scrollTo(0, 0)");
   const section = async (selector) => {
-    await evaluate(`(() => { const target = document.querySelector(${JSON.stringify(selector)}); (target?.matches('form') ? target.closest('section') : target)?.scrollIntoView({block:'start'}); })()`);
+    await evaluate(`(() => { const target = document.querySelector(${JSON.stringify(selector)}); for(let parent = target; parent; parent = parent.parentElement) if(parent instanceof HTMLDetailsElement) parent.open = true; (target?.matches('form') ? target.closest('section') : target)?.scrollIntoView({block:'start'}); })()`);
     await settle();
   };
   await evaluate("window.fixture.visualScene(); document.documentElement.dataset.mode = 'light'");
@@ -59,6 +59,20 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await evaluate("window.fixture.holds['POST /api/hosts/private-host/jobs']()");
   await wait("document.querySelector('.service-requests .status-notice').innerText.includes('Request queued')");
   await shot("host-service-queued-desktop");
+  await click("View outcome");
+  await wait("location.hash === '#/jobs/fixture-job-1' && document.querySelector('dialog[open] .status-notice')?.innerText.includes('queued')");
+  await shot("job-outcome-queued-desktop");
+  await evaluate("window.fixture.jobs[0].state = 'succeeded'; window.fixture.jobs[0].result = {exitCode:0, stdout:'Fixture service log output. No real host was queried.', stderr:'', truncated:false}");
+  await click("Refresh status");
+  await wait("document.querySelector('dialog[open] .status-notice')?.innerText.includes('succeeded')");
+  await shot("job-outcome-completed-desktop");
+  await evaluate("window.fixture.hostPermissions = ['host.read','logs.read']; window.fixture.jobs[0].state = 'queued'; window.fixture.jobs[0].result = null");
+  await click("×");
+  await wait("location.hash === '#/jobs' && document.querySelector('#content').innerText.includes('Cancellation not permitted')");
+  await shot("jobs-permissions-limited-desktop");
+  await evaluate("window.fixture.hostPermissions = null; history.back()");
+  await wait("location.hash === '#/hosts/private-host' && !!document.querySelector('.host-configuration')");
+  await section(".host-inventory-form");
   await evaluate(`(() => {
     const input = document.querySelector('.host-inventory-form input[name=name]');
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'edge-01 renamed');

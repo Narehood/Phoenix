@@ -82,7 +82,8 @@ function installFixture() {
   };
   const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
   const recentRequired = () => json({ error: "recent password and MFA required" }, 403);
-  const hostPermissions = () => control.hostPermissions ?? (control.role === "admin" ? ["host.read", "host.manage", "diagnostic", "logs.read", "service.restart", "host.reboot"] : ["host.read"]);
+  const hostPermissions = () => control.hostPermissions ?? (control.role === "admin" ? ["host.read", "host.manage", "diagnostic", "logs.read", "service.restart", "host.reboot", "jobs.cancel", "jobs.output"] : ["host.read"]);
+  const jobView = job => ({...job, canCancel: hostPermissions().includes("jobs.cancel") && !job.cancelRequested && ["queued","dispatched"].includes(job.state)});
   const allModules = ["documentation", "dependencies", "content", "releases", "operations"];
   const permissionsFor = () => control.role === "admin" ? ["project.read", "project.manage", "github.read", "github.sync"] : ["project.read"];
   const visible = (id) => !!control.projects[id] && (control.role === "admin" || control.shared.includes(id));
@@ -271,7 +272,7 @@ function installFixture() {
         if (body.action === "service.restart" && (!control.recent || body.confirm !== h.id)) return recentRequired();
         if (control.jobs.length >= 8) return json({error: "fixture job bound reached"}, 409);
         const createdAt = Date.now();
-        const job = {id: `fixture-job-${control.jobs.length + 1}`, hostId: h.id, action: body.action, args: body.args, state: "queued", createdAt, expiresAt: createdAt + 300000, result: ""};
+        const job = {id: `fixture-job-${control.jobs.length + 1}`, hostId: h.id, action: body.action, args: body.args, state: "queued", createdAt, expiresAt: createdAt + 300000, result: null};
         control.jobs.push(job);
         return json(job, 201);
       }
@@ -279,7 +280,20 @@ function installFixture() {
     if (path === "/api/hosts/private-host") { refreshEvidence(); return admin ? json({ host: privateHost, samples: control.samples, permissions: hostPermissions() }) : json({ error: "action forbidden" }, 403); }
     if (path === "/api/hosts/viewer-host") { refreshEvidence(); return json({ host: viewerHost, samples: [], permissions: hostPermissions() }); }
     if (path === "/api/canary") { refreshEvidence(); return json(admin ? canary : emptyCanary); }
-    if (path === "/api/jobs") return json(control.jobs.filter(j => admin || j.hostId === viewerHost.id));
+    if (path === "/api/jobs") return json(control.jobs.filter(j => admin || j.hostId === viewerHost.id).map(j => ({...jobView(j), result:null})));
+    const jobRoute = path.match(/^\/api\/jobs\/([^/]+)(\/cancel)?$/);
+    if (jobRoute) {
+      const job = control.jobs.find(j => j.id === jobRoute[1]);
+      if (!job) return json({error:"job not found"}, 404);
+      if (!admin && job.hostId !== viewerHost.id) return json({error:"action forbidden"}, 403);
+      if (jobRoute[2] && method === "POST") {
+        if (!jobView(job).canCancel) return json({error:"action forbidden"}, 403);
+        job.cancelRequested = true;
+        if (job.state === "queued") { job.state = "cancelled"; job.finishedAt = Date.now(); }
+        return json({requested:true});
+      }
+      if (!jobRoute[2] && method === "GET") return json({...jobView(job), result:hostPermissions().includes("jobs.output") ? job.result : null});
+    }
     if (path === "/api/audit") return json([]);
     return json({ error: "unexpected fixture request" }, 404);
   };
@@ -487,7 +501,7 @@ try {
   await click("Agent / readings issues");
   await wait("document.querySelector('.attention-filter').getAttribute('aria-pressed') === 'true' && document.querySelectorAll('.fleet-table tbody tr').length === 1 && document.querySelector('.fleet-table').innerText.includes('ADMIN-ONLY-HOST')");
   assert.ok(await evaluate("document.querySelector('.compact-freshness').innerText.toLowerCase().includes('fresh readings')"), "Resource warning incorrectly changed independent reading freshness");
-  assert.ok(await evaluate("document.querySelector('.mobile-resource-warning').innerText.includes('CPU 96.0%')"), "Resource warning hides its current measurement");
+  assert.ok(await evaluate("document.querySelector('.resource-details > summary').innerText.includes('CPU 96.0%') && !document.querySelector('.mobile-resource-warning').innerText.includes('CPU')"), "Resource warning hides or duplicates its current measurement");
   await evaluate("window.fixture.hosts[0].resourceHealth = 'normal'; window.fixture.hosts[0].latest.cpuPercent = 12; window.fixture.hosts[1].connectivity = 'unknown'; window.fixture.hosts[1].freshness = 'unknown'");
   await wait("document.querySelectorAll('.fleet-table tbody tr').length === 1 && document.querySelector('.fleet-table tbody').innerText.includes('Viewer fixture host')");
   await evaluate("window.fixture.hosts[1].connectivity = 'connected'; window.fixture.hosts[1].freshness = 'fresh'");
@@ -516,6 +530,8 @@ try {
   await evaluate("window.fixture.samples = []");
   pass("CPU history exposes a range summary and bounded chronological readings including missing values and gaps");
   await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false }, sessionId);
+  await click("Configuration");
+  assert.ok(await evaluate("document.querySelector('.host-configuration').open && document.activeElement.closest('.host-configuration') && location.hash === '#/hosts/private-host'"), "Host section shortcut lost route, focus or disclosure access");
   await setValue('form[aria-label="Host inventory"] input[name=name]', 'Unsaved host draft');
   await evaluate("document.querySelector('.host-mapping-form input[type=checkbox]').click(); window.confirm = () => false");
   await click("Fleet overview");
@@ -559,7 +575,7 @@ try {
   assert.equal(await evaluate("window.fixture.requests.filter(r => r.method === 'POST' && r.path.endsWith('/jobs')).length"), 1);
   await evaluate("window.fixture.holds['POST /api/hosts/private-host/jobs']()");
   await wait("document.querySelector('.service-requests .status-notice').innerText.includes('Request queued')");
-  assert.ok(await evaluate("location.hash === '#/hosts/private-host' && document.querySelector('.service-requests a').getAttribute('href') === '#/jobs' && window.fixture.jobs[0].expiresAt - window.fixture.jobs[0].createdAt === 300000"), "Queued receipt lost context or did not explain a bounded job");
+  assert.ok(await evaluate("location.hash === '#/hosts/private-host' && document.querySelector('.service-requests a').getAttribute('href') === '#/jobs/fixture-job-1' && window.fixture.jobs[0].expiresAt - window.fixture.jobs[0].createdAt === 300000"), "Queued receipt lost context or did not explain a bounded job");
   await evaluate("window.confirm = () => false");
   await click("Restart");
   assert.equal(await evaluate("window.fixture.jobs.length"), 1, "Cancelled restart queued a request");
@@ -573,12 +589,40 @@ try {
   await evaluate("window.fixture.holds['POST /api/hosts/private-host/jobs']()");
   await wait("window.fixture.jobs.length === 2 && document.querySelector('.service-requests .status-notice').innerText.includes('Request queued')");
   pass("service requests prevent repeat clicks, retain local progress/receipts and preserve restart confirmation and recent-verification gates");
+  await click("View outcome");
+  await wait("location.hash === '#/jobs/fixture-job-2' && document.querySelector('dialog[open] .status-notice')?.innerText.includes('queued')");
+  assert.ok(await evaluate("!!document.activeElement.closest('dialog[open]')"), "Navigating to a job outcome moved focus outside its modal");
+  await evaluate("window.fixture.jobs[1].state = 'succeeded'; window.fixture.jobs[1].result = {exitCode:0, stdout:'Bounded completed fixture output', stderr:'', truncated:false}; window.fixture.hold.add('GET /api/jobs/fixture-job-2')");
+  await click("Refresh status");
+  await wait("typeof window.fixture.holds['GET /api/jobs/fixture-job-2'] === 'function' && document.querySelector('.job-status-tools button').disabled");
+  await evaluate("window.fixture.holds['GET /api/jobs/fixture-job-2']()");
+  await wait("document.querySelector('dialog[open]')?.innerText.includes('Bounded completed fixture output') && document.querySelector('dialog[open] .status-notice').innerText.includes('succeeded')");
+  pass("service receipt opens the exact URL-addressable job and refreshes its queued status to the completed outcome");
+  await evaluate("window.fixture.failSources.add('/api/jobs/fixture-job-2')");
+  await click("Refresh status");
+  await wait("!!document.querySelector('dialog[open] [role=alert]')");
+  assert.ok(await evaluate("!document.querySelector('dialog[open]').innerText.includes('Bounded completed fixture output')"), "Unavailable job read retained prior command output");
+  await evaluate("window.fixture.failSources.clear()");
+  await click("Refresh status");
+  await wait("document.querySelector('dialog[open]')?.innerText.includes('Bounded completed fixture output')");
+  await click("×");
+  await wait("location.hash === '#/jobs' && !document.querySelector('dialog[open]')");
+  await evaluate("history.back()");
+  await wait("location.hash === '#/hosts/private-host' && !!document.querySelector('.service-requests')");
+  pass("job status errors clear old output, allow an explicit retry and preserve browser Back to the initiating host");
   await evaluate("window.fixture.hostPermissions = ['host.read','logs.read']");
   await wait("document.querySelector('.service-requests button:nth-child(2)').disabled && !document.querySelector('.service-requests button:first-child').disabled && document.querySelector('.host-permission-context')?.innerText.includes('service logs')");
   assert.ok(await evaluate("[...document.querySelectorAll('button')].find(b => b.textContent === 'Run diagnostic').disabled && document.querySelector('.host-actions button').disabled && document.querySelector('.host-inventory-form fieldset').disabled && document.querySelector('.service-permission-note').innerText.includes('not permitted')"), "Action controls ignored effective host permissions");
   const jobsBeforeDenied = await evaluate("window.fixture.requests.filter(r => r.method === 'POST' && r.path.endsWith('/jobs')).length");
   await evaluate("document.querySelector('.service-requests button:nth-child(2)').click()");
   assert.equal(await evaluate("window.fixture.requests.filter(r => r.method === 'POST' && r.path.endsWith('/jobs')).length"), jobsBeforeDenied, "Disabled ungranted action submitted a request");
+  await wait("document.querySelector('#host-jobs button')?.disabled && document.querySelector('#host-jobs').innerText.includes('Cancellation not permitted')");
+  await click("Remote jobs");
+  await wait("location.hash === '#/jobs' && [...document.querySelectorAll('#content button')].some(b => b.textContent === 'Cancel' && b.disabled)");
+  assert.equal(await evaluate("window.fixture.requests.filter(r => r.path.endsWith('/cancel')).length"), 0);
+  await evaluate("history.back()");
+  await wait("location.hash === '#/hosts/private-host' && !!document.querySelector('.service-requests')");
+  pass("host and global job lists withhold cancellation when the effective host grant is missing");
   await evaluate("window.fixture.hostPermissions = null");
   await wait("!document.querySelector('.service-requests button:nth-child(2)').disabled");
   pass("effective host permissions disable unavailable requests and explain the restriction without attempting a mutation");

@@ -35,6 +35,12 @@ function readRoute(): Route {
     )
       return { view: "projects", id: decodeURIComponent(raw) };
     if (pages.has(page) && !raw) return { view: page };
+    if (
+      page === "jobs" &&
+      raw &&
+      /^[A-Za-z0-9_-]{1,80}$/.test(decodeURIComponent(raw))
+    )
+      return { view: "jobs", id: decodeURIComponent(raw) };
   } catch {
     /* Invalid fragments are never used as API paths. */
   }
@@ -45,6 +51,8 @@ export function routeHref(route: Route) {
     return `#/hosts/${encodeURIComponent(route.id)}`;
   if (route.view === "projects" && route.id)
     return `#/projects/${encodeURIComponent(route.id)}`;
+  if (route.view === "jobs" && route.id)
+    return `#/jobs/${encodeURIComponent(route.id)}`;
   return `#/${pages.has(route.view) ? route.view : "fleet"}`;
 }
 function focusHeading() {

@@ -387,7 +387,7 @@ export function GitHubPanel({
   if (!permissions)
     body = (
       <Empty>
-        GitHub health is hidden until project permissions can be loaded.
+        GitHub observations are hidden until project permissions can be loaded.
       </Empty>
     );
   else if (!canRead || denied)
@@ -403,10 +403,10 @@ export function GitHubPanel({
   else if (!view)
     body = failed ? (
       <div className="notice error" role="alert">
-        GitHub health could not be loaded: {(failed as Error).message}
+        GitHub observations could not be loaded: {(failed as Error).message}
       </div>
     ) : (
-      <Empty>Loading GitHub health…</Empty>
+      <Empty>Loading GitHub observations…</Empty>
     );
   else {
     const pulls = snapshot?.pulls.items || [];
@@ -767,7 +767,7 @@ export function GitHubPanel({
                 }
               }}
             >
-              Connection settings
+              Repository settings
             </button>
           )}
           {canSync && view?.configured && (

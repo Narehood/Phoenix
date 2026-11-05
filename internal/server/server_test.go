@@ -389,6 +389,36 @@ func TestAuthorizationCSRFRecentAuthAndOutput(t *testing.T) {
 	if got.Result != nil {
 		t.Fatal("output leaked without grant")
 	}
+	queued := f.job(a, "diagnostic", core.Args{Diagnostic: "system.summary"})
+	var pending jobView
+	f.call("GET", "/api/jobs/"+queued.ID, nil, 200, &pending)
+	if !pending.CanCancel {
+		t.Fatal("administrator cannot discover an available cancellation")
+	}
+	var adminList []jobView
+	f.call("GET", "/api/jobs", nil, 200, &adminList)
+	for _, item := range adminList {
+		if item.CanCancel != (item.ID == queued.ID) {
+			t.Fatal("list cancellation eligibility ignored individual job state")
+		}
+	}
+	f.request(operator, f.web.URL, "GET", "/api/jobs/"+queued.ID, nil, 200, &pending, "")
+	if pending.CanCancel {
+		t.Fatal("job detail offered cancellation without a grant")
+	}
+	var listed []jobView
+	f.request(operator, f.web.URL, "GET", "/api/jobs", nil, 200, &listed, "")
+	for _, item := range listed {
+		if item.CanCancel || item.HostID != a.id || item.Result != nil {
+			t.Fatal("job list exceeded scoped read/cancellation/output permissions")
+		}
+	}
+	f.request(operator, f.web.URL, "POST", "/api/jobs/"+queued.ID+"/cancel", map[string]any{}, 403, nil, auth.CSRF)
+	f.call("POST", "/api/jobs/"+queued.ID+"/cancel", map[string]any{}, 200, nil)
+	f.call("GET", "/api/jobs/"+queued.ID, nil, 200, &pending)
+	if pending.CanCancel || pending.State != "cancelled" {
+		t.Fatal("cancelled request still offers cancellation")
+	}
 	if _, e := f.s.DB.Exec(`DELETE FROM grants WHERE user_id=? AND action='diagnostic'`, account.User.ID); e != nil {
 		t.Fatal(e)
 	}

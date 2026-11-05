@@ -43,6 +43,6 @@ elif mode == 'web':
     run([npm, '--prefix', 'web', 'run', 'build'])
 elif mode == 'format-web':
     npm = 'npm.cmd' if os.name == 'nt' else 'npm'
-    run([npm, '--prefix', 'web', 'exec', '--', 'prettier', '--write', 'web/src/App.tsx', 'web/src/api.ts', 'web/src/main.tsx', 'web/src/types.ts', 'web/src/styles.css', 'web/src/ui.tsx', 'web/src/projects.tsx', 'web/src/github.tsx', 'web/src/grants.tsx', 'web/src/host-controls.tsx'])
+    run([npm, '--prefix', 'web', 'exec', '--', 'prettier', '--write', 'web/src/App.tsx', 'web/src/api.ts', 'web/src/main.tsx', 'web/src/types.ts', 'web/src/styles.css', 'web/src/ui.tsx', 'web/src/projects.tsx', 'web/src/github.tsx', 'web/src/grants.tsx', 'web/src/host-controls.tsx', 'web/src/jobs.tsx', 'web/src/navigation.tsx'])
 else:
     sys.exit('Unknown check')
