@@ -292,7 +292,7 @@ try {
     throw new Error(`Browser assertion timed out: ${expression}`);
   };
   const click = async (text) => {
-    const point = await evaluate(`(() => { const button = [...document.querySelectorAll('button')].find(b => b.getClientRects().length && b.textContent.trim().startsWith(${JSON.stringify(text)})); if (!button) throw Error('Missing fixture button: ' + ${JSON.stringify(text)}); button.scrollIntoView({block:'nearest'}); const r = button.getBoundingClientRect(); return {x:r.x+r.width/2,y:r.y+r.height/2}; })()`);
+    const point = await evaluate(`(() => { const button = [...document.querySelectorAll('button')].find(b => !b.closest('details:not([open])') && b.checkVisibility() && b.textContent.trim().startsWith(${JSON.stringify(text)})); if (!button) throw Error('Missing visible fixture button: ' + ${JSON.stringify(text)}); button.scrollIntoView({block:'nearest'}); const r = button.getBoundingClientRect(), x = r.x+r.width/2, y = r.y+r.height/2; if (document.elementFromPoint(x,y)?.closest('button') !== button) throw Error('Fixture button is obstructed: ' + ${JSON.stringify(text)}); return {x,y}; })()`);
     await send("Input.dispatchMouseEvent", { type: "mousePressed", ...point, button: "left", clickCount: 1 }, sessionId);
     await send("Input.dispatchMouseEvent", { type: "mouseReleased", ...point, button: "left", clickCount: 1 }, sessionId);
   };
@@ -364,7 +364,7 @@ try {
     try { heading.textContent = 'h'.repeat(80); identity.textContent = 'a'.repeat(64); return document.documentElement.scrollWidth <= innerWidth; }
     finally { heading.textContent = name; identity.textContent = id; }
   })()`), "Long host names or identity IDs overflow the mobile document");
-  await click("Fleet overview");
+  await click("← All hosts");
   await wait("!!document.querySelector('.fleet-table')");
   await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false }, sessionId);
   pass("mobile navigation exposes the current section, account/sign-out and appearance; host statuses fit without sideways scrolling");
