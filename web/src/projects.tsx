@@ -1123,8 +1123,17 @@ function ProjectDetail({
                       </strong>{" "}
                       <span className="tag">revision {a.revision}</span>
                       <small>
-                        {stamp(a.at)} · actor {a.actor.slice(0, 12)}
+                        <Time value={a.at} />
                       </small>
+                      <details className="project-actor">
+                        <summary>
+                          Actor:{" "}
+                          {a.actor.length > 18
+                            ? a.actor.slice(0, 12) + "…"
+                            : a.actor || "Not recorded"}
+                        </summary>
+                        <code>{a.actor || "Not recorded"}</code>
+                      </details>
                     </div>
                   </li>
                 ))}

@@ -138,6 +138,7 @@ function installFixture(visualCapture = false) {
     control.usersFail = false;
     control.seedProject("website", "Website", ["dependencies"]);
     control.projects.website.description = "Public website and customer documentation.";
+    control.events.website[0].actor = "fixture-project-actor-full-identifier-123456";
     control.githubViews.website = control.freshView("example/website");
     control.seedProject("platform", "Platform API", ["dependencies"]);
     control.projects.platform.description = "Internal services and shared infrastructure.";
@@ -298,7 +299,6 @@ function installFixture(visualCapture = false) {
         if (!jobView(job).canCancel) return json({error:"action forbidden"}, 403);
         job.cancelRequested = true;
         if (job.state === "queued") { job.state = "cancelled"; job.finishedAt = Date.now(); }
-        if (job.state === "queued") { job.state = "cancelled"; job.finishedAt = Date.now(); }
         return json({requested:true});
       }
       if (!jobRoute[2] && method === "GET") return json({...jobView(job), hostName:fixtureHosts.find(h => h.id === job.hostId)?.name || job.hostId, canReadOutput:hostPermissions().includes("jobs.output"), result:hostPermissions().includes("jobs.output") ? job.result : null});
@@ -384,7 +384,7 @@ try {
   const click = async (text) => {
     let point;
     try {
-      point = await evaluate(`(async () => { await new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done))); const button = [...document.querySelectorAll('button,a')].find(b => !b.closest('details:not([open])') && b.checkVisibility() && b.textContent.trim().startsWith(${JSON.stringify(text)})); if (!button) throw Error('Missing visible fixture control: ' + ${JSON.stringify(text)}); button.scrollIntoView({block:'center'}); await new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done))); const r = button.getBoundingClientRect(), x = r.x+r.width/2, y = r.y+r.height/2; if (!button.isConnected || document.elementFromPoint(x,y)?.closest('button,a') !== button) throw Error('Fixture control is obstructed or changed: ' + ${JSON.stringify(text)}); return {x,y}; })()`);
+      point = await evaluate(`(async () => { await new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done))); const root = document.querySelector('dialog[open]') || document; const button = [...root.querySelectorAll('button,a')].find(b => !b.closest('details:not([open])') && b.checkVisibility() && b.textContent.trim().startsWith(${JSON.stringify(text)})); if (!button) throw Error('Missing visible fixture control: ' + ${JSON.stringify(text)}); button.scrollIntoView({block:'center'}); await new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done))); const r = button.getBoundingClientRect(), x = r.x+r.width/2, y = r.y+r.height/2; if (!button.isConnected || document.elementFromPoint(x,y)?.closest('button,a') !== button) throw Error('Fixture control is obstructed or changed: ' + ${JSON.stringify(text)}); return {x,y}; })()`);
     } catch (error) {
       try {
         const state = await evaluate("({route:location.hash.slice(0,200),heading:document.querySelector('h1')?.textContent?.slice(0,100),width:innerWidth,height:innerHeight,scrollY,activeTag:document.activeElement?.tagName,openDialog:!!document.querySelector('dialog[open]')})");
@@ -439,10 +439,10 @@ try {
   await wait("[...document.querySelectorAll('.metric')].find(m => m.innerText.includes('Canary sources'))?.innerText.includes('1 / 1')");
   await click("Remote jobs");
   await wait("document.querySelector('.jobs-panel')?.innerText.includes('Loading job history') && typeof window.fixture.holds['/api/jobs'] === 'function'");
-  assert.ok(await evaluate("!document.body.innerText.includes('No management jobs yet') && document.querySelector('.job-filters input').disabled"), "Pending first job read implies empty history or enables filtering");
+  assert.ok(await evaluate("!document.body.innerText.includes('No jobs in this history window') && document.querySelector('.job-filters input').disabled"), "Pending first job read implies empty history or enables filtering");
   if (visual) await capture("jobs-loading-desktop");
   await evaluate("window.fixture.holds['/api/jobs']()");
-  await wait("document.querySelector('.jobs-panel')?.innerText.includes('No management jobs yet')");
+  await wait("document.querySelector('.jobs-panel')?.innerText.includes('No jobs in this history window')");
   await click("Activity & audit");
   await wait("document.body.innerText.includes('Loading activity history') && typeof window.fixture.holds['/api/audit'] === 'function'");
   assert.ok(await evaluate("!document.body.innerText.includes('No activity in view')"), "Pending first activity read implies confirmed absence");
@@ -539,6 +539,14 @@ try {
   assert.ok(await evaluate("[...document.querySelectorAll('.fleet-table tbody tr')].filter(r => r.getBoundingClientRect().bottom <= innerHeight).length >= 2 && document.querySelector('.resource-details > summary').innerText.includes('CPU 12.0%')"), "Compact mobile inventory cannot compare two complete hosts or see resource summaries without expansion");
   pass("compact mobile rows expose independent statuses and resource summaries while fitting two complete hosts");
   pass("Chrome accessibility tree retains mobile table and column headers with explicit column positions");
+  await evaluate("document.querySelector('.fleet-view-control input').click()");
+  await wait("!!document.querySelector('.fleet-compare')");
+  assert.ok(await evaluate("document.querySelector('.fleet-table thead').checkVisibility() && [...document.querySelectorAll('.fleet-table tbody tr')].every(r => r.querySelector('[data-label=\"Reading freshness\"]').checkVisibility()) && document.documentElement.scrollWidth <= innerWidth"), "Comparison mode hides independent status evidence or overflows");
+  const compareRowHeight = await evaluate("document.querySelector('.fleet-table tbody tr').getBoundingClientRect().height");
+  await evaluate("document.querySelector('.fleet-view-control input').click()");
+  await wait("!document.querySelector('.fleet-compare')");
+  assert.ok(compareRowHeight < await evaluate("document.querySelector('.fleet-table tbody tr').getBoundingClientRect().height"), "Optional comparison mode does not reduce row height");
+  pass("optional mobile comparison retains independently headed statuses and reduces routine row height");
   await evaluate("window.fixture.hosts[0].resourceHealth = 'warning'; window.fixture.hosts[0].latest.cpuPercent = 96");
   await wait("document.querySelector('.attention-filter')?.textContent.includes('(1)') && [...document.querySelectorAll('.mobile-resource-warning .chip')].some(c => c.checkVisibility() && c.textContent.includes('Resource warning'))");
   assert.equal(await evaluate("document.querySelector('.resource-details').open"), false, "Resource-warning proof needs a collapsed card");
@@ -546,6 +554,11 @@ try {
   await wait("document.querySelector('.attention-filter').getAttribute('aria-pressed') === 'true' && document.querySelectorAll('.fleet-table tbody tr').length === 1 && document.querySelector('.fleet-table').innerText.includes('ADMIN-ONLY-HOST')");
   assert.ok(await evaluate("document.querySelector('.compact-freshness').innerText.toLowerCase().includes('fresh readings')"), "Resource warning incorrectly changed independent reading freshness");
   assert.ok(await evaluate("document.querySelector('.resource-details > summary').innerText.includes('CPU 96.0%') && !document.querySelector('.mobile-resource-warning').innerText.includes('CPU')"), "Resource warning hides or duplicates its current measurement");
+  await evaluate("document.querySelector('.fleet-view-control input').click()");
+  await wait("!!document.querySelector('.fleet-compare')");
+  assert.ok(await evaluate("document.querySelector('.fleet-compare .desktop-resource-warning').checkVisibility() && document.querySelector('.fleet-compare .resource-disclosure-label').checkVisibility() && document.querySelector('.fleet-compare .resource-disclosure-label').textContent.includes('CPU 96.0%')"), "Comparison mode conceals resource-warning evidence");
+  await evaluate("document.querySelector('.fleet-view-control input').click()");
+  await wait("!document.querySelector('.fleet-compare')");
   await evaluate("window.fixture.hosts[0].resourceHealth = 'normal'; window.fixture.hosts[0].latest.cpuPercent = 12; window.fixture.hosts[1].connectivity = 'unknown'; window.fixture.hosts[1].freshness = 'unknown'");
   await wait("document.querySelectorAll('.fleet-table tbody tr').length === 1 && document.querySelector('.fleet-table tbody').innerText.includes('Viewer fixture host')");
   await evaluate("window.fixture.hosts[1].connectivity = 'connected'; window.fixture.hosts[1].freshness = 'fresh'");
@@ -684,14 +697,15 @@ try {
   await wait("location.hash === '#/jobs' && [...document.querySelectorAll('#content button')].some(b => b.textContent === 'Cancel' && b.disabled)");
   await setValue("input[name=jobSearch]", "NO-MATCHING-FIXTURE");
   await wait("document.querySelector('.jobs-panel').innerText.includes('No matching jobs within the latest 200') && !document.querySelector('.jobs-table')");
-  assert.ok(await evaluate("!document.querySelector('.jobs-panel').innerText.includes('No management jobs yet')"), "A zero-match filter implies empty job history");
+  assert.ok(await evaluate("!document.querySelector('.jobs-panel').innerText.includes('No jobs in this history window')"), "A zero-match filter implies empty job history");
   await click("Clear filters");
   await setValue("select[name=jobAction]", "logs.read");
   await setValue("select[name=jobState]", "succeeded");
   await wait("!document.querySelector('.jobs-table')");
   await setValue("select[name=jobState]", "queued");
   await setValue("input[name=jobSearch]", "private-host");
-  await wait("document.querySelectorAll('.jobs-table tbody tr').length === 1 && document.querySelector('.jobs-table tbody a').getAttribute('href') === '#/jobs/fixture-job-1'");
+  await wait("document.querySelectorAll('.jobs-table tbody tr').length === 1 && document.querySelector('.jobs-table td[data-label=Outcome] > a').getAttribute('href') === '#/jobs/fixture-job-1'");
+  assert.equal(await evaluate("document.querySelector('.jobs-table td[data-label=Host] > a')?.getAttribute('href')"), "#/hosts/private-host", "Global jobs lose the direct loaded-host destination");
   assert.ok(await evaluate("document.querySelector('.job-filter-count').innerText.includes('1 of 2') && document.querySelector('.jobs-panel .panel-heading').innerText.includes('Within latest 200')"), "Job filters hide their bounded scope or fail to combine target, action and state");
   await click("Clear filters");
   await wait("document.querySelectorAll('.jobs-table tbody tr').length === 2");
@@ -761,9 +775,11 @@ try {
 
   await click("Remote jobs");
   await wait("!!document.querySelector('.jobs-table')");
+  const jobColumns = await evaluate("[...document.querySelectorAll('.jobs-table thead th')].map(c => c.getBoundingClientRect().width)");
   await evaluate("window.fixture.failWrites.add('POST /api/jobs/fixture-job-1/cancel')");
   await click("Cancel");
   await wait("document.querySelector('.job-cancel [role=alert]')?.innerText.includes('Fixture save unavailable')");
+  assert.deepEqual(await evaluate("[...document.querySelectorAll('.jobs-table thead th')].map(c => c.getBoundingClientRect().width)"), jobColumns, "Cancellation errors move desktop job columns");
   assert.ok(await evaluate("document.querySelector('.job-cancel button').disabled === false && window.fixture.jobs[0].cancelRequested !== true"), "Failed cancellation loses retry or claims acceptance");
   await evaluate("window.fixture.failWrites.clear(); window.fixture.hold.add('POST /api/jobs/fixture-job-1/cancel')");
   await click("Cancel");
@@ -773,14 +789,15 @@ try {
   assert.equal(await evaluate("window.fixture.requests.filter(r => r.path.endsWith('/cancel')).length"), cancellationPosts, "Pending cancellation sends duplicate requests");
   assert.ok(await evaluate("document.querySelector('.job-cancel button').disabled && document.querySelector('.job-cancel [role=status]').innerText.includes('Sending cancellation')"), "Pending cancellation lacks local disabled/progress feedback");
   await evaluate("window.fixture.holds['POST /api/jobs/fixture-job-1/cancel']()");
-  await wait("document.querySelector('.job-cancel [role=status]')?.innerText.includes('An executed action cannot be undone')");
+  await wait("document.querySelector('.job-cancel [role=status]')?.innerText.includes('Cancelled before dispatch')");
+  assert.deepEqual(await evaluate("[...document.querySelectorAll('.jobs-table thead th')].map(c => c.getBoundingClientRect().width)"), jobColumns, "Cancellation receipt moves desktop job columns");
   await click("Fleet overview");
   await click("ADMIN-ONLY-HOST");
   await wait("!!document.querySelector('#host-jobs') && document.querySelectorAll('#host-jobs tbody tr').length === 4");
   await click("Jobs");
   await wait("!!document.activeElement.closest('#host-jobs')");
   await click("Cancel");
-  await wait("document.querySelector('#host-jobs .job-cancel [role=status]')?.innerText.includes('Cancellation requested')");
+  await wait("document.querySelector('#host-jobs .job-cancel [role=status]')?.innerText.includes('Cancelled before dispatch')");
   pass("host and global cancellation show local pending/error/acceptance, preserve retry and prevent repeated submission");
   await evaluate("window.fixture.audit = [{id:1,at:Date.now(),actor:'fixture-actor-full-identifier-123456',hostId:'private-host',jobId:'fixture-job-1',action:'logs.read',state:'cancellation_requested'},{id:2,at:Date.now(),actor:'fixture-admin',hostId:'',jobId:'',action:'grants.replace',state:'completed'}]");
   await click("Activity & audit");
@@ -890,6 +907,7 @@ try {
   await wait("document.querySelector('.project-history [role=alert]')?.textContent.includes('History could not be refreshed') && document.querySelector('.repository-identity h3')?.textContent.includes('Connect a GitHub repository')");
   assert.ok(await evaluate("!document.querySelector('input[name=editName]').disabled"), "Project history failure disabled valid project controls");
   await evaluate("window.fixture.failSources.clear()");
+  await evaluate("window.fixture.events['fixture-project'][0].actor = 'fixture-project-actor-full-identifier-123456'");
   assert.deepEqual(await evaluate("window.fixture.projects['fixture-project'].modules"), ["dependencies"]);
   pass("empty project inventory allows administrator registration with explicit modules");
 
@@ -921,6 +939,10 @@ try {
   await wait("window.fixture.projects['fixture-project'].name === 'Fixture project renamed' && window.fixture.projects['fixture-project'].revision === 3 && document.querySelector('h1').textContent.includes('renamed')");
   pass("stale metadata saves reload as a conflict, keep unsaved input and save only after explicit resolution");
   pass("pending project saves lock fields and feature choices until the submitted revision completes");
+  await wait("[...document.querySelectorAll('.project-actor code')].some(c => c.textContent === 'fixture-project-actor-full-identifier-123456')");
+  await evaluate("[...document.querySelectorAll('.project-actor')].find(d => d.textContent.includes('fixture-project-actor-full-identifier-123456')).open = true");
+  assert.ok(await evaluate("[...document.querySelectorAll('.project-actor code')].some(c => c.checkVisibility() && c.textContent === 'fixture-project-actor-full-identifier-123456')"), "Project history does not expose the full actor identity");
+  pass("project history discloses complete actor identities without losing attribution");
 
   // GitHub source: a recent-authentication failure keeps input; success clears the token everywhere.
   await wait(`document.querySelector('.repository-identity h3')?.innerText.includes('Connect a GitHub repository') && !!document.querySelector('form[aria-label="GitHub source settings"] fieldset:not([disabled])') && document.querySelector('input[name=repository]').getClientRects().length > 0`);

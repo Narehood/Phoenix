@@ -748,7 +748,7 @@ body:has(dialog[open]) {
   font-size: 25px;
 }
 .auth-card > .muted {
-  font-size: 12px;
+  font-size: 14px;
   margin-bottom: 24px;
 }
 .auth-card .form button {
@@ -756,7 +756,7 @@ body:has(dialog[open]) {
   justify-self: stretch;
 }
 .auth-foot {
-  font-size: 11px;
+  font-size: 13px;
   color: var(--text-3);
   text-align: center;
 }
@@ -2413,8 +2413,10 @@ textarea:disabled {
   color: var(--warning-text);
 }
 .job-cancel {
-  display: inline-block;
+  display: block;
   vertical-align: middle;
+  margin-top: 4px;
+  max-width: 100%;
 }
 .job-cancel > small {
   max-width: 240px;
@@ -2431,6 +2433,46 @@ textarea:disabled {
   margin: 8px 0 0;
   max-width: 340px;
   white-space: normal;
+}
+.jobs-table {
+  table-layout: fixed;
+  width: 100%;
+}
+.jobs-table th:first-child {
+  width: 28%;
+}
+.jobs-table th:nth-child(2) {
+  width: 15%;
+}
+.jobs-table th:nth-child(3) {
+  width: 15%;
+}
+.jobs-table th:nth-child(4) {
+  width: 15%;
+}
+.jobs-table th:last-child {
+  width: 27%;
+}
+.jobs-table :is(td, small) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.job-cancel button {
+  max-width: 100%;
+  white-space: normal;
+}
+.project-actor summary {
+  color: var(--text-2);
+  padding: 8px 0;
+  cursor: pointer;
+}
+.project-actor code {
+  display: block;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.fleet-view-control {
+  display: none;
 }
 .activity-event {
   min-width: 0;
@@ -2883,14 +2925,14 @@ textarea:disabled {
   margin-bottom: 6px;
 }
 .permission-group .check {
-  font-size: 13px;
+  font-size: 14px;
 }
 .permission-reference {
-  font-size: 12px;
+  font-size: 14px;
 }
 .permission-reference > summary {
-  font-size: 12px;
-  color: var(--text-3);
+  font-size: 13px;
+  color: var(--text-2);
   min-height: 32px;
   padding: 6px 0;
 }
@@ -2985,6 +3027,158 @@ textarea:disabled {
   }
   .permission-group .check {
     min-height: 44px;
+    font-size: 14px;
+  }
+}
+
+.job-output-state {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-2);
+}
+@media (max-height: 600px) and (min-width: 721px) {
+  .sidebar {
+    padding-top: 12px;
+    overflow: hidden;
+  }
+  .sidebar .brand {
+    padding-bottom: 10px;
+  }
+  .sidebar > .nav-label,
+  .sidebar-bottom :is(.companion, p) {
+    display: none;
+  }
+  .sidebar > nav {
+    min-height: 44px;
+    flex: 1 1 auto;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .sidebar-bottom {
+    margin-top: 0;
+    padding-top: 8px;
+  }
+  .sidebar-bottom .account {
+    margin-top: 8px;
+    padding-top: 8px;
+  }
+}
+@media (max-height: 600px) and (max-width: 720px) {
+  .mobile-menu-body {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .mobile-menu-body nav {
+    flex: 1 1 auto;
+    min-height: 44px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .mobile-account {
+    flex-shrink: 0;
+    margin-top: 6px;
+    padding-top: 8px;
+  }
+  .mobile-account small {
+    margin-bottom: 6px;
+  }
+}
+@media (max-width: 720px) {
+  .project-actor summary {
+    min-height: 44px;
+  }
+  .fleet-view-control {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 8px;
+    min-height: 44px;
+    margin: 0;
+    padding: 6px 12px;
+    border-top: 1px solid var(--border);
     font-size: 13px;
+  }
+  .fleet-view-control .muted {
+    font-weight: 400;
+    font-size: 12px;
+  }
+  .fleet-compare .fleet-table thead {
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip-path: none;
+    background: var(--surface-2);
+  }
+  .fleet-compare .fleet-table :is(thead, tbody) tr {
+    grid-template-columns: minmax(0, 1.3fr) repeat(3, minmax(0, 1fr));
+    gap: 4px 8px;
+    padding: 6px 12px;
+    align-items: center;
+  }
+  .fleet-compare .fleet-table th {
+    padding: 0;
+    font-size: 13px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  .fleet-compare .fleet-table th:last-child {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .fleet-compare .fleet-table td[data-label="Host"] {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .fleet-compare .host-identity > a {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    font-size: 14px;
+  }
+  .fleet-compare
+    :is(.compact-freshness, .mobile-resource-warning, .mobile-tone-prefix) {
+    display: none;
+  }
+  .fleet-compare .fleet-table td[data-label="Canary uptime"] {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .fleet-compare .fleet-table td[data-label="Agent connection"] {
+    grid-column: 3;
+    grid-row: 1;
+  }
+  .fleet-compare .fleet-table td[data-label="Reading freshness"] {
+    display: flex;
+    grid-column: 4;
+    grid-row: 1;
+  }
+  .fleet-compare .fleet-table .chip {
+    padding: 0;
+    background: transparent;
+    font-size: 13px;
+  }
+  .fleet-compare .fleet-table td[data-label="Resources"],
+  .fleet-compare .fleet-table td[data-label="Reading freshness"]::before,
+  .fleet-compare .fleet-table td[data-label="Reading freshness"] > small {
+    display: none;
+  }
+  .fleet-compare
+    .fleet-table
+    tr:has(.mobile-resource-warning)
+    td[data-label="Resources"] {
+    display: flex;
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .fleet-compare .desktop-resource-warning {
+    display: block;
+    margin-bottom: 0;
+    color: var(--warning-text);
   }
 }

@@ -429,6 +429,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
     [notice, setNotice] = useState(""),
     [search, setSearch] = useState(""),
     [attentionOnly, setAttentionOnly] = useState(false),
+    [compareFleet, setCompareFleet] = useState(false),
     [verificationUntil, setVerificationUntil] = useState(0),
     [verificationExpired, setVerificationExpired] = useState(false),
     [modal, setModal] = useState<
@@ -786,9 +787,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
         Skip to content
       </a>
       <aside className="sidebar">
-        <p className="nav-scroll-note">
-          ↕ Scroll for sections and account controls
-        </p>
+        <p className="nav-scroll-note">↕ Scroll for more sections</p>
         <RouteLink className="brand" to={{ view: "fleet" }}>
           <img src="/phoenix.svg" width="40" height="40" alt="" />
           <span>
@@ -861,9 +860,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
               <strong>{sectionName}</strong>
             </summary>
             <div className="mobile-menu-body">
-              <p className="nav-scroll-note">
-                ↕ Scroll for sections and account controls
-              </p>
+              <p className="nav-scroll-note">↕ Scroll for more sections</p>
               {navigation(true)}
               <div className="mobile-account">
                 <b>{user.name}</b>
@@ -1006,7 +1003,9 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                   />
                 </div>
               </ResponsiveDetails>
-              <section className="panel">
+              <section
+                className={`panel fleet-panel${compareFleet ? " fleet-compare" : ""}`}
+              >
                 <div className="panel-heading">
                   <h2>
                     Hosts{" "}
@@ -1033,6 +1032,15 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                     onChange={(e) => setSearch(e.target.value)}
                   />
                 </div>
+                <label className="fleet-view-control check">
+                  <input
+                    type="checkbox"
+                    checked={compareFleet}
+                    onChange={(event) => setCompareFleet(event.target.checked)}
+                  />
+                  Compare statuses
+                  <span className="muted">Open a host for readings</span>
+                </label>
                 {attentionOnly && (
                   <p className="filter-context" role="status">
                     Offline or unknown agents, stale or missing readings, or
@@ -2520,7 +2528,7 @@ function Jobs({
             ? "Job history unavailable."
             : !loaded
               ? "Loading job history…"
-              : "No management jobs yet."}
+              : "No jobs in this history window."}
         </Empty>
       ) : !filtered.length ? (
         <Empty>
@@ -2568,11 +2576,19 @@ function Jobs({
                     )}
                   </td>
                   <td role="cell" aria-colindex={2} data-label="Host">
-                    {hostName(j)}
+                    {hosts.some((host) => host.id === j.hostId) ? (
+                      <RouteLink to={{ view: "host", id: j.hostId }}>
+                        {hostName(j)}
+                      </RouteLink>
+                    ) : (
+                      hostName(j)
+                    )}
                   </td>
                   <td role="cell" aria-colindex={3} data-label="State">
                     <Tone value={j.state} />
-                    {j.cancelRequested && <small>Cancellation requested</small>}
+                    {j.cancelRequested && j.state !== "cancelled" && (
+                      <small>Cancellation requested</small>
+                    )}
                   </td>
                   <td role="cell" aria-colindex={4} data-label="Created">
                     <Time value={j.createdAt} />

@@ -11,6 +11,7 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
     if (/^(host-jobs-mobile|jobs-mobile)$/.test(name) && !await evaluate("(() => { const wrap = document.querySelector('.jobs-table').parentElement; return wrap.scrollWidth <= wrap.clientWidth; })()")) throw Error(`Mobile jobs require sideways scrolling in ${name}`);
     if (name === "fleet-desktop" && !await evaluate("(() => { const wrap = document.querySelector('.fleet-table').parentElement; return wrap.scrollWidth <= wrap.clientWidth; })()")) throw Error("Desktop fleet requires sideways scrolling");
     if (name === "job-outcome-mobile" && !await evaluate("document.querySelector('.job-target a').getClientRects().length === 1")) throw Error("Short job target host name is split across lines");
+    if (name.startsWith("fleet-compare-") && !await evaluate("(() => { const table = document.querySelector('.fleet-compare .fleet-table'); const cells = [...table.querySelector('tbody tr').querySelectorAll('td')].slice(0,4); return table.querySelector('thead').checkVisibility() && cells.every(c => c.checkVisibility() && c.scrollWidth <= c.clientWidth); })()")) throw Error(`Comparison status headings or cells are clipped in ${name}`);
     await capture(name);
   };
   const navigate = async (name) => {
@@ -145,6 +146,10 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await evaluate("document.querySelector('.project-settings > summary').click()");
   await section(".project-settings");
   await shot("project-settings-desktop");
+  await evaluate("document.querySelector('.project-actor').open = true");
+  await section(".project-history");
+  await shot("project-history-desktop");
+  await section(".project-settings");
   await evaluate("(() => { const input = document.querySelector('input[name=editName]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'Website updated'); input.dispatchEvent(new Event('input', {bubbles:true})); window.fixture.recent = false; })()");
   await evaluate("document.querySelector('form[aria-label=\"Project details\"]').requestSubmit()");
   await wait("document.querySelector('.project-edit-feedback [role=alert]')?.innerText.includes('Verify identity')");
@@ -193,18 +198,24 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await wait("document.querySelectorAll('.fleet-table tbody tr').length === 12");
   await top();
   await shot("fleet-long-mobile");
+  await evaluate("document.querySelector('.fleet-view-control input').click()");
+  await wait("!!document.querySelector('.fleet-compare')");
+  await shot("fleet-compare-mobile");
   await evaluate(`(() => {
     const elements = [...document.querySelectorAll('main, main *')];
     window.fixture.textStyles = elements.map(e => [e, e.getAttribute('style'), parseFloat(getComputedStyle(e).fontSize)]);
     window.fixture.textStyles.forEach(([e, , size]) => e.style.fontSize = size * 1.5 + 'px');
   })()`);
+  await shot("fleet-compare-enlarged-mobile");
+  await evaluate("document.querySelector('.fleet-view-control input').click()");
+  await wait("!document.querySelector('.fleet-compare')");
   await shot("fleet-text-enlarged-mobile");
   await evaluate("window.fixture.textStyles.forEach(([e,style]) => style === null ? e.removeAttribute('style') : e.setAttribute('style',style)); delete window.fixture.textStyles; window.fixture.hosts.splice(3)");
   await wait("document.querySelectorAll('.fleet-table tbody tr').length === 3");
   await evaluate("document.querySelector('.mobile-navigation').open = true");
   await shot("navigation-mobile");
   await viewport(390, 390);
-  await evaluate("document.querySelector('.mobile-menu-body').scrollTop = 10000");
+  await evaluate("document.querySelector('.mobile-menu-body nav').scrollTop = 10000");
   await shot("navigation-short-mobile");
   await viewport(390, 844);
   await evaluate("document.querySelector('.mobile-navigation').open = false");
@@ -214,6 +225,10 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await wait("document.querySelectorAll('.fleet-table tbody tr').length === 2");
   await top();
   await shot("fleet-attention-mobile");
+  await evaluate("document.querySelector('.fleet-view-control input').click()");
+  await wait("!!document.querySelector('.fleet-compare')");
+  await shot("fleet-compare-attention-mobile");
+  await evaluate("document.querySelector('.fleet-view-control input').click()");
   await evaluate("window.fixture.hosts[1].resourceHealth = 'normal'; window.fixture.hosts[1].latest.cpuPercent = 12");
   await click("Show all hosts");
   await wait("document.querySelectorAll('.fleet-table tbody tr').length === 3");
@@ -259,7 +274,7 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await wait("typeof window.fixture.holds['POST /api/jobs/fixture-job-2/cancel'] === 'function'");
   await shot("jobs-cancellation-pending-desktop");
   await evaluate("window.fixture.holds['POST /api/jobs/fixture-job-2/cancel']()");
-  await wait("[...document.querySelectorAll('.job-cancel [role=status]')].some(s => s.innerText.includes('Cancellation requested'))");
+  await wait("[...document.querySelectorAll('.job-cancel [role=status]')].some(s => s.innerText.includes('Cancelled before dispatch'))");
   await shot("jobs-cancellation-receipt-desktop");
   await evaluate("window.fixture.audit = [{id:1,at:Date.now(),actor:'fixture-account-identifier-1234567890',hostId:'private-host',jobId:'fixture-job-1',action:'logs.read',state:'queued'},{id:2,at:Date.now(),actor:'fixture-admin',hostId:'',jobId:'',action:'grants.replace',state:'completed'}]");
   await navigate("Activity & audit");

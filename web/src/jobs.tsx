@@ -34,6 +34,14 @@ export function JobCancellation({
   }, []);
   const eligible =
     ["queued", "dispatched"].includes(job.state) && !job.cancelRequested;
+  const cancelled = job.state === "cancelled";
+  const receipt = cancelled
+    ? !job.dispatchedAt
+      ? "Cancelled before dispatch. This request was not sent to the agent."
+      : "Job is cancelled. An executed action cannot be undone."
+    : ["queued", "dispatched"].includes(job.state)
+      ? "Cancellation requested; waiting for updated job state. An executed action cannot be undone."
+      : `Cancellation was requested. Job finished as ${job.state.replaceAll("_", " ")}. An executed action cannot be undone.`;
   if (!eligible && !busy && !accepted && !error) return null;
   async function cancel() {
     if (
@@ -66,7 +74,9 @@ export function JobCancellation({
         busy
           ? "Requesting cancellation…"
           : accepted
-            ? "Cancellation requested"
+            ? cancelled
+              ? "Cancelled"
+              : "Cancellation requested"
             : unavailable || job.canCancel === undefined
               ? "Cancellation unavailable"
               : job.canCancel
@@ -94,11 +104,7 @@ export function JobCancellation({
           </small>
         )}
         <StatusNotice>
-          {busy
-            ? "Sending cancellation request…"
-            : accepted
-              ? "Cancellation requested. An executed action cannot be undone."
-              : ""}
+          {busy ? "Sending cancellation request…" : accepted ? receipt : ""}
         </StatusNotice>
         <ErrorNotice error={error} onDismiss={() => setError(null)} />
       </div>
