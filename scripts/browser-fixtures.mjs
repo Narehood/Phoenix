@@ -489,6 +489,10 @@ try {
   await evaluate("(() => { const now = Date.now; try { Date.now = () => now() + 301000; window.dispatchEvent(new Event('focus')); } finally { Date.now = now; } })()");
   await wait("[...document.querySelectorAll('.status-notice')].some(s => s.innerText.includes('Recent verification expired')) && !document.querySelector('.status-notice time')");
   pass("verification explains its scope, shows an expiry and stops claiming current verification after expiry");
+  // End the expiry simulation before pointer navigation: the future clock also
+  // ages fleet readings, whose recovery changes row layout on the next tick.
+  await evaluate("window.dispatchEvent(new Event('focus'))");
+  await wait("document.querySelectorAll('.fleet-table td[data-label=\"Agent connection\"] .chip.good').length === 2 && document.querySelectorAll('.fleet-table td[data-label=\"Reading freshness\"] .chip.good').length === 2 && !document.querySelector('.usage.stale')");
 
   // Real destinations survive history and a new document, with heading focus.
   assert.equal(await evaluate("document.querySelector('nav a[href=\"#/projects\"]')?.getAttribute('href')"), "#/projects");
