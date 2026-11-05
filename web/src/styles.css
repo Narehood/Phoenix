@@ -2432,6 +2432,10 @@ textarea:disabled {
   .job-identifiers summary {
     min-height: 44px;
   }
+  .job-target p > strong {
+    display: block;
+    margin-bottom: 4px;
+  }
   .jobs-table td[data-label="Created"],
   .jobs-table td[data-label="Outcome"] {
     grid-column: 1 / -1;
@@ -2450,6 +2454,17 @@ textarea:disabled {
   }
   .fleet-table tr {
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 10em), 1fr));
+  }
+}
+@media (min-width: 1280px) {
+  .fleet-table .resource-summary {
+    grid-template-columns: repeat(3, minmax(76px, 1fr));
+    gap: 10px;
+  }
+  .fleet-table th,
+  .fleet-table td[data-label="Canary uptime"] > small,
+  .fleet-table .usage.stale small {
+    white-space: nowrap;
   }
 }
 .project-edit-feedback:has(.notice) {

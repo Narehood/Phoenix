@@ -9,6 +9,8 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
     if (name === "fleet-text-enlarged-mobile" && !await evaluate("(() => { const node = document.querySelector('.fleet-heading h1').firstChild; const word = document.createRange(); word.setStart(node,6); word.setEnd(node,14); return word.getClientRects().length === 1; })()")) throw Error("Enlarged fleet title splits a word across lines");
     if (name === "fleet-text-enlarged-mobile" && !await evaluate("(() => { const row = document.querySelector('.fleet-table tbody tr'); return row.querySelector('[data-label=\"Canary uptime\"]').getBoundingClientRect().bottom <= row.querySelector('[data-label=\"Agent connection\"]').getBoundingClientRect().top; })()")) throw Error("Enlarged evidence labels do not have a clear stacked reading order");
     if (/^(host-jobs-mobile|jobs-mobile)$/.test(name) && !await evaluate("(() => { const wrap = document.querySelector('.jobs-table').parentElement; return wrap.scrollWidth <= wrap.clientWidth; })()")) throw Error(`Mobile jobs require sideways scrolling in ${name}`);
+    if (name === "fleet-desktop" && !await evaluate("(() => { const wrap = document.querySelector('.fleet-table').parentElement; return wrap.scrollWidth <= wrap.clientWidth; })()")) throw Error("Desktop fleet requires sideways scrolling");
+    if (name === "job-outcome-mobile" && !await evaluate("document.querySelector('.job-target a').getClientRects().length === 1")) throw Error("Short job target host name is split across lines");
     await capture(name);
   };
   const navigate = async (name) => {
@@ -79,7 +81,7 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await shot("jobs-permissions-limited-desktop");
   await evaluate("window.fixture.hostPermissions = null; history.back()");
   await wait("location.hash === '#/hosts/private-host' && !!document.querySelector('.host-configuration')");
-  await wait("document.querySelector('#host-jobs button')?.disabled === false");
+  await wait("document.querySelector('#host-jobs td[data-label=Outcome] button')?.disabled === false");
   await section(".host-inventory-form");
   await evaluate(`(() => {
     const input = document.querySelector('.host-inventory-form input[name=name]');

@@ -631,7 +631,7 @@ try {
   const jobsBeforeDenied = await evaluate("window.fixture.requests.filter(r => r.method === 'POST' && r.path.endsWith('/jobs')).length");
   await evaluate("document.querySelector('.service-requests button:nth-child(2)').click()");
   assert.equal(await evaluate("window.fixture.requests.filter(r => r.method === 'POST' && r.path.endsWith('/jobs')).length"), jobsBeforeDenied, "Disabled ungranted action submitted a request");
-  await wait("document.querySelector('#host-jobs button')?.disabled && document.querySelector('#host-jobs').innerText.includes('Cancellation not permitted')");
+  await wait("document.querySelector('#host-jobs td[data-label=Outcome] button')?.disabled && document.querySelector('#host-jobs').innerText.includes('Cancellation not permitted')");
   await click("Remote jobs");
   await wait("location.hash === '#/jobs' && [...document.querySelectorAll('#content button')].some(b => b.textContent === 'Cancel' && b.disabled)");
   await send("Emulation.setDeviceMetricsOverride", {width:390,height:844,deviceScaleFactor:1,mobile:true}, sessionId);
