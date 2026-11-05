@@ -17,7 +17,7 @@ import {
 } from "./ui";
 import { Projects } from "./projects";
 import { GrantEditor } from "./grants";
-import { JobOutcome, jobAction } from "./jobs";
+import { JobCancellation, JobOutcome, jobAction } from "./jobs";
 import {
   HostInventoryForm,
   MappingForm,
@@ -786,6 +786,9 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
         Skip to content
       </a>
       <aside className="sidebar">
+        <p className="nav-scroll-note">
+          ↕ Scroll for sections and account controls
+        </p>
         <RouteLink className="brand" to={{ view: "fleet" }}>
           <img src="/phoenix.svg" width="40" height="40" alt="" />
           <span>
@@ -858,6 +861,9 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
               <strong>{sectionName}</strong>
             </summary>
             <div className="mobile-menu-body">
+              <p className="nav-scroll-note">
+                ↕ Scroll for sections and account controls
+              </p>
               {navigation(true)}
               <div className="mobile-account">
                 <b>{user.name}</b>
@@ -1817,17 +1823,11 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                   unavailable={!!sourceErrors.Jobs}
                   jobs={hostJobs}
                   hosts={hosts}
-                  cancel={(id) =>
-                    void act(async () => {
-                      await api(`/api/jobs/${id}/cancel`, "POST", {});
-                      setNotice(
-                        "Cancellation requested; an executed action cannot be undone.",
-                      );
-                    })
-                  }
+                  onChanged={() => void refresh()}
                   id="host-jobs"
                 />
                 <Activity
+                  hosts={hosts}
                   loaded={!!sourceLoaded.Activity}
                   unavailable={!!sourceErrors.Activity}
                   audit={audit.filter((a) => a.hostId === current.id)}
@@ -1851,11 +1851,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                 unavailable={!!sourceErrors.Jobs}
                 jobs={jobs}
                 hosts={hosts}
-                cancel={(id) =>
-                  void act(async () => {
-                    await api(`/api/jobs/${id}/cancel`, "POST", {});
-                  })
-                }
+                onChanged={() => void refresh()}
               />
             </>
           )}
@@ -1872,6 +1868,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                 </div>
               </div>
               <Activity
+                hosts={hosts}
                 loaded={!!sourceLoaded.Activity}
                 audit={audit}
                 unavailable={!!sourceErrors.Activity}
@@ -2391,14 +2388,14 @@ function History({ samples }: { samples: Reading[] }) {
 function Jobs({
   jobs,
   hosts,
-  cancel,
+  onChanged,
   id,
   loaded,
   unavailable = false,
 }: {
   jobs: Job[];
   hosts: Host[];
-  cancel: (id: string) => void;
+  onChanged: () => void;
   id?: string;
   loaded: boolean;
   unavailable?: boolean;
@@ -2590,33 +2587,11 @@ function Jobs({
                         {j.rebootObserved ? "observed" : "not observed"}
                       </small>
                     )}
-                    {["queued", "dispatched"].includes(j.state) &&
-                      !j.cancelRequested && (
-                        <ResponsiveDetails
-                          className="job-cancel"
-                          label={
-                            unavailable || j.canCancel === undefined
-                              ? "Cancellation unavailable"
-                              : j.canCancel
-                                ? "Manage request"
-                                : "Cancellation restricted"
-                          }
-                        >
-                          <button
-                            disabled={unavailable || j.canCancel !== true}
-                            onClick={() => cancel(j.id)}
-                          >
-                            Cancel
-                          </button>
-                          {(unavailable || j.canCancel !== true) && (
-                            <small>
-                              {unavailable || j.canCancel === undefined
-                                ? "Cancellation permission unavailable"
-                                : "Cancellation not permitted. Ask an administrator for cancellation access to this host."}
-                            </small>
-                          )}
-                        </ResponsiveDetails>
-                      )}
+                    <JobCancellation
+                      job={j}
+                      unavailable={unavailable}
+                      onChanged={onChanged}
+                    />
                   </td>
                 </tr>
               ))}
@@ -2629,10 +2604,12 @@ function Jobs({
 }
 function Activity({
   audit,
+  hosts,
   loaded,
   unavailable = false,
 }: {
   audit: Audit[];
+  hosts: Host[];
   loaded: boolean;
   unavailable?: boolean;
 }) {
@@ -2652,19 +2629,90 @@ function Activity({
         </Empty>
       ) : (
         <ol className="timeline">
-          {audit.map((a) => (
-            <li key={a.id}>
-              <span className="timeline-dot" />
-              <div>
-                <strong>{a.action}</strong> <Tone value={a.state} />
-                <small>
-                  {stamp(a.at)} · actor {a.actor.slice(0, 12)}
-                  {a.hostId && ` · host ${a.hostId.slice(0, 12)}`}
-                  {a.jobId && ` · job ${a.jobId.slice(0, 12)}`}
-                </small>
-              </div>
-            </li>
-          ))}
+          {audit.map((a) => {
+            const host = hosts.find((host) => host.id === a.hostId);
+            const label =
+              (
+                {
+                  setup: "Workspace setup",
+                  "sessions.revoke": "Sessions revoked",
+                  "account.create": "Account created",
+                  "account.disable": "Account disabled",
+                  "grants.replace": "Account permissions replaced",
+                  "canary.mapping": "Uptime mappings updated",
+                  "inventory.update": "Host details updated",
+                  "invitation.create": "Enrollment invitation issued",
+                  "agent.enroll": "Agent enrolled",
+                  "agent.approve": "Agent approved",
+                  "agent.revoke": "Agent revoked",
+                  "certificate.rotate": "Agent certificate rotated",
+                  "receipt.unmatched": "Unmatched agent receipt",
+                  "admin.recover": "Administrator recovery",
+                } as Record<string, string>
+              )[a.action] || jobAction(a.action);
+            return (
+              <li key={a.id}>
+                <span className="timeline-dot" />
+                <div className="activity-event">
+                  <strong>{label}</strong> <Tone value={a.state} />
+                  <div className="activity-context">
+                    <Time value={a.at} />
+                    {host ? (
+                      <RouteLink to={{ view: "host", id: host.id }}>
+                        {host.name}
+                      </RouteLink>
+                    ) : a.hostId ? (
+                      <span>Host outside loaded inventory</span>
+                    ) : null}
+                    {host && a.jobId && (
+                      <RouteLink to={{ view: "jobs", id: a.jobId }}>
+                        View job outcome →
+                      </RouteLink>
+                    )}
+                  </div>
+                  <details className="activity-identifiers">
+                    <summary>
+                      Actor:{" "}
+                      {a.actor.length > 18
+                        ? a.actor.slice(0, 12) + "…"
+                        : a.actor || "Not recorded"}{" "}
+                      · identifiers
+                    </summary>
+                    <dl className="job-identity-fields">
+                      <div>
+                        <dt>Actor</dt>
+                        <dd>
+                          <code>{a.actor || "Not recorded"}</code>
+                        </dd>
+                      </div>
+                      {a.hostId && (
+                        <div>
+                          <dt>Host ID</dt>
+                          <dd>
+                            <code>{a.hostId}</code>
+                          </dd>
+                        </div>
+                      )}
+                      {a.jobId && (
+                        <div>
+                          <dt>Job ID</dt>
+                          <dd>
+                            <code>{a.jobId}</code>
+                          </dd>
+                        </div>
+                      )}
+                      <div>
+                        <dt>Action key</dt>
+                        <dd>
+                          <code>{a.action}</code>
+                        </dd>
+                      </div>
+                    </dl>
+                  </details>
+                </div>
+              </li>
+            );
+          })}
         </ol>
       )}
     </section>

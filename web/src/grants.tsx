@@ -149,8 +149,10 @@ export function GrantEditor({
   const loaded = load.state === "loaded" ? load.grants : null;
   const saved = new Set((loaded || []).map(key)),
     pending = new Set(working.map(key));
-  const added = working.filter((g) => !saved.has(key(g))).length,
-    removed = (loaded || []).filter((g) => !pending.has(key(g))).length;
+  const additions = working.filter((g) => !saved.has(key(g))),
+    removals = (loaded || []).filter((g) => !pending.has(key(g)));
+  const added = additions.length,
+    removed = removals.length;
   const changed = added + removed > 0;
   useUnsavedChanges(changed, "account permissions");
   const groups = [...new Set(hosts.flatMap((host) => host.groups))].sort();
@@ -534,6 +536,43 @@ export function GrantEditor({
         </fieldset>
       </div>
       <div className="grant-save" hidden={!loaded && !error && !notice}>
+        {changed && (
+          <details className="grant-change-review" open>
+            <summary>
+              Review changes · {added} added · {removed} removed
+            </summary>
+            <div className="grant-change-columns">
+              {[
+                { label: "Adding", grants: additions },
+                { label: "Removing", grants: removals },
+              ].map(({ label, grants }) => (
+                <section key={label}>
+                  <h3>
+                    {label} ({grants.length})
+                  </h3>
+                  {grants.length ? (
+                    <ul>
+                      {grants.map((grant) => (
+                        <li key={key(grant)}>
+                          <strong>
+                            {actionLabels[grant.action] || grant.action}
+                          </strong>
+                          <span>
+                            {grant.scopeType === "all"
+                              ? "All hosts"
+                              : `${grant.scopeType === "project" ? "Project" : grant.scopeType === "host" ? "Host" : "Group"}: ${scopeName(grant) || grant.scope}`}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p>None</p>
+                  )}
+                </section>
+              ))}
+            </div>
+          </details>
+        )}
         <ErrorNotice
           error={error}
           onDismiss={() => setError(null)}

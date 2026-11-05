@@ -2,7 +2,109 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import type { Job } from "./types";
 import { RouteLink } from "./navigation";
-import { Dialog, ErrorNotice, StatusNotice, Time, Tone, stamp } from "./ui";
+import {
+  Dialog,
+  ErrorNotice,
+  ResponsiveDetails,
+  StatusNotice,
+  Time,
+  Tone,
+  stamp,
+} from "./ui";
+
+export function JobCancellation({
+  job,
+  unavailable,
+  onChanged,
+}: {
+  job: Job;
+  unavailable: boolean;
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState(false),
+    [accepted, setAccepted] = useState(false),
+    [error, setError] = useState<unknown>(null);
+  const pending = useRef(false),
+    alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+  const eligible =
+    ["queued", "dispatched"].includes(job.state) && !job.cancelRequested;
+  if (!eligible && !busy && !accepted && !error) return null;
+  async function cancel() {
+    if (
+      pending.current ||
+      accepted ||
+      !eligible ||
+      unavailable ||
+      job.canCancel !== true
+    )
+      return;
+    pending.current = true;
+    setBusy(true);
+    setError(null);
+    try {
+      await api(`/api/jobs/${encodeURIComponent(job.id)}/cancel`, "POST", {});
+      if (!alive.current) return;
+      setAccepted(true);
+      onChanged();
+    } catch (error) {
+      if (alive.current) setError(error);
+    } finally {
+      pending.current = false;
+      if (alive.current) setBusy(false);
+    }
+  }
+  return (
+    <ResponsiveDetails
+      className="job-cancel"
+      label={
+        busy
+          ? "Requesting cancellation…"
+          : accepted
+            ? "Cancellation requested"
+            : unavailable || job.canCancel === undefined
+              ? "Cancellation unavailable"
+              : job.canCancel
+                ? "Manage request"
+                : "Cancellation restricted"
+      }
+    >
+      <div className="job-cancel-feedback" aria-busy={busy}>
+        {!accepted && (
+          <button
+            type="button"
+            disabled={
+              busy || !eligible || unavailable || job.canCancel !== true
+            }
+            onClick={() => void cancel()}
+          >
+            {busy ? "Requesting cancellation…" : "Cancel"}
+          </button>
+        )}
+        {!accepted && (unavailable || job.canCancel !== true) && (
+          <small>
+            {unavailable || job.canCancel === undefined
+              ? "Cancellation permission unavailable"
+              : "Cancellation not permitted. Ask an administrator for cancellation access to this host."}
+          </small>
+        )}
+        <StatusNotice>
+          {busy
+            ? "Sending cancellation request…"
+            : accepted
+              ? "Cancellation requested. An executed action cannot be undone."
+              : ""}
+        </StatusNotice>
+        <ErrorNotice error={error} onDismiss={() => setError(null)} />
+      </div>
+    </ResponsiveDetails>
+  );
+}
 
 export function jobAction(action: string) {
   return (
@@ -193,6 +295,11 @@ export function JobOutcome({
               </dd>
             </div>
           </dl>
+          {job.cancelRequested && (
+            <p className="notice">
+              Cancellation requested. An executed action cannot be undone.
+            </p>
+          )}
           {job.action === "host.reboot" && (
             <p>
               New boot observed:{" "}

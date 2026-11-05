@@ -2421,6 +2421,100 @@ textarea:disabled {
   white-space: normal;
   margin-top: 6px;
 }
+.job-cancel-feedback > small {
+  display: block;
+  max-width: 260px;
+  white-space: normal;
+  margin-top: 6px;
+}
+.job-cancel-feedback .notice {
+  margin: 8px 0 0;
+  max-width: 340px;
+  white-space: normal;
+}
+.activity-event {
+  min-width: 0;
+  flex: 1;
+}
+.activity-context {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
+  margin: 4px 0;
+}
+.activity-identifiers > summary {
+  cursor: pointer;
+  color: var(--text-2);
+  font-size: 14px;
+  padding: 6px 0;
+}
+.activity-identifiers code {
+  overflow-wrap: anywhere;
+}
+.grant-change-review {
+  grid-column: 1 / -1;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+.grant-change-review > summary {
+  font-weight: 600;
+  cursor: pointer;
+}
+.grant-change-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.grant-change-columns h3 {
+  font-size: 14px;
+  margin: 12px 0 8px;
+}
+.grant-change-columns ul {
+  padding-left: 18px;
+  margin: 0;
+}
+.grant-change-columns li {
+  margin-bottom: 8px;
+  overflow-wrap: anywhere;
+}
+.grant-change-columns li span {
+  display: block;
+  color: var(--text-2);
+}
+.github .section :is(p, small),
+.service-guidance,
+.service-permission-note,
+.service-pending,
+.permission-reference {
+  font-size: 14px;
+  line-height: 1.5;
+}
+.nav-scroll-note {
+  display: none;
+}
+@media (max-height: 600px) {
+  .nav-scroll-note {
+    display: block;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    flex-shrink: 0;
+    margin: 0;
+    padding: 8px;
+    font-size: 13px;
+    background: var(--surface);
+    color: var(--text-2);
+    border-bottom: 1px solid var(--border);
+  }
+  .sidebar .nav-scroll-note {
+    background: var(--ink);
+    color: var(--ink-text);
+    top: 0;
+  }
+}
 .job-identity-fields {
   display: grid;
   gap: 8px;
@@ -2506,6 +2600,9 @@ textarea:disabled {
   font-size: 14px;
 }
 @media (max-width: 720px) {
+  .sidebar .nav-scroll-note {
+    display: none;
+  }
   .job-filters {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2539,7 +2636,7 @@ textarea:disabled {
   }
   .jobs-table tbody tr {
     grid-template-columns: minmax(0, 1fr) auto;
-    gap: 4px 14px;
+    gap: 2px 12px;
   }
   .jobs-table td[data-label="Action"] {
     grid-column: 1;
@@ -2584,7 +2681,7 @@ textarea:disabled {
   .job-cancel > summary {
     display: list-item;
     min-height: 44px;
-    padding: 12px 0;
+    padding: 10px 0;
     color: var(--text-2);
     cursor: pointer;
   }
@@ -2665,6 +2762,26 @@ textarea:disabled {
   :is(.project-table, .jobs-table) tbody tr {
     padding: 12px 14px;
     gap: 6px 16px;
+  }
+  .jobs-table tbody tr {
+    padding: 8px 14px;
+    gap: 2px 12px;
+  }
+  .jobs-panel .job-filters {
+    padding-bottom: 0;
+    gap: 0 12px;
+  }
+  .job-cancel-feedback .notice {
+    max-width: none;
+  }
+  .activity-context a,
+  .activity-identifiers > summary {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+  .grant-change-columns {
+    grid-template-columns: 1fr;
   }
   .project-table td[data-label="Updated"],
   .jobs-table td[data-label="Created"],

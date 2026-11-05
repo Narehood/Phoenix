@@ -61,7 +61,7 @@ function installFixture(visualCapture = false) {
   };
   const control = window.fixture = { role: "admin", hosts: fixtureHosts, offline: false, htmlFailure: false, logoutFailure: 0, grantWrites: 0, holdHosts: false, releaseHosts: null,
     // Project, GitHub and grant stores start empty: nothing is preseeded in the product.
-    usersFail: true, recent: true, authFailure: 0, githubFail: false, syncStatus: 429, projects: {}, events: {}, githubViews: {}, githubPuts: [], failSources: new Set(), failWrites: new Set(), createdUsers: [], jobs: [], canary, hostPermissions: null,
+    usersFail: true, recent: true, authFailure: 0, githubFail: false, syncStatus: 429, projects: {}, events: {}, githubViews: {}, githubPuts: [], failSources: new Set(), failWrites: new Set(), createdUsers: [], jobs: [], audit: [], canary, hostPermissions: null,
     grantStore: {
       "operator-fixture": [{ scopeType: "host", scope: "viewer-host", action: "host.read" }, { scopeType: "project", scope: "fixture-project", action: "project.read" }],
       "viewer-fixture": [{ scopeType: "host", scope: "viewer-host", action: "host.read" }],
@@ -298,11 +298,12 @@ function installFixture(visualCapture = false) {
         if (!jobView(job).canCancel) return json({error:"action forbidden"}, 403);
         job.cancelRequested = true;
         if (job.state === "queued") { job.state = "cancelled"; job.finishedAt = Date.now(); }
+        if (job.state === "queued") { job.state = "cancelled"; job.finishedAt = Date.now(); }
         return json({requested:true});
       }
       if (!jobRoute[2] && method === "GET") return json({...jobView(job), hostName:fixtureHosts.find(h => h.id === job.hostId)?.name || job.hostId, canReadOutput:hostPermissions().includes("jobs.output"), result:hostPermissions().includes("jobs.output") ? job.result : null});
     }
-    if (path === "/api/audit") return json([]);
+    if (path === "/api/audit") return json(control.audit.filter(a => admin || a.hostId === viewerHost.id));
     return json({ error: "unexpected fixture request" }, 404);
   };
 }
@@ -745,6 +746,40 @@ try {
   await wait("location.hash === '#/fleet'");
   pass("diagnostic and authenticated reboot submissions open their exact job outcomes and retain typed-host confirmation");
 
+  await click("Remote jobs");
+  await wait("!!document.querySelector('.jobs-table')");
+  await evaluate("window.fixture.failWrites.add('POST /api/jobs/fixture-job-1/cancel')");
+  await click("Cancel");
+  await wait("document.querySelector('.job-cancel [role=alert]')?.innerText.includes('Fixture save unavailable')");
+  assert.ok(await evaluate("document.querySelector('.job-cancel button').disabled === false && window.fixture.jobs[0].cancelRequested !== true"), "Failed cancellation loses retry or claims acceptance");
+  await evaluate("window.fixture.failWrites.clear(); window.fixture.hold.add('POST /api/jobs/fixture-job-1/cancel')");
+  await click("Cancel");
+  await wait("typeof window.fixture.holds['POST /api/jobs/fixture-job-1/cancel'] === 'function' && document.querySelector('.job-cancel-feedback').getAttribute('aria-busy') === 'true'");
+  const cancellationPosts = await evaluate("window.fixture.requests.filter(r => r.path.endsWith('/cancel')).length");
+  await evaluate("document.querySelector('.job-cancel button').click(); document.querySelector('.job-cancel button').click()");
+  assert.equal(await evaluate("window.fixture.requests.filter(r => r.path.endsWith('/cancel')).length"), cancellationPosts, "Pending cancellation sends duplicate requests");
+  assert.ok(await evaluate("document.querySelector('.job-cancel button').disabled && document.querySelector('.job-cancel [role=status]').innerText.includes('Sending cancellation')"), "Pending cancellation lacks local disabled/progress feedback");
+  await evaluate("window.fixture.holds['POST /api/jobs/fixture-job-1/cancel']()");
+  await wait("document.querySelector('.job-cancel [role=status]')?.innerText.includes('An executed action cannot be undone')");
+  await click("Fleet overview");
+  await click("ADMIN-ONLY-HOST");
+  await wait("!!document.querySelector('#host-jobs') && document.querySelectorAll('#host-jobs tbody tr').length === 4");
+  await click("Cancel");
+  await wait("document.querySelector('#host-jobs .job-cancel [role=status]')?.innerText.includes('Cancellation requested')");
+  pass("host and global cancellation show local pending/error/acceptance, preserve retry and prevent repeated submission");
+  await evaluate("window.fixture.audit = [{id:1,at:Date.now(),actor:'fixture-actor-full-identifier-123456',hostId:'private-host',jobId:'fixture-job-1',action:'logs.read',state:'cancellation_requested'},{id:2,at:Date.now(),actor:'fixture-admin',hostId:'',jobId:'',action:'grants.replace',state:'completed'}]");
+  await click("Activity & audit");
+  await wait("document.querySelectorAll('.activity-event').length === 2");
+  assert.ok(await evaluate("document.querySelector('.timeline').innerText.includes('Account permissions replaced') && document.querySelector('.timeline a[href=\"#/hosts/private-host\"]')?.textContent === 'ADMIN-ONLY-HOST' && document.querySelector('.timeline a[href=\"#/jobs/fixture-job-1\"]')"), "Activity loses readable action labels or exact host/job destinations");
+  await evaluate("document.querySelector('.activity-identifiers').open = true");
+  assert.ok(await evaluate("document.querySelector('.activity-identifiers').innerText.includes('fixture-actor-full-identifier-123456') && document.querySelector('.activity-identifiers').innerText.includes('fixture-job-1') && document.querySelector('.activity-identifiers').innerText.includes('private-host')"), "Activity exact identities cannot be recovered");
+  await click("View job outcome");
+  await wait("location.hash === '#/jobs/fixture-job-1' && !!document.querySelector('dialog[open] .job-target')");
+  await click("×");
+  await click("Fleet overview");
+  await wait("!!document.querySelector('.fleet-table')");
+  pass("populated activity names actions, links readable hosts and exact jobs, and exposes complete identifiers");
+
   for (const mode of ['light', 'dark']) {
     const ratios = await evaluate(`(() => {
       document.documentElement.dataset.mode = ${JSON.stringify(mode)};
@@ -955,6 +990,7 @@ try {
   await evaluate(`document.querySelector('.check-grid input[value="github.read"]').click()`);
   await click("Add to working set");
   await wait(`!!document.querySelector('[data-grant="project:fixture-project:github.read"]')`);
+  assert.ok(await evaluate("document.querySelector('.grant-change-review').innerText.includes('Adding (1)') && document.querySelector('.grant-change-review').innerText.includes('View repository health') && document.querySelector('.grant-change-review').innerText.includes('Removing (0)')"), "Grant replacement lacks an explicit additions/removals review");
   await evaluate("window.confirm = () => true");
   await evaluate("window.fixture.hold.add('PUT /api/users/operator-fixture/grants')");
   await click("Replace grants");

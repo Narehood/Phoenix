@@ -24,6 +24,12 @@ const projectID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const projectName = /^[A-Za-z0-9][A-Za-z0-9 _.-]{0,79}$/;
 const forbiddenControl = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/;
 const pollMs = 30000;
+const permissionLabels: Record<string, string> = {
+  "project.read": "View project",
+  "project.manage": "Edit project details",
+  "github.read": "View repository observations",
+  "github.sync": "Refresh repository observations",
+};
 const eventLabels: Record<string, string> = {
   "project.create": "Project registered",
   "project.update": "Project updated",
@@ -648,8 +654,8 @@ function ProjectDetail({
     if (
       !window.confirm(
         archived
-          ? `Archive ${project.name}? It stays readable to authorized accounts; all modules become disabled and GitHub collection stops until restored.`
-          : `Restore ${project.name}? Selected modules become available again.`,
+          ? `Archive ${project.name}? It stays readable to authorized accounts; all features become disabled and GitHub collection stops until restored.`
+          : `Restore ${project.name}? Selected features become available again.`,
       )
     )
       return;
@@ -772,7 +778,7 @@ function ProjectDetail({
           <div className="notice error" role="alert">
             <span>
               Refresh failed: {(loadError as Error).message}. Showing the last
-              loaded details; module states below are not current.
+              loaded details; feature states below are not current.
             </span>
           </div>
         ) : null}
@@ -1059,15 +1065,30 @@ function ProjectDetail({
                   {caps
                     ? permissions.map((p) => (
                         <span className="tag" key={p}>
-                          {p}
+                          {permissionLabels[p] || p.replaceAll(".", " ")}
                         </span>
                       ))
                     : "unknown"}
                 </p>
                 <p className="muted">
-                  No module can publish, deploy or write to an application or
-                  repository. Unsupported modules are not working features.
+                  No feature can publish, deploy or write to an application or
+                  repository. Planned features are not implemented.
                 </p>
+                {!!caps && (
+                  <details className="permission-reference">
+                    <summary>Permission identifiers</summary>
+                    <dl>
+                      {permissions.map((p) => (
+                        <div key={p}>
+                          <dt>{permissionLabels[p] || p}</dt>
+                          <dd>
+                            <code>{p}</code>
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </details>
+                )}
               </div>
             </section>
           </div>
