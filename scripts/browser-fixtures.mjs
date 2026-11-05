@@ -268,8 +268,8 @@ function installFixture() {
       if (hostWrite[2] === "/jobs" && method === "POST") {
         if (!hostPermissions().includes(body.action)) return json({error:"action forbidden"}, 403);
         if (!h.verified || h.revoked) return json({error: "agent identity unavailable"}, 409);
-        if (!["logs.read", "service.restart"].includes(body.action)) return json({error: "unexpected fixture action"}, 400);
-        if (body.action === "service.restart" && (!control.recent || body.confirm !== h.id)) return recentRequired();
+        if (!["logs.read", "service.restart", "diagnostic", "host.reboot"].includes(body.action)) return json({error: "unexpected fixture action"}, 400);
+        if (["service.restart", "host.reboot"].includes(body.action) && (!control.recent || body.confirm !== h.id)) return recentRequired();
         if (control.jobs.length >= 8) return json({error: "fixture job bound reached"}, 409);
         const createdAt = Date.now();
         const job = {id: `fixture-job-${control.jobs.length + 1}`, hostId: h.id, action: body.action, args: body.args, state: "queued", createdAt, expiresAt: createdAt + 300000, result: null};
@@ -536,8 +536,12 @@ try {
   assert.ok(await evaluate("[...document.querySelectorAll('.history-axis span')].map(s => s.textContent).join(',') === '100%,50%,0%' && [...document.querySelectorAll('.history-point')].every(p => p.getBoundingClientRect().width >= 7) && document.querySelectorAll('.history-ticks time').length === 3"), "CPU chart lacks readable reference values, time ticks or screen-sized markers");
   await evaluate("window.fixture.samples = []");
   pass("CPU history exposes a range summary and bounded chronological readings including missing values and gaps");
-  await evaluate("const picker = document.querySelector('.host-section-links select'); picker.value = 'host-services'; picker.dispatchEvent(new Event('change', {bubbles:true}))");
-  await wait("!!document.activeElement.closest('#host-services') && location.hash === '#/hosts/private-host'");
+  for (const id of ["host-overview", "host-history", "host-services", "host-processes", "host-configuration", "host-jobs"]) {
+    await evaluate(`const picker = document.querySelector('.host-section-links select'); picker.value = ${JSON.stringify(id)}; picker.dispatchEvent(new Event('change', {bubbles:true}))`);
+    await wait(`!!document.activeElement.closest('#${id}') && location.hash === '#/hosts/private-host'`);
+    assert.ok(await evaluate(`(() => { const r = document.getElementById(${JSON.stringify(id)}).getBoundingClientRect(); return r.top >= document.querySelector('.topbar').getBoundingClientRect().bottom && r.top < innerHeight; })()`), `Host section ${id} is obscured by the sticky header or outside the viewport`);
+  }
+  pass("every mobile host-section jump retains focus and clears the sticky header");
   await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false }, sessionId);
   await click("Configuration");
   assert.ok(await evaluate("document.querySelector('.host-configuration').open && document.activeElement.closest('.host-configuration') && location.hash === '#/hosts/private-host'"), "Host section shortcut lost route, focus or disclosure access");
@@ -670,6 +674,32 @@ try {
   await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false }, sessionId);
   await evaluate("document.querySelector('.sidebar').scrollTop = 0");
   pass("short desktop sidebars scroll account controls into view");
+
+  await click("ADMIN-ONLY-HOST");
+  await wait("[...document.querySelectorAll('.page-heading button')].some(b => b.textContent === 'Run diagnostic' && !b.disabled)");
+  await click("Run diagnostic");
+  await wait("location.hash === '#/jobs/fixture-job-3' && document.querySelector('dialog h2')?.innerText.includes('Diagnostic')");
+  assert.ok(await evaluate("document.querySelector('.job-target').innerText.includes('system.summary') && document.querySelector('.job-target').innerText.includes('ADMIN-ONLY-HOST')"), "Diagnostic receipt lost its exact job or target");
+  await click("ADMIN-ONLY-HOST");
+  await wait("!!document.querySelector('.host-actions') && !document.querySelector('dialog[open]')");
+  await evaluate("document.querySelector('.host-actions').open = true");
+  await click("Reboot host");
+  await wait("!!document.querySelector('dialog input[name=confirm]')");
+  await setValue("dialog input[name=confirm]", "wrong-fixture-id");
+  await setValue("dialog input[name=password]", "temporary fixture password");
+  await setValue("dialog input[name=code]", "123456");
+  await evaluate("document.querySelector('dialog form').requestSubmit()");
+  await wait("document.querySelector('dialog [role=alert]')?.innerText.includes('Host ID does not match')");
+  assert.equal(await evaluate("window.fixture.jobs.length"), 3, "Incorrect host confirmation queued a reboot");
+  await setValue("dialog input[name=confirm]", "private-host");
+  await evaluate("document.querySelector('dialog form').requestSubmit()");
+  await wait("location.hash === '#/jobs/fixture-job-4' && document.querySelector('dialog h2')?.innerText.includes('Host reboot')");
+  assert.ok(await evaluate("window.fixture.requests.filter(r => r.method === 'POST' && r.path === '/api/auth/recent').length >= 2 && document.querySelector('.job-target').innerText.includes('ADMIN-ONLY-HOST') && document.querySelector('dialog').innerText.includes('New boot observed')"), "Reboot continuation lost verification or independent boot-observation context");
+  await click("ADMIN-ONLY-HOST");
+  await wait("!!document.querySelector('.service-requests') && !document.querySelector('dialog[open]')");
+  await click("← All hosts");
+  await wait("location.hash === '#/fleet'");
+  pass("diagnostic and authenticated reboot submissions open their exact job outcomes and retain typed-host confirmation");
 
   for (const mode of ['light', 'dark']) {
     const ratios = await evaluate(`(() => {
@@ -872,6 +902,10 @@ try {
   await wait("[...document.querySelectorAll('[role=alert]')].some(a => a.innerText.includes('Current grants could not be loaded')) && [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Replace grants').disabled");
   await setValue("select[name=user]", "operator-fixture");
   await wait(`!!document.querySelector('[data-grant="host:viewer-host:host.read"]') && !!document.querySelector('[data-grant="project:fixture-project:project.read"]')`);
+  assert.ok(await evaluate("document.querySelector('.check-grid input[value=\"host.manage\"]').disabled && document.querySelector('.permission-limit')?.innerText.includes('Administrator only')"), "Operator grant editor offers ineffective inventory editing");
+  await evaluate("document.querySelector('.check-grid input[value=\"host.manage\"]').click()");
+  assert.equal(await evaluate("document.querySelector('.check-grid input[value=\"host.manage\"]').checked"), false, "Disabled administrator-only grant was selected");
+  pass("operator grant choices explain and withhold administrator-only inventory editing");
   await setValue("select[name=scopeType]", "project");
   await setValue("select[name=projectScope]", "fixture-project");
   await evaluate(`document.querySelector('.check-grid input[value="github.read"]').click()`);

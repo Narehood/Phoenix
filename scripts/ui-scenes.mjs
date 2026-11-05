@@ -82,6 +82,26 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await evaluate("window.fixture.hostPermissions = null; history.back()");
   await wait("location.hash === '#/hosts/private-host' && !!document.querySelector('.host-configuration')");
   await wait("document.querySelector('#host-jobs td[data-label=Outcome] button')?.disabled === false");
+  await click("Run diagnostic");
+  await wait("location.hash === '#/jobs/fixture-job-2' && document.querySelector('dialog h2')?.innerText.includes('Diagnostic')");
+  await shot("job-outcome-diagnostic-desktop");
+  await click("edge-01");
+  await wait("!!document.querySelector('.host-actions') && !document.querySelector('dialog[open]')");
+  await evaluate("document.querySelector('.host-actions').open = true");
+  await click("Reboot host");
+  await wait("!!document.querySelector('dialog input[name=confirm]')");
+  await evaluate(`(() => {
+    for (const [name, value] of Object.entries({confirm:'private-host', password:'temporary fixture password', code:'123456'})) {
+      const input = document.querySelector('dialog input[name=' + name + ']');
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, value);
+      input.dispatchEvent(new Event('input', {bubbles:true}));
+    }
+    document.querySelector('dialog form').requestSubmit();
+  })()`);
+  await wait("location.hash === '#/jobs/fixture-job-3' && document.querySelector('dialog h2')?.innerText.includes('Host reboot')");
+  await shot("job-outcome-reboot-desktop");
+  await click("edge-01");
+  await wait("!!document.querySelector('.host-inventory-form') && !document.querySelector('dialog[open]')");
   await section(".host-inventory-form");
   await evaluate(`(() => {
     const input = document.querySelector('.host-inventory-form input[name=name]');

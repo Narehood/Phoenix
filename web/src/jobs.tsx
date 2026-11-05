@@ -126,16 +126,18 @@ export function JobOutcome({
         >
           {busy ? "Refreshing status…" : "Refresh status"}
         </button>
-        <span className="muted">
+        <span className="job-checked muted">
           {checkedAt ? (
             <>
               Checked <Time value={checkedAt} />
             </>
           ) : (
             "No current status loaded"
-          )}{" "}
-          · updates every 5 seconds while open
+          )}
         </span>
+        <small className="job-auto-refresh">
+          Checks every 5 seconds while open.
+        </small>
       </div>
       <ErrorNotice error={error} onDismiss={() => setError(null)} />
       <div className="sr-only">

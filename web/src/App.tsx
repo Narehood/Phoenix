@@ -72,7 +72,31 @@ function resourceSummary(reading?: Reading | null) {
   if (!reading) return "No measurements available";
   const percentage = (value: number | null) =>
     value === null ? "Unknown" : `${value.toFixed(1)}%`;
-  return `CPU ${percentage(reading.cpuPercent)} · Memory ${percentage(reading.memoryTotal ? (100 * reading.memoryUsed) / reading.memoryTotal : null)} · Disk ${percentage(reading.diskTotal ? (100 * reading.diskUsed) / reading.diskTotal : null)}`;
+  return (
+    <>
+      <span className="resource-value">
+        CPU {percentage(reading.cpuPercent)}
+      </span>
+      {" · "}
+      <span className="resource-value">
+        Memory{" "}
+        {percentage(
+          reading.memoryTotal
+            ? (100 * reading.memoryUsed) / reading.memoryTotal
+            : null,
+        )}
+      </span>
+      {" · "}
+      <span className="resource-value">
+        Disk{" "}
+        {percentage(
+          reading.diskTotal
+            ? (100 * reading.diskUsed) / reading.diskTotal
+            : null,
+        )}
+      </span>
+    </>
+  );
 }
 function SourceNotice({
   errors,
@@ -625,7 +649,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
   async function job(action: string, args: object = {}) {
     if (!selected || !canRequest(action)) return;
     await act(async () => {
-      await api(`/api/hosts/${selected}/jobs`, "POST", {
+      const queued = await api<Job>(`/api/hosts/${selected}/jobs`, "POST", {
         action,
         args,
         confirm: action === "service.restart" ? selected : "",
@@ -633,7 +657,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
       setNotice(
         "Job queued. Its outcome will appear in Jobs and the activity timeline.",
       );
-      setView("jobs");
+      navigate({ view: "jobs", id: queued.id });
     });
   }
   function theme() {
@@ -1139,7 +1163,8 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                                 mobilePrefix="Canary"
                               />
                               <small>
-                                {mappings(h).length} mapped monitors
+                                {mappings(h).length} mapped monitor
+                                {mappings(h).length === 1 ? "" : "s"}
                               </small>
                             </td>
                             <td
@@ -1209,7 +1234,8 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                                   </p>
                                   <p>
                                     Groups: {h.groups.join(", ") || "None"} ·{" "}
-                                    {mappings(h).length} mapped monitors
+                                    {mappings(h).length} mapped monitor
+                                    {mappings(h).length === 1 ? "" : "s"}
                                   </p>
                                   <p>
                                     Agent contact <Time value={h.lastContact} />
@@ -2129,12 +2155,17 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                       code: f.get("code"),
                     });
                     if (operation === "reboot") {
-                      await api(`/api/hosts/${selected}/jobs`, "POST", {
-                        action: "host.reboot",
-                        args: {},
-                        confirm: selected,
-                      });
-                      setView("jobs");
+                      const queued = await api<Job>(
+                        `/api/hosts/${selected}/jobs`,
+                        "POST",
+                        {
+                          action: "host.reboot",
+                          args: {},
+                          confirm: selected,
+                        },
+                      );
+                      setModal(null);
+                      navigate({ view: "jobs", id: queued.id });
                       setNotice(
                         "Reboot queued. Check acceptance and boot observation separately.",
                       );
@@ -2160,7 +2191,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                   />
                 </label>
                 <label>
-                  New authenticator code
+                  Current code from your authenticator
                   <input
                     name="code"
                     inputMode="numeric"

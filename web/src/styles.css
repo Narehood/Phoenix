@@ -101,7 +101,7 @@ h3,
   min-width: 0;
 }
 small {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text-3);
 }
 code,
@@ -316,7 +316,7 @@ main#content {
   gap: 7px;
 }
 .metric > span {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text-2);
   font-weight: 550;
 }
@@ -332,7 +332,7 @@ main#content {
   letter-spacing: 0;
 }
 .metric small {
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.4;
 }
 .panel {
@@ -434,7 +434,7 @@ td > .text-link {
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 4px;
-  font-size: 11px;
+  font-size: 12px;
   padding: 0 5px;
   margin: 5px 4px 0 0;
   color: var(--text-2);
@@ -532,7 +532,7 @@ td > .text-link {
   border-radius: 8px;
   margin: 0 0 20px;
   overflow-wrap: anywhere;
-  font-size: 12px;
+  font-size: 14px;
 }
 .notice.error {
   background: var(--critical-wash);
@@ -558,7 +558,7 @@ td > .text-link {
 .form label {
   display: grid;
   gap: 6px;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 550;
 }
 .form small {
@@ -572,7 +572,7 @@ td > .text-link {
   gap: 9px;
 }
 .form legend {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text-2);
   padding: 0 4px;
 }
@@ -614,11 +614,11 @@ td > .text-link {
   border: 0;
 }
 .timeline strong {
-  font-size: 12px;
+  font-size: 14px;
 }
 .timeline small {
   display: block;
-  font-size: 10px;
+  font-size: 13px;
   margin-top: 6px;
   font-family: var(--mono);
 }
@@ -632,7 +632,7 @@ td > .text-link {
   flex: none;
 }
 .timeline .chip {
-  font-size: 10px;
+  font-size: 12px;
   margin-left: 8px;
 }
 .history {
@@ -800,7 +800,7 @@ body:has(dialog[open]) {
   grid-template-columns: max-content 1fr;
   gap: 8px 16px;
   margin: 0;
-  font-size: 12px;
+  font-size: 14px;
 }
 .facts dt {
   color: var(--text-3);
@@ -853,7 +853,7 @@ td.wrap-cell {
   margin-top: 0;
 }
 .subhead {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--text-2);
   margin: 16px 0 8px;
 }
@@ -901,7 +901,7 @@ summary:hover {
   content: "−";
 }
 .disclosure > summary > span {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 400;
   color: var(--text-3);
   margin-left: auto;
@@ -917,7 +917,7 @@ summary:hover {
   border-top: 1px solid var(--border);
 }
 .planned-features p {
-  font-size: 12px;
+  font-size: 14px;
   margin-top: 10px;
 }
 .planned-features label {
@@ -928,7 +928,7 @@ summary:hover {
   flex-wrap: wrap;
   gap: 8px 20px;
   color: var(--text-3);
-  font-size: 12px;
+  font-size: 13px;
   margin: -12px 0 24px;
 }
 .project-meta code {
@@ -942,7 +942,7 @@ summary:hover {
   margin-top: 24px;
 }
 .project-lifecycle p {
-  font-size: 12px;
+  font-size: 14px;
 }
 .project-table {
   white-space: normal;
@@ -963,7 +963,7 @@ summary:hover {
   min-width: 155px;
 }
 .fleet-table .chip {
-  text-transform: capitalize;
+  text-transform: none;
 }
 .resource-summary {
   display: grid;
@@ -985,7 +985,7 @@ summary:hover {
   color: var(--text-2);
 }
 .measurement-details summary {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 400;
 }
 .measurement-details > div {
@@ -2212,7 +2212,7 @@ textarea:disabled {
     font-size: 18px;
   }
   .host-resources .metric small {
-    font-size: 12px;
+    font-size: 13px;
   }
   .cpu-history .panel-heading {
     padding: 12px 14px;
@@ -2328,8 +2328,31 @@ textarea:disabled {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 0 16px;
   margin: 12px 0;
+}
+.job-auto-refresh {
+  flex-basis: 100%;
+  margin-top: 4px;
+  color: var(--text-2);
+}
+.resource-value {
+  white-space: nowrap;
+}
+.permission-limit {
+  display: block;
+  color: var(--text-2);
+  font-size: 13px;
+}
+:is(
+  #host-overview,
+  #host-history,
+  #host-services,
+  #host-processes,
+  #host-configuration,
+  #host-jobs
+) {
+  scroll-margin-top: 76px;
 }
 .job-status-tools .muted {
   font-size: 13px;
@@ -2451,6 +2474,36 @@ textarea:disabled {
     min-height: 44px;
     display: inline-flex;
     align-items: center;
+  }
+  :is(.project-table, .jobs-table) tbody tr {
+    padding: 12px 14px;
+    gap: 6px 16px;
+  }
+  .project-table td[data-label="Updated"],
+  .jobs-table td[data-label="Created"],
+  .jobs-table td[data-label="Outcome"] {
+    gap: 4px 10px;
+  }
+  .job-status-tools {
+    gap: 0 12px;
+    margin: 8px 0;
+  }
+  .job-status-tools .job-checked {
+    font-size: 13px;
+  }
+  .resource-details.responsive-details > summary::before {
+    content: none;
+  }
+  .resource-disclosure-action {
+    flex-shrink: 0;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .resource-disclosure-action::after {
+    content: " ▾" / "";
+  }
+  .resource-details[open] .resource-disclosure-action::after {
+    content: " ▴" / "";
   }
   .fleet-table tr {
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 10em), 1fr));

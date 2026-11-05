@@ -186,6 +186,7 @@ export function Tone({
   label?: string;
   mobilePrefix?: string;
 }) {
+  const text = label ?? value.replaceAll("_", " ");
   return (
     <span className={`chip ${tone || toneOf(value)}`}>
       <span aria-hidden="true">●</span>{" "}
@@ -194,7 +195,7 @@ export function Tone({
           {mobilePrefix}:{" "}
         </span>
       )}
-      {label ?? value.replaceAll("_", " ")}
+      {text.charAt(0).toUpperCase() + text.slice(1)}
     </span>
   );
 }

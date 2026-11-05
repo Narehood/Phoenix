@@ -317,6 +317,13 @@ export function GrantEditor({
                             <small>
                               <code>{g.action}</code>
                             </small>
+                            {g.action === "host.manage" &&
+                              account?.role !== "admin" && (
+                                <small>
+                                  Administrator only; this account cannot edit
+                                  host details.
+                                </small>
+                              )}
                             {!saved.has(key(g)) && (
                               <small>Added · unsaved</small>
                             )}
@@ -469,7 +476,10 @@ export function GrantEditor({
               <fieldset className="permission-group" key={group}>
                 <legend>{group}</legend>
                 {items.map((a) => {
-                  const blocked = viewer && !viewerActions.includes(a);
+                  const administratorOnly =
+                    a === "host.manage" && account?.role !== "admin";
+                  const blocked =
+                    administratorOnly || (viewer && !viewerActions.includes(a));
                   return (
                     <label className="check" key={a}>
                       <input
@@ -485,7 +495,14 @@ export function GrantEditor({
                           )
                         }
                       />
-                      <span>{actionLabels[a] || a}</span>
+                      <span>
+                        {actionLabels[a] || a}
+                        {administratorOnly && (
+                          <small className="permission-limit">
+                            Administrator only
+                          </small>
+                        )}
+                      </span>
                     </label>
                   );
                 })}
