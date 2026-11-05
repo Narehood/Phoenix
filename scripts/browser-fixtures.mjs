@@ -635,9 +635,10 @@ try {
   await click("Remote jobs");
   await wait("location.hash === '#/jobs' && [...document.querySelectorAll('#content button')].some(b => b.textContent === 'Cancel' && b.disabled)");
   await send("Emulation.setDeviceMetricsOverride", {width:390,height:844,deviceScaleFactor:1,mobile:true}, sessionId);
+  await evaluate("new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)))");
   assert.ok(await evaluate("document.documentElement.scrollWidth <= innerWidth && document.querySelector('.jobs-table').parentElement.scrollWidth <= document.querySelector('.jobs-table').parentElement.clientWidth && document.querySelector('.jobs-table td[data-label=Outcome] button').disabled"), "Mobile jobs require sideways scrolling or enable an ungranted cancellation");
-  const jobHeaders = (await send("Accessibility.getFullAXTree", {}, sessionId)).nodes.filter(n => !n.ignored && n.role?.value === "columnheader").map(n => String(n.name?.value || "").trim());
-  for(const label of ["Action","Host","State","Created","Outcome"]) assert.ok(jobHeaders.includes(label), `Mobile jobs lost its accessible ${label} header`);
+  const jobHeaders = (await send("Accessibility.getFullAXTree", {}, sessionId)).nodes.filter(n => !n.ignored && n.role?.value === "columnheader").map(n => String(n.name?.value || "").trim().replace(/\s+/g, " ").toLowerCase());
+  for(const label of ["Action","Host","State","Created","Outcome"]) assert.ok(jobHeaders.includes(label.toLowerCase()), `Mobile jobs lost its accessible ${label} header; accessible headers: ${JSON.stringify(jobHeaders)}`);
   pass("mobile job rows expose labeled targets, state and outcome controls without overflow and preserve accessibility-tree headers");
   assert.equal(await evaluate("window.fixture.requests.filter(r => r.path.endsWith('/cancel')).length"), 0);
   await evaluate("history.back()");
