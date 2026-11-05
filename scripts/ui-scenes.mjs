@@ -86,7 +86,7 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await wait("location.hash === '#/jobs/fixture-job-2' && document.querySelector('dialog h2')?.innerText.includes('Diagnostic')");
   await shot("job-outcome-diagnostic-desktop");
   await click("edge-01");
-  await wait("!!document.querySelector('.host-actions') && !document.querySelector('dialog[open]')");
+  await wait("document.querySelector('.host-actions button')?.disabled === false && !document.querySelector('dialog[open]')");
   await evaluate("document.querySelector('.host-actions').open = true");
   await click("Reboot host");
   await wait("!!document.querySelector('dialog input[name=confirm]')");

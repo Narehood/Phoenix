@@ -681,7 +681,7 @@ try {
   await wait("location.hash === '#/jobs/fixture-job-3' && document.querySelector('dialog h2')?.innerText.includes('Diagnostic')");
   assert.ok(await evaluate("document.querySelector('.job-target').innerText.includes('system.summary') && document.querySelector('.job-target').innerText.includes('ADMIN-ONLY-HOST')"), "Diagnostic receipt lost its exact job or target");
   await click("ADMIN-ONLY-HOST");
-  await wait("!!document.querySelector('.host-actions') && !document.querySelector('dialog[open]')");
+  await wait("document.querySelector('.host-actions button')?.disabled === false && !document.querySelector('dialog[open]')");
   await evaluate("document.querySelector('.host-actions').open = true");
   await click("Reboot host");
   await wait("!!document.querySelector('dialog input[name=confirm]')");
