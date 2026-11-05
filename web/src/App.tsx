@@ -17,7 +17,7 @@ import {
 } from "./ui";
 import { Projects } from "./projects";
 import { GrantEditor } from "./grants";
-import { JobOutcome } from "./jobs";
+import { JobOutcome, jobAction } from "./jobs";
 import {
   HostInventoryForm,
   MappingForm,
@@ -30,6 +30,16 @@ import {
   useNavigation,
   useUnsavedChanges,
 } from "./navigation";
+
+function focusHostSection(id: string) {
+  const section = document.getElementById(id);
+  if (!section) return;
+  if (section instanceof HTMLDetailsElement) section.open = true;
+  const target = section.querySelector<HTMLElement>("h2,summary") || section;
+  target.tabIndex = -1;
+  target.focus({ preventScroll: true });
+  section.scrollIntoView({ block: "start" });
+}
 
 const bytes = (n: number) =>
   n >= 2 ** 30
@@ -1290,7 +1300,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
               </>
             ) : (
               <>
-                <div className="page-heading">
+                <div className="page-heading host-page-heading">
                   <div>
                     <button
                       className="text-link"
@@ -1399,6 +1409,21 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                     </p>
                   )}
                 <nav className="host-section-links" aria-label="Host sections">
+                  <select
+                    aria-label="Jump to host section"
+                    value=""
+                    onChange={(event) => focusHostSection(event.target.value)}
+                  >
+                    <option value="">Jump to host section…</option>
+                    <option value="host-overview">Overview</option>
+                    {reading && (
+                      <option value="host-history">CPU history</option>
+                    )}
+                    <option value="host-services">Services</option>
+                    <option value="host-processes">Processes</option>
+                    <option value="host-configuration">Configuration</option>
+                    <option value="host-jobs">Jobs</option>
+                  </select>
                   {[
                     ["Overview", "host-overview"],
                     ["CPU history", "host-history"],
@@ -1413,18 +1438,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                         key={id}
                         type="button"
                         className="text-link"
-                        onClick={() => {
-                          const section = document.getElementById(id);
-                          if (!section) return;
-                          if (section instanceof HTMLDetailsElement)
-                            section.open = true;
-                          const target =
-                            section.querySelector<HTMLElement>("h2,summary") ||
-                            section;
-                          target.tabIndex = -1;
-                          target.focus({ preventScroll: true });
-                          section.scrollIntoView({ block: "start" });
-                        }}
+                        onClick={() => focusHostSection(id)}
                       >
                         {label}
                       </button>
@@ -1443,12 +1457,20 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                   <Metric
                     label="Agent connection"
                     value={<Tone value={current.connectivity} />}
-                    detail={`Contact ${stamp(current.lastContact)}`}
+                    detail={
+                      <>
+                        Contact <Time value={current.lastContact} />
+                      </>
+                    }
                   />
                   <Metric
                     label="Reading freshness"
                     value={<Tone value={current.freshness} />}
-                    detail={`Collected ${stamp(reading?.collectedAt || 0)}`}
+                    detail={
+                      <>
+                        Collected <Time value={reading?.collectedAt || 0} />
+                      </>
+                    }
                   />
                   <Metric
                     label="Resource health"
@@ -2354,39 +2376,56 @@ function Jobs({
         </Empty>
       ) : (
         <div className="table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>Action</th>
-                <th>Host</th>
-                <th>State</th>
-                <th>Created</th>
-                <th>Outcome</th>
+          <table
+            className="jobs-table responsive-table"
+            role="table"
+            aria-colcount={5}
+          >
+            <caption className="sr-only">
+              Remote job targets, request states and permitted actions
+            </caption>
+            <thead role="rowgroup">
+              <tr role="row">
+                <th role="columnheader" scope="col" aria-colindex={1}>
+                  Action
+                </th>
+                <th role="columnheader" scope="col" aria-colindex={2}>
+                  Host
+                </th>
+                <th role="columnheader" scope="col" aria-colindex={3}>
+                  State
+                </th>
+                <th role="columnheader" scope="col" aria-colindex={4}>
+                  Created
+                </th>
+                <th role="columnheader" scope="col" aria-colindex={5}>
+                  Outcome
+                </th>
               </tr>
             </thead>
-            <tbody>
+            <tbody role="rowgroup">
               {jobs.map((j) => (
-                <tr key={j.id}>
-                  <td>
-                    <RouteLink
-                      className="text-link"
-                      to={{ view: "jobs", id: j.id }}
-                    >
-                      {j.action}
-                    </RouteLink>
+                <tr role="row" key={j.id}>
+                  <td role="cell" aria-colindex={1} data-label="Action">
+                    <strong>{jobAction(j.action)}</strong>
                     <small>
                       {j.args.service || j.args.diagnostic || j.id.slice(0, 12)}
                     </small>
                   </td>
-                  <td>
+                  <td role="cell" aria-colindex={2} data-label="Host">
                     {hosts.find((h) => h.id === j.hostId)?.name || j.hostId}
                   </td>
-                  <td>
+                  <td role="cell" aria-colindex={3} data-label="State">
                     <Tone value={j.state} />
                     {j.cancelRequested && <small>Cancellation requested</small>}
                   </td>
-                  <td>{stamp(j.createdAt)}</td>
-                  <td>
+                  <td role="cell" aria-colindex={4} data-label="Created">
+                    <Time value={j.createdAt} />
+                  </td>
+                  <td role="cell" aria-colindex={5} data-label="Outcome">
+                    <RouteLink to={{ view: "jobs", id: j.id }}>
+                      View outcome →
+                    </RouteLink>
                     {j.action === "host.reboot" && (
                       <small>
                         New boot:{" "}

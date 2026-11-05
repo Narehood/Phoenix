@@ -73,6 +73,8 @@ export type Job = {
   finishedAt: number;
   cancelRequested: boolean;
   canCancel?: boolean;
+  canReadOutput?: boolean;
+  hostName?: string;
   rebootObserved: boolean;
   result?: Result;
 };

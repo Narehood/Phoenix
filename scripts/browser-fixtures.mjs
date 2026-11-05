@@ -292,7 +292,7 @@ function installFixture() {
         if (job.state === "queued") { job.state = "cancelled"; job.finishedAt = Date.now(); }
         return json({requested:true});
       }
-      if (!jobRoute[2] && method === "GET") return json({...jobView(job), result:hostPermissions().includes("jobs.output") ? job.result : null});
+      if (!jobRoute[2] && method === "GET") return json({...jobView(job), hostName:fixtureHosts.find(h => h.id === job.hostId)?.name || job.hostId, canReadOutput:hostPermissions().includes("jobs.output"), result:hostPermissions().includes("jobs.output") ? job.result : null});
     }
     if (path === "/api/audit") return json([]);
     return json({ error: "unexpected fixture request" }, 404);
@@ -529,6 +529,8 @@ try {
   assert.ok(await evaluate("[...document.querySelectorAll('.history-axis span')].map(s => s.textContent).join(',') === '100%,50%,0%' && [...document.querySelectorAll('.history-point')].every(p => p.getBoundingClientRect().width >= 7) && document.querySelectorAll('.history-ticks time').length === 3"), "CPU chart lacks readable reference values, time ticks or screen-sized markers");
   await evaluate("window.fixture.samples = []");
   pass("CPU history exposes a range summary and bounded chronological readings including missing values and gaps");
+  await evaluate("const picker = document.querySelector('.host-section-links select'); picker.value = 'host-services'; picker.dispatchEvent(new Event('change', {bubbles:true}))");
+  await wait("!!document.activeElement.closest('#host-services') && location.hash === '#/hosts/private-host'");
   await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false }, sessionId);
   await click("Configuration");
   assert.ok(await evaluate("document.querySelector('.host-configuration').open && document.activeElement.closest('.host-configuration') && location.hash === '#/hosts/private-host'"), "Host section shortcut lost route, focus or disclosure access");
@@ -592,6 +594,7 @@ try {
   await click("View outcome");
   await wait("location.hash === '#/jobs/fixture-job-2' && document.querySelector('dialog[open] .status-notice')?.innerText.includes('queued')");
   assert.ok(await evaluate("!!document.activeElement.closest('dialog[open]')"), "Navigating to a job outcome moved focus outside its modal");
+  assert.ok(await evaluate("document.querySelector('.job-target').innerText.includes(window.fixture.hosts[0].name) && document.querySelector('.job-target').innerText.includes(window.fixture.jobs[1].args.service) && document.querySelector('dialog h2').innerText.includes('Service restart') && document.querySelector('.job-output-state').innerText.includes('Not dispatched yet') && !document.querySelector('.job-lifecycle').innerText.includes('Never')"), "Copied job outcome lacks its target or an explicit queued state");
   await evaluate("Object.assign(window.fixture.jobs[1], {state:'succeeded', dispatchedAt:window.fixture.jobs[1].createdAt + 1, finishedAt:Date.now(), result:{exitCode:0, stdout:'Bounded completed fixture output', stderr:'', truncated:false}}); window.fixture.hold.add('GET /api/jobs/fixture-job-2')");
   await click("Refresh status");
   await wait("typeof window.fixture.holds['GET /api/jobs/fixture-job-2'] === 'function' && document.querySelector('.job-status-tools button').disabled");
@@ -599,6 +602,17 @@ try {
   await wait("document.querySelector('dialog[open]')?.innerText.includes('Bounded completed fixture output') && document.querySelector('dialog[open] .status-notice').innerText.includes('succeeded')");
   assert.ok(await evaluate("!document.querySelector('dialog[open]').innerText.includes('Never')"), "Completed job fixture omitted its dispatch or finish time");
   pass("service receipt opens the exact URL-addressable job and refreshes its queued status to the completed outcome");
+  await evaluate("window.fixture.hostPermissions = ['host.read']");
+  await click("Refresh status");
+  await wait("document.querySelector('.job-output-state')?.innerText.includes('does not have permission')");
+  assert.ok(await evaluate("!document.querySelector('dialog').innerText.includes('Bounded completed fixture output')"), "Restricted job output remained visible");
+  await evaluate("window.fixture.hostPermissions = null; window.fixture.jobs[1].result = null");
+  await click("Refresh status");
+  await wait("document.querySelector('.job-output-state')?.innerText.includes('No command output was recorded')");
+  await evaluate("window.fixture.jobs[1].result = {exitCode:0,stdout:'Bounded completed fixture output',stderr:'',truncated:false}");
+  await click("Refresh status");
+  await wait("document.querySelector('dialog').innerText.includes('Bounded completed fixture output')");
+  pass("job outcomes identify their host and service and distinguish queued, restricted and missing output without retaining restricted data");
   await evaluate("window.fixture.failSources.add('/api/jobs/fixture-job-2')");
   await click("Refresh status");
   await wait("!!document.querySelector('dialog[open] [role=alert]')");
@@ -620,6 +634,11 @@ try {
   await wait("document.querySelector('#host-jobs button')?.disabled && document.querySelector('#host-jobs').innerText.includes('Cancellation not permitted')");
   await click("Remote jobs");
   await wait("location.hash === '#/jobs' && [...document.querySelectorAll('#content button')].some(b => b.textContent === 'Cancel' && b.disabled)");
+  await send("Emulation.setDeviceMetricsOverride", {width:390,height:844,deviceScaleFactor:1,mobile:true}, sessionId);
+  assert.ok(await evaluate("document.documentElement.scrollWidth <= innerWidth && document.querySelector('.jobs-table').parentElement.scrollWidth <= document.querySelector('.jobs-table').parentElement.clientWidth && document.querySelector('.jobs-table td[data-label=Outcome] button').disabled"), "Mobile jobs require sideways scrolling or enable an ungranted cancellation");
+  const jobHeaders = (await send("Accessibility.getFullAXTree", {}, sessionId)).nodes.filter(n => !n.ignored && n.role?.value === "columnheader").map(n => String(n.name?.value || "").trim());
+  for(const label of ["Action","Host","State","Created","Outcome"]) assert.ok(jobHeaders.includes(label), `Mobile jobs lost its accessible ${label} header`);
+  pass("mobile job rows expose labeled targets, state and outcome controls without overflow and preserve accessibility-tree headers");
   assert.equal(await evaluate("window.fixture.requests.filter(r => r.path.endsWith('/cancel')).length"), 0);
   await evaluate("history.back()");
   await wait("location.hash === '#/hosts/private-host' && !!document.querySelector('.service-requests')");

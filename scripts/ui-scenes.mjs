@@ -7,6 +7,8 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
     if (!await evaluate("document.documentElement.scrollWidth <= innerWidth")) throw Error(`Horizontal document overflow in ${name}`);
     if (/host-(retained-services|service-pending|service-queued|services-multiple)/.test(name) && !await evaluate("(() => { const table = document.querySelector('.service-table').parentElement; return table.scrollWidth <= table.clientWidth; })()")) throw Error(`Service requests require sideways scrolling in ${name}`);
     if (name === "fleet-text-enlarged-mobile" && !await evaluate("(() => { const node = document.querySelector('.fleet-heading h1').firstChild; const word = document.createRange(); word.setStart(node,6); word.setEnd(node,14); return word.getClientRects().length === 1; })()")) throw Error("Enlarged fleet title splits a word across lines");
+    if (name === "fleet-text-enlarged-mobile" && !await evaluate("(() => { const row = document.querySelector('.fleet-table tbody tr'); return row.querySelector('[data-label=\"Canary uptime\"]').getBoundingClientRect().bottom <= row.querySelector('[data-label=\"Agent connection\"]').getBoundingClientRect().top; })()")) throw Error("Enlarged evidence labels do not have a clear stacked reading order");
+    if (/^(host-jobs-mobile|jobs-mobile)$/.test(name) && !await evaluate("(() => { const wrap = document.querySelector('.jobs-table').parentElement; return wrap.scrollWidth <= wrap.clientWidth; })()")) throw Error(`Mobile jobs require sideways scrolling in ${name}`);
     await capture(name);
   };
   const navigate = async (name) => {
@@ -67,6 +69,10 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await wait("document.querySelector('dialog[open] .status-notice')?.innerText.includes('succeeded')");
   if (!await evaluate("!document.querySelector('dialog[open]').innerText.includes('Never') && window.fixture.jobs[0].createdAt <= window.fixture.jobs[0].dispatchedAt && window.fixture.jobs[0].dispatchedAt <= window.fixture.jobs[0].finishedAt")) throw Error("Completed job fixture has an inconsistent lifecycle");
   await shot("job-outcome-completed-desktop");
+  await evaluate("window.fixture.hostPermissions = ['host.read','logs.read']");
+  await click("Refresh status");
+  await wait("document.querySelector('.job-output-state')?.innerText.includes('does not have permission')");
+  await shot("job-outcome-restricted-desktop");
   await evaluate("window.fixture.hostPermissions = ['host.read','logs.read']; Object.assign(window.fixture.jobs[0], {state:'queued',dispatchedAt:0,finishedAt:0,result:null})");
   await click("×");
   await wait("location.hash === '#/jobs' && document.querySelector('#content').innerText.includes('Cancellation not permitted')");
@@ -189,6 +195,16 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await evaluate("document.querySelector('.history-data').open = true");
   await section(".cpu-history");
   await shot("host-history-mobile");
+  await section("#host-jobs");
+  await shot("host-jobs-mobile");
+  await navigate("Remote jobs");
+  await wait("!!document.querySelector('.jobs-table')");
+  await top();
+  await shot("jobs-mobile");
+  await click("View outcome");
+  await wait("!!document.querySelector('dialog[open] .job-target')");
+  await shot("job-outcome-mobile");
+  await click("×");
   await navigate("Projects");
   await wait("document.body.innerText.includes('Website')");
   await top();

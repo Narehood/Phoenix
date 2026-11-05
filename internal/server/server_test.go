@@ -384,10 +384,29 @@ func TestAuthorizationCSRFRecentAuthAndOutput(t *testing.T) {
 	j := f.job(a, "diagnostic", core.Args{Diagnostic: "system.summary"})
 	f.exchange(a, nil, nil, "")
 	f.exchange(a, nil, []core.Receipt{{ID: j.ID, Result: core.Result{State: "succeeded", Stdout: "secret command output"}}}, "")
-	var got core.Job
+	var got jobDetailView
 	f.request(operator, f.web.URL, "GET", "/api/jobs/"+j.ID, nil, 200, &got, "")
-	if got.Result != nil {
+	if got.Result != nil || got.CanReadOutput || got.HostName != "Scoped" {
 		t.Fatal("output leaked without grant")
+	}
+	f.call("GET", "/api/jobs/"+j.ID, nil, 200, &got)
+	if !got.CanReadOutput || got.Result == nil || got.Result.Stdout != "secret command output" {
+		t.Fatal("permitted output was not identified accurately")
+	}
+	if _, e := f.s.DB.Exec(`INSERT INTO grants VALUES(?,'host',?,'jobs.output')`, account.User.ID, a.id); e != nil {
+		t.Fatal(e)
+	}
+	f.request(operator, f.web.URL, "GET", "/api/jobs/"+j.ID, nil, 200, &got, "")
+	if !got.CanReadOutput || got.Result == nil {
+		t.Fatal("new output grant was not applied")
+	}
+	if _, e := f.s.DB.Exec(`DELETE FROM grants WHERE user_id=? AND action='jobs.output'`, account.User.ID); e != nil {
+		t.Fatal(e)
+	}
+	got = jobDetailView{}
+	f.request(operator, f.web.URL, "GET", "/api/jobs/"+j.ID, nil, 200, &got, "")
+	if got.CanReadOutput || got.Result != nil {
+		t.Fatal("removed output grant retained command output")
 	}
 	queued := f.job(a, "diagnostic", core.Args{Diagnostic: "system.summary"})
 	var pending jobView

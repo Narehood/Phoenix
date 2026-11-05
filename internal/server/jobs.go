@@ -130,6 +130,12 @@ type jobView struct {
 	CanCancel bool `json:"canCancel"`
 }
 
+type jobDetailView struct {
+	jobView
+	HostName      string `json:"hostName"`
+	CanReadOutput bool   `json:"canReadOutput"`
+}
+
 func (s *Server) jobView(j core.Job, u core.User) (jobView, error) {
 	ok, e := s.allowed(u.ID, j.HostID, "jobs.cancel")
 	return viewJob(j, ok), e
@@ -204,7 +210,11 @@ func (s *Server) getJob(w http.ResponseWriter, r *http.Request, u core.User) err
 	if e != nil {
 		return e
 	}
-	write(w, 200, view)
+	var hostName string
+	if e = s.DB.QueryRow(`SELECT name FROM hosts WHERE id=?`, j.HostID).Scan(&hostName); e != nil {
+		return e
+	}
+	write(w, 200, jobDetailView{jobView: view, HostName: hostName, CanReadOutput: ok})
 	return nil
 }
 func (s *Server) cancelJob(w http.ResponseWriter, r *http.Request, u core.User) error {

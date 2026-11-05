@@ -4,6 +4,33 @@ import type { Job } from "./types";
 import { RouteLink } from "./navigation";
 import { Dialog, ErrorNotice, StatusNotice, Time, Tone, stamp } from "./ui";
 
+export function jobAction(action: string) {
+  return (
+    (
+      {
+        "logs.read": "Service logs",
+        "service.restart": "Service restart",
+        diagnostic: "Diagnostic",
+        "host.reboot": "Host reboot",
+      } as Record<string, string>
+    )[action] || action.replaceAll(".", " ")
+  );
+}
+
+function outputMessage(job: Job) {
+  if (job.canReadOutput === false)
+    return "Your account does not have permission to view this host’s command output. Ask an administrator for a job-output grant if needed.";
+  if (job.canReadOutput !== true)
+    return "Output access could not be established. Refresh status to check again.";
+  if (job.state === "queued")
+    return "Not dispatched yet. Output can appear after the agent receives this request and returns a result.";
+  if (job.state === "dispatched")
+    return "Awaiting an agent result. Dispatch does not confirm completion.";
+  if (job.state === "uncertain")
+    return "No result was received. Execution is uncertain; this request will not be repeated automatically.";
+  return "No command output was recorded for this request.";
+}
+
 /** Read-only, URL-addressable outcome. Every read applies current output grants. */
 export function JobOutcome({
   id,
@@ -63,16 +90,33 @@ export function JobOutcome({
       title={
         job ? (
           <>
-            {job.action} <Tone value={job.state} />
+            {jobAction(job.action)} <Tone value={job.state} />
           </>
         ) : (
           "Job outcome"
         )
       }
     >
-      <p>
-        Job <code className="wrap">{id}</code>
-      </p>
+      {job && (
+        <div className="job-target">
+          <p>
+            <strong>
+              {job.args.service || job.args.diagnostic || "Host request"}
+            </strong>{" "}
+            on{" "}
+            <RouteLink to={{ view: "host", id: job.hostId }}>
+              {job.hostName || job.hostId}
+            </RouteLink>
+          </p>
+          <small>
+            Host ID <code>{job.hostId}</code> · action <code>{job.action}</code>
+          </small>
+        </div>
+      )}
+      <details className="job-identifiers">
+        <summary>Job identity</summary>
+        <code className="wrap">{id}</code>
+      </details>
       <div className="job-status-tools">
         <button
           type="button"
@@ -94,27 +138,46 @@ export function JobOutcome({
         </span>
       </div>
       <ErrorNotice error={error} onDismiss={() => setError(null)} />
-      <StatusNotice>
-        {job ? `Request status: ${job.state.replaceAll("_", " ")}.` : ""}
-      </StatusNotice>
+      <div className="sr-only">
+        <StatusNotice>
+          {job ? `Request status: ${job.state.replaceAll("_", " ")}.` : ""}
+        </StatusNotice>
+      </div>
       {job ? (
         <>
-          <p>
-            <RouteLink to={{ view: "host", id: job.hostId }}>
-              View host →
-            </RouteLink>
-          </p>
-          <p>
-            Created {stamp(job.createdAt)} · dispatched{" "}
-            {stamp(job.dispatchedAt)} · finished {stamp(job.finishedAt)}
-          </p>
+          <dl className="job-lifecycle">
+            <div>
+              <dt>Created</dt>
+              <dd>{stamp(job.createdAt)}</dd>
+            </div>
+            <div>
+              <dt>Dispatched</dt>
+              <dd>
+                {job.dispatchedAt
+                  ? stamp(job.dispatchedAt)
+                  : job.state === "queued"
+                    ? "Not dispatched yet"
+                    : "Not recorded"}
+              </dd>
+            </div>
+            <div>
+              <dt>Finished</dt>
+              <dd>
+                {job.finishedAt
+                  ? stamp(job.finishedAt)
+                  : ["queued", "dispatched"].includes(job.state)
+                    ? "Awaiting result"
+                    : "Not recorded"}
+              </dd>
+            </div>
+          </dl>
           {job.action === "host.reboot" && (
             <p>
               New boot observed:{" "}
               <b>{job.rebootObserved ? "Yes" : "Not observed"}</b>
             </p>
           )}
-          {job.result ? (
+          {job.canReadOutput === true && job.result ? (
             <>
               <p>
                 Exit status {job.result.exitCode}{" "}
@@ -126,14 +189,14 @@ export function JobOutcome({
               <pre>{job.result.stderr || "(empty)"}</pre>
             </>
           ) : (
-            <p>
-              Output is pending or your account does not have output permission.
+            <p className="job-output-state">{outputMessage(job)}</p>
+          )}
+          {job.canReadOutput === true && job.result && (
+            <p className="muted">
+              Command output may contain secrets. It is accessible only with an
+              explicit output grant.
             </p>
           )}
-          <p className="muted">
-            Command output may contain secrets. It is accessible only with an
-            explicit output grant.
-          </p>
         </>
       ) : (
         <p>

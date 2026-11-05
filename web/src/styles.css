@@ -1023,7 +1023,7 @@ summary:hover {
   padding: 5px 0;
   max-width: 100%;
   color: var(--text-2);
-  font-size: 12px;
+  font-size: 13px;
   white-space: normal;
 }
 time {
@@ -2334,13 +2334,122 @@ textarea:disabled {
 .job-status-tools .muted {
   font-size: 13px;
 }
+.host-section-links select {
+  display: none;
+}
+.job-target {
+  margin: 12px 0;
+  overflow-wrap: anywhere;
+}
+.job-target p {
+  margin-bottom: 4px;
+  font-size: 16px;
+}
+.job-target small {
+  font-size: 13px;
+  color: var(--text-2);
+}
+.job-identifiers {
+  margin: 8px 0;
+}
+.job-identifiers summary {
+  min-height: 32px;
+  padding: 6px 0;
+  color: var(--text-2);
+}
+.job-lifecycle {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 16px 0;
+}
+.job-lifecycle dt {
+  color: var(--text-2);
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+.job-lifecycle dd {
+  margin: 0;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.jobs-table td[data-label="Outcome"] > a {
+  display: inline-block;
+  margin: 4px 12px 4px 0;
+}
+.fleet-table td small,
+.service-table small,
+.github .coverage-note,
+.github .collection-summary,
+.github .collection-coverage,
+.github .repository-identity p,
+.job-status-tools .muted,
+.history-summary {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+.fleet-table .usage b,
+.service-table code,
+.jobs-table td {
+  font-size: 14px;
+}
 @media (max-width: 720px) {
   .host-section-links {
     gap: 0 16px;
     margin-top: -4px;
   }
   .host-section-links button {
+    display: none;
+  }
+  .host-section-links select {
+    display: block;
+    width: 100%;
     min-height: 44px;
+    font-size: 16px;
+  }
+  .host-page-heading {
+    margin-bottom: 8px;
+  }
+  .host-page-heading > .button-row {
+    margin-top: 0;
+  }
+  .host-page-heading h1 {
+    margin: 4px 0;
+  }
+  .host-page-heading .muted {
+    margin: 6px 0;
+  }
+  .job-lifecycle {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .job-lifecycle > div {
+    display: grid;
+    grid-template-columns: 90px minmax(0, 1fr);
+    gap: 8px;
+  }
+  .job-identifiers summary {
+    min-height: 44px;
+  }
+  .jobs-table td[data-label="Created"],
+  .jobs-table td[data-label="Outcome"] {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .jobs-table td[data-label="Outcome"] > small {
+    flex-basis: 100%;
+  }
+  .jobs-table td[data-label="Outcome"] > a {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+  .fleet-table tr {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 10em), 1fr));
   }
 }
 .project-edit-feedback:has(.notice) {
