@@ -55,7 +55,7 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await top();
   await shot("access-desktop");
   await evaluate(`(() => { const select = document.querySelector('select[name=user]'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(select, 'operator-fixture'); select.dispatchEvent(new Event('change', {bubbles:true})); })()`);
-  await wait(`!!document.querySelector('[data-grant="host:viewer-host:host.read"]')`);
+  await wait(`!!document.querySelector('[data-grant="host:viewer-host:host.read"]') && !!document.querySelector('[data-grant="project:website:project.read"]')`);
   await section(".grant-editor");
   await shot("access-grants-desktop");
   await click("Create account");

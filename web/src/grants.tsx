@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "./api";
 import type { Grant, Host, Project, User } from "./types";
-import { ErrorNotice, StatusNotice } from "./ui";
+import { Empty, ErrorNotice, StatusNotice } from "./ui";
 import { useUnsavedChanges } from "./navigation";
 
 const actionLabels: Record<string, string> = {
@@ -270,7 +270,11 @@ export function GrantEditor({
                   : ""}
               </p>
               {!working.length ? (
-                <p className="muted">This account holds no grants.</p>
+                <p className="muted">
+                  {changed
+                    ? "The working set is empty. Replace grants to remove all saved access."
+                    : "This account holds no grants."}
+                </p>
               ) : (
                 <div className="table-scroll bounded">
                   <table>
@@ -291,13 +295,15 @@ export function GrantEditor({
                         >
                           <td>
                             <span className="tag">{g.scopeType}</span>{" "}
-                          {scopeName(g) || <code>{g.scope}</code>}
-                          {scopeName(g) && scopeName(g) !== g.scope && (
-                            <small><code>{g.scope}</code></small>
-                          )}
-                          {g.scopeType === "project" && !scopeName(g) && (
+                            {scopeName(g) || <code>{g.scope}</code>}
+                            {scopeName(g) && scopeName(g) !== g.scope && (
                               <small>
-                              {projects ? "Project unavailable" : ""}
+                                <code>{g.scope}</code>
+                              </small>
+                            )}
+                            {g.scopeType === "project" && !scopeName(g) && (
+                              <small>
+                                {projects ? "Project unavailable" : ""}
                               </small>
                             )}
                           </td>
@@ -334,7 +340,20 @@ export function GrantEditor({
             </div>
           )}
         </div>
-        <fieldset className="grant-add" disabled={!loaded || busy}>
+        {!loaded && (
+          <Empty>
+            {load.state === "loading"
+              ? "Loading the complete grant set before editing…"
+              : load.state === "failed"
+                ? "Retry loading current grants before editing permissions."
+                : "Select an account to view its complete grant set and edit permissions."}
+          </Empty>
+        )}
+        <fieldset
+          className="grant-add"
+          disabled={!loaded || busy}
+          hidden={!loaded}
+        >
           <legend>Add grants to the working set</legend>
           <div className="grant-targets">
             <label>
@@ -493,7 +512,7 @@ export function GrantEditor({
           </button>
         </fieldset>
       </div>
-      <div className="grant-save">
+      <div className="grant-save" hidden={!loaded && !error && !notice}>
         <ErrorNotice
           error={error}
           onDismiss={() => setError(null)}
@@ -504,8 +523,12 @@ export function GrantEditor({
           <p className="grant-save-account">
             {account ? (
               <>
-                <strong>{account.name}</strong> · {working.length} grants in the
-                working set
+                <strong>{account.name}</strong> ·{" "}
+                {load.state === "loading"
+                  ? "Loading grants…"
+                  : loaded
+                    ? working.length + " grants in the working set"
+                    : "Grants unavailable"}
               </>
             ) : (
               "Select an account to edit its grants."
@@ -517,7 +540,9 @@ export function GrantEditor({
           </small>
           <small role="status">
             {!loaded
-              ? "Select an account and load its grants to begin."
+              ? load.state === "loading"
+                ? "Loading the complete grant set…"
+                : "Load current grants before making a replacement."
               : !changed
                 ? "No unsaved changes."
                 : `${added} added, ${removed} removed. Ready to replace the account’s complete grant set.`}

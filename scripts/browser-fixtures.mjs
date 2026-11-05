@@ -112,6 +112,7 @@ function installFixture() {
     control.projects.platform.description = "Internal services and shared infrastructure.";
     control.seedProject("legacy", "Legacy dashboard", []);
     control.projects.legacy.archived = true;
+    control.grantStore["operator-fixture"] = [{scopeType: "host", scope: "viewer-host", action: "host.read"}, {scopeType: "project", scope: "website", action: "project.read"}];
   };
   control.externalEdit = (id) => {
     const p = control.projects[id];

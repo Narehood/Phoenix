@@ -255,11 +255,13 @@ export function ErrorNotice({
   if (!error) return null;
   const recent = needsRecentAuth(error);
   return (
-    <div className="notice error" role="alert">
+    <div className="notice error error-notice" role="alert">
       <span>
-        {error instanceof Error ? error.message : String(error)}
-        {recent &&
-          " — verify your password and authenticator code, then try again. Your unsaved input is kept."}
+        {recent
+          ? "A recent password and MFA verification is required. Verify your identity, then try again. Your unsaved input is kept."
+          : error instanceof Error
+            ? error.message
+            : String(error)}
       </span>
       <span className="button-row">
         {recent && onVerify && (
