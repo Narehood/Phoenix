@@ -1704,6 +1704,9 @@ textarea:disabled {
   display: none;
 }
 @media (min-width: 721px) {
+  html {
+    scrollbar-gutter: stable;
+  }
   .sidebar {
     overflow-y: auto;
     overscroll-behavior: contain;
