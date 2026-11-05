@@ -118,6 +118,7 @@ export function GrantEditor({
     }
   }
   function choose(id: string, force = false) {
+    if (busy && !force) return;
     if (
       !force &&
       id !== userId &&
@@ -158,6 +159,7 @@ export function GrantEditor({
     scopeType === "project" ? projectActionGroups : hostActionGroups;
 
   function addGrants() {
+    if (!loaded || busy) return;
     setError(null);
     setNotice("");
     const target = scopeType === "all" ? "*" : scope.trim();
@@ -227,6 +229,7 @@ export function GrantEditor({
             <select
               name="user"
               required
+              disabled={busy}
               value={userId}
               onChange={(e) => choose(e.target.value)}
             >
@@ -321,6 +324,7 @@ export function GrantEditor({
                           <td>
                             <button
                               type="button"
+                              disabled={busy}
                               aria-label={`Remove ${g.action} on ${g.scopeType} ${g.scope}`}
                               onClick={() =>
                                 setWorking((w) =>

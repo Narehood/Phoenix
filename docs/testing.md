@@ -67,6 +67,10 @@ rejection plus retained hosts/projects/jobs. Logs and state are bounded and
 removed. This is container evidence, not an installed-host restore drill.
 
 The browser regressions use the built dashboard with temporary API fixtures.
+They cover independently held initial reads, local aging of positive evidence,
+project/grant controls during delayed saves, and populated CPU history with gaps
+and missing values. Chrome accessibility-tree checks retain responsive table
+roles and column headers; these are not a screen-reader acceptance test.
 The smoke uses real APIs but does not drive a browser. Neither substitutes for
 manual end-to-end browser acceptance. Container systemd service/log inspection
 may be unavailable; the smoke never installs or executes the root helper.

@@ -13,6 +13,23 @@ export type ToneName = "good" | "bad" | "warn" | "neutral";
 export const stamp = (n: number) =>
   n ? new Date(n).toLocaleString() : "Never";
 
+/** Evidence can age while a network request is pending or a tab is suspended. */
+export function useNow() {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const update = () => setNow(Date.now());
+    const timer = setInterval(update, 1000);
+    window.addEventListener("focus", update);
+    document.addEventListener("visibilitychange", update);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", update);
+      document.removeEventListener("visibilitychange", update);
+    };
+  }, []);
+  return now;
+}
+
 export function Time({ value }: { value: number }) {
   const [expanded, setExpanded] = useState(false);
   const id = useId();

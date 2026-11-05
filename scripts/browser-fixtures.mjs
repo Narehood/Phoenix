@@ -58,7 +58,22 @@ function installFixture() {
       "operator-fixture": [{ scopeType: "host", scope: "viewer-host", action: "host.read" }, { scopeType: "project", scope: "fixture-project", action: "project.read" }],
       "viewer-fixture": [{ scopeType: "host", scope: "viewer-host", action: "host.read" }],
     },
-    lastGrantPut: null, shared: ["fixture-project"], requests: [], hold: new Set(), holds: {} };
+    lastGrantPut: null, shared: ["fixture-project"], requests: [], hold: new Set(new URLSearchParams(location.search).has("hold") ? ["/api/hosts", "/api/canary"] : []), holds: {}, samples: [reading] };
+  const refreshEvidence = () => {
+    for (const h of fixtureHosts) {
+      if (h.connectivity === "connected") h.lastContact = Date.now();
+      if (h.freshness === "fresh" && h.latest) {
+        h.latest.measuredAt = Date.now(); h.latest.collectedAt = Date.now();
+      }
+    }
+    for (const source of canary.sources) if (source.freshness === "fresh") {
+      source.collectedAt = Date.now(); source.measuredAt = Date.now();
+    }
+  };
+  control.populateHistory = () => {
+    const at = Date.now();
+    control.samples = [12, 64, null, 21].map((cpuPercent, i) => ({...reading, cpuPercent, measuredAt: at - (i > 1 ? i + 3 : i) * 30000, collectedAt: at - (i > 1 ? i + 3 : i) * 30000}));
+  };
   const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
   const recentRequired = () => json({ error: "recent password and MFA required" }, 403);
   const allModules = ["documentation", "dependencies", "content", "releases", "operations"];
@@ -167,7 +182,8 @@ function installFixture() {
     const path = url.pathname, method = init.method || "GET";
     control.requests.push({ role: control.role, method, path, search: url.search });
     const respond = () => route(path, method, init.body ? JSON.parse(init.body) : undefined);
-    if (control.hold.delete(path)) return new Promise((done) => { control.holds[path] = () => { delete control.holds[path]; done(respond()); }; });
+    const holdKey = control.hold.has(method + " " + path) ? method + " " + path : path;
+    if (control.hold.delete(holdKey)) return new Promise((done) => { control.holds[holdKey] = () => { delete control.holds[holdKey]; done(respond()); }; });
     return respond();
   };
   async function route(path, method, body) {
@@ -219,6 +235,7 @@ function installFixture() {
     }
     if (path.startsWith("/api/projects/")) return projectRoute(method, path, body);
     if (path === "/api/hosts") {
+      refreshEvidence();
       const snapshot = { hosts: admin ? fixtureHosts : [viewerHost] };
       if (admin && control.holdHosts) {
         control.holdHosts = false;
@@ -226,9 +243,9 @@ function installFixture() {
       }
       return json(snapshot);
     }
-    if (path === "/api/hosts/private-host") return admin ? json({ host: privateHost, samples: [reading] }) : json({ error: "action forbidden" }, 403);
-    if (path === "/api/hosts/viewer-host") return json({ host: viewerHost, samples: [] });
-    if (path === "/api/canary") return json(admin ? canary : emptyCanary);
+    if (path === "/api/hosts/private-host") { refreshEvidence(); return admin ? json({ host: privateHost, samples: control.samples }) : json({ error: "action forbidden" }, 403); }
+    if (path === "/api/hosts/viewer-host") { refreshEvidence(); return json({ host: viewerHost, samples: [] }); }
+    if (path === "/api/canary") { refreshEvidence(); return json(admin ? canary : emptyCanary); }
     if (path === "/api/jobs" || path === "/api/audit") return json([]);
     return json({ error: "unexpected fixture request" }, 404);
   };
@@ -309,6 +326,15 @@ try {
   let cases = 0;
   const pass = (name) => { cases++; console.log(`PASS ${name}`); };
   const sleep = (ms) => evaluate(`new Promise(done => setTimeout(done, ${ms}))`);
+  // Advance only the resume event's clock. Poll scheduling and fixture response
+  // timestamps keep real time, and a coincident interval cannot make this flaky.
+  const ageUntil = (condition, offset) => wait(`(() => {
+    if (${condition}) return true;
+    const realNow = Date.now;
+    try { Date.now = () => realNow() + ${offset}; window.dispatchEvent(new Event('focus')); }
+    finally { Date.now = realNow; }
+    return false;
+  })()`);
   // React controlled inputs need the native setter plus an input/change event.
   const setValue = (selector, value) => evaluate(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) throw Error('Missing fixture field'); const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : el instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype; Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, ${JSON.stringify(value)}); el.dispatchEvent(new Event(el instanceof HTMLSelectElement ? 'change' : 'input', { bubbles: true })); })()`);
   const submit = (label) => evaluate(`document.querySelector('form[aria-label=${JSON.stringify(label)}]').requestSubmit()`);
@@ -325,11 +351,19 @@ try {
   await send("Page.enable", {}, sessionId);
   await send("Page.bringToFront", {}, sessionId);
   await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false }, sessionId);
-  await send("Page.navigate", { url: `http://127.0.0.1:${server.address().port}/` }, sessionId);
+  await send("Page.navigate", { url: `http://127.0.0.1:${server.address().port}/?hold=1` }, sessionId);
+  await wait("document.body?.innerText.includes('Loading host inventory') && typeof window.fixture.holds['/api/hosts'] === 'function' && typeof window.fixture.holds['/api/canary'] === 'function'");
+  assert.ok(await evaluate("!document.body.innerText.includes('Your fleet starts here') && !document.body.innerText.includes('Not configured') && !document.body.innerText.includes('No verified source')"), "Pending initial requests imply confirmed absence");
+  if (visual) await capture("fleet-loading-desktop");
+  await evaluate("window.fixture.holds['/api/hosts'](); history.replaceState(null, '', location.pathname + location.hash)");
   await wait("document.body?.innerText.includes('ADMIN-ONLY-HOST')");
+  assert.ok(await evaluate("[...document.querySelectorAll('.metric')].find(m => m.innerText.includes('Canary sources'))?.innerText.includes('Loading')"), "A successful host read implies Canary configuration");
+  await evaluate("window.fixture.holds['/api/canary']()");
+  await wait("[...document.querySelectorAll('.metric')].find(m => m.innerText.includes('Canary sources'))?.innerText.includes('1 / 1')");
   if (visual) {
     await captureUI({ send, sessionId, evaluate, wait, click, capture });
   } else {
+  pass("first host and Canary loads remain unknown until each source independently responds");
   // Native modal focus, background inertness and durable in-dialog errors.
   await click("Verify identity");
   await wait("document.querySelector('dialog[open]') && document.activeElement?.name === 'password'");
@@ -405,6 +439,12 @@ try {
   await wait("!!document.querySelector('.fleet-table')");
   assert.ok(await evaluate("document.documentElement.scrollWidth <= innerWidth && document.querySelector('.fleet-table').scrollWidth <= innerWidth"), "Host statuses require horizontal document/table scrolling on mobile");
   assert.equal(await evaluate("[...document.querySelector('.fleet-table tbody tr').querySelectorAll('.chip')].filter(c => c.checkVisibility() && /fresh/i.test(c.textContent)).length"), 1, "Mobile host repeats its reading freshness status");
+  const accessibleFleet = (await send("Accessibility.getFullAXTree", {}, sessionId)).nodes.filter(n => !n.ignored);
+  assert.ok(accessibleFleet.some(n => n.role?.value === "table"), "Responsive fleet lost its accessible table role");
+  const columnNames = accessibleFleet.filter(n => n.role?.value === "columnheader").map(n => n.name?.value);
+  for (const column of ["Host", "Canary uptime", "Agent connection", "Reading freshness", "Resources"]) assert.ok(columnNames.includes(column), "Responsive fleet lost header: " + column);
+  assert.equal(await evaluate("document.querySelector('.fleet-table td[data-label=Resources]').getAttribute('aria-colindex')"), "5", "Hidden mobile freshness cell shifted the resource column association");
+  pass("Chrome accessibility tree retains mobile table and column headers with explicit column positions");
   await evaluate("window.fixture.hosts[0].resourceHealth = 'warning'; window.fixture.hosts[0].latest.cpuPercent = 96");
   await wait("document.querySelector('.attention-filter')?.textContent.includes('(1)') && [...document.querySelectorAll('.mobile-resource-warning .chip')].some(c => c.checkVisibility() && c.textContent.includes('Resource warning'))");
   assert.equal(await evaluate("document.querySelector('.resource-details').open"), false, "Resource-warning proof needs a collapsed card");
@@ -428,6 +468,12 @@ try {
     try { heading.textContent = 'h'.repeat(80); identity.textContent = 'a'.repeat(64); return document.documentElement.scrollWidth <= innerWidth; }
     finally { heading.textContent = name; identity.textContent = id; }
   })()`), "Long host names or identity IDs overflow the mobile document");
+  await evaluate("window.fixture.populateHistory()");
+  await wait("!!document.querySelector('.history svg')");
+  await evaluate("document.querySelector('.history-data').open = true");
+  assert.ok(await evaluate("document.querySelector('.history-summary').innerText.includes('12.0–64.0%') && document.querySelector('.history-data').innerText.includes('Not measured') && document.querySelector('.history-data').innerText.includes('Gap before this reading')"), "Populated CPU history lacks equivalent values or missing-data context");
+  await evaluate("window.fixture.samples = []");
+  pass("CPU history exposes a range summary and bounded chronological readings including missing values and gaps");
   await click("← All hosts");
   await wait("!!document.querySelector('.fleet-table')");
   await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false }, sessionId);
@@ -477,6 +523,12 @@ try {
   await evaluate("window.fixture.holds['/api/audit'](); window.fixture.hosts[0].latest.cpuPercent = 12");
   await wait("document.querySelector('.fleet-table').innerText.includes('12.0%')");
   pass("dashboard sources keep updating through isolated failures and a held audit request, invalidating only failed evidence");
+  await evaluate("window.fixture.hold.add('/api/hosts'); window.fixture.hold.add('/api/canary')");
+  await wait("typeof window.fixture.holds['/api/hosts'] === 'function' && typeof window.fixture.holds['/api/canary'] === 'function'");
+  await ageUntil("[...document.querySelectorAll('.fleet-table td[data-label=\"Reading freshness\"] .chip')].every(c => c.textContent.toLowerCase().includes('stale')) && [...document.querySelectorAll('.fleet-table td[data-label=\"Agent connection\"] .chip')].every(c => c.textContent.toLowerCase().includes('offline')) && [...document.querySelectorAll('.metric')].find(m => m.innerText.includes('Canary sources')).innerText.includes('0 / 1') && document.querySelectorAll('.usage.stale').length === 6 && !document.querySelector('.source-warning')", 120000);
+  await evaluate("window.dispatchEvent(new Event('focus')); window.fixture.holds['/api/hosts'](); window.fixture.holds['/api/canary']()");
+  await wait("document.querySelectorAll('.usage.stale').length === 0");
+  pass("host and Canary evidence age locally on resume while source requests remain pending");
   await click("Access & accounts");
   await wait("document.querySelector('[role=alert]')?.innerText.includes('Fixture account list unavailable') && !!document.querySelector('select[name=user]')");
   assert.equal(await evaluate("document.querySelector('select[name=user]').checkValidity()"), false, "Empty account select allows grant submission");
@@ -545,9 +597,14 @@ try {
   assert.equal(await evaluate("[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Save project details').disabled"), true, "Save stays enabled during an unresolved conflict");
   await capture("06-project-conflict");
   await click("Keep my edits on revision");
+  await evaluate("window.fixture.hold.add('PUT /api/projects/fixture-project')");
   await submit("Project details");
+  await wait("typeof window.fixture.holds['PUT /api/projects/fixture-project'] === 'function'");
+  assert.ok(await evaluate("document.querySelector('input[name=editName]').disabled && document.querySelector('textarea[name=editDescription]').disabled && document.querySelector('input[value=dependencies]').matches(':disabled')"), "Project controls remain editable during a pending save");
+  await evaluate("window.fixture.holds['PUT /api/projects/fixture-project']()");
   await wait("window.fixture.projects['fixture-project'].name === 'Fixture project renamed' && window.fixture.projects['fixture-project'].revision === 3 && document.querySelector('h1').textContent.includes('renamed')");
   pass("stale metadata saves reload as a conflict, keep unsaved input and save only after explicit resolution");
+  pass("pending project saves lock fields and feature choices until the submitted revision completes");
 
   // GitHub source: a recent-authentication failure keeps input; success clears the token everywhere.
   await wait(`document.querySelector('.repository-identity h3')?.innerText.includes('Connect a GitHub repository') && !!document.querySelector('form[aria-label="GitHub source settings"] fieldset:not([disabled])') && document.querySelector('input[name=repository]').getClientRects().length > 0`);
@@ -568,6 +625,10 @@ try {
   await evaluate("window.fixture.githubViews['fixture-project'] = window.fixture.freshView('fixture-owner/fixture-repo')");
   await wait(`${goodChips} >= 3 && document.body.innerText.includes('Bump fixture-lib') && document.body.innerText.includes('Dependency update PRs') && !document.body.innerText.includes('Retained observation')`);
   await capture("07-github-fresh");
+  await ageUntil("document.querySelector('.github-heading').innerText.includes('Collection: stale') && document.querySelector('.github .notice.retained')?.innerText.includes('older than 30 minutes') && document.querySelectorAll('.github .chip.good').length === 0", 31 * 60000);
+  await evaluate("window.dispatchEvent(new Event('focus'))");
+  await wait("document.querySelector('.github-heading').innerText.includes('Collection: fresh')");
+  pass("GitHub collection freshness and positive result tones expire locally after the 30-minute evidence window");
   await evaluate("window.fixture.githubFail = true");
   await wait(`document.body.innerText.includes('Polling failed') && ${goodChips} === 0`);
   pass("a failed GitHub poll invalidates previously healthy observations");
@@ -619,7 +680,16 @@ try {
   await click("Add to working set");
   await wait(`!!document.querySelector('[data-grant="project:fixture-project:github.read"]')`);
   await evaluate("window.confirm = () => true");
+  await evaluate("window.fixture.hold.add('PUT /api/users/operator-fixture/grants')");
   await click("Replace grants");
+  await wait("typeof window.fixture.holds['PUT /api/users/operator-fixture/grants'] === 'function'");
+  assert.ok(await evaluate("document.querySelector('select[name=user]').disabled && [...document.querySelectorAll('[data-grant] button')].every(b => b.disabled)"), "Pending grant replacement permits account switching or removal");
+  await click("Remove");
+  assert.equal(await evaluate("document.querySelectorAll('[data-grant]').length"), 3, "Disabled grant removal changed the submitted working set");
+  await evaluate("window.fixture.hold.add('GET /api/users/operator-fixture/grants'); window.fixture.holds['PUT /api/users/operator-fixture/grants']()");
+  await wait("typeof window.fixture.holds['GET /api/users/operator-fixture/grants'] === 'function'");
+  assert.ok(await evaluate("document.querySelector('select[name=user]').disabled"), "Account switching unlocked before complete-set reload finished");
+  await evaluate("window.fixture.holds['GET /api/users/operator-fixture/grants']()");
   await wait("!!window.fixture.lastGrantPut");
   await wait("[...document.querySelectorAll('.grant-editor [role=status]')].some(s => s.innerText.includes('Grants replaced for operator-fixture'))");
   const written = await evaluate("window.fixture.lastGrantPut");
@@ -628,6 +698,7 @@ try {
     ["host:viewer-host:host.read", "project:fixture-project:github.read", "project:fixture-project:project.read"], "Grant replacement dropped an existing host or project grant");
   await capture("09-grant-editor");
   pass("grant editing loads the complete set first, preserves host and project grants and ignores stale account responses");
+  pass("grant replacement locks account and removal controls through submission and complete-set reload");
   await click("Create account");
   await wait("document.querySelector('.account-create').open && document.activeElement?.name === 'name'");
   await setValue(".account-create input[name=name]", "temporary-account");

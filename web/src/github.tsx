@@ -24,6 +24,7 @@ import {
   Time,
   Tone,
   stamp,
+  useNow,
   type ToneName,
 } from "./ui";
 
@@ -157,20 +158,39 @@ function Pulls({
         <p className="muted">{empty}</p>
       ) : (
         <div className="table-scroll">
-          <table className="responsive-table pull-table">
-            <thead>
-              <tr>
-                <th>Pull request</th>
-                <th>Updated</th>
-                <th>Checks</th>
-                <th>Reviews</th>
-                <th>Mergeability</th>
+          <table
+            role="table"
+            aria-colcount={5}
+            className="responsive-table pull-table"
+          >
+            <thead role="rowgroup">
+              <tr role="row">
+                <th role="columnheader" aria-colindex={1} scope="col">
+                  Pull request
+                </th>
+                <th role="columnheader" aria-colindex={2} scope="col">
+                  Updated
+                </th>
+                <th role="columnheader" aria-colindex={3} scope="col">
+                  Checks
+                </th>
+                <th role="columnheader" aria-colindex={4} scope="col">
+                  Reviews
+                </th>
+                <th role="columnheader" aria-colindex={5} scope="col">
+                  Mergeability
+                </th>
               </tr>
             </thead>
-            <tbody>
+            <tbody role="rowgroup">
               {items.map((p) => (
-                <tr key={p.number}>
-                  <td data-label="Pull request" className="wrap-cell">
+                <tr role="row" key={p.number}>
+                  <td
+                    role="cell"
+                    aria-colindex={1}
+                    data-label="Pull request"
+                    className="wrap-cell"
+                  >
                     <Link url={p.url}>
                       #{p.number} {p.title}
                     </Link>
@@ -181,27 +201,39 @@ function Pulls({
                         ` · ${p.updateKind === "security_or_version_unclassified" ? "update kind not classified" : p.updateKind.replaceAll("_", " ")}`}
                     </small>
                   </td>
-                  <td data-label="Updated">
+                  <td role="cell" aria-colindex={2} data-label="Updated">
                     {Number.isFinite(Date.parse(p.updatedAt)) ? (
                       <Time value={Date.parse(p.updatedAt)} />
                     ) : (
                       "Unknown"
                     )}
                   </td>
-                  <td data-label="Checks">
+                  <td role="cell" aria-colindex={3} data-label="Checks">
                     <Tone value={p.checks} tone={tone(p.checks, current)} />
                   </td>
-                  <td data-label="Reviews">
+                  <td role="cell" aria-colindex={4} data-label="Reviews">
                     <Tone
                       value={p.reviewState}
                       tone={tone(p.reviewState, current)}
                     />
                   </td>
-                  <td data-label="Mergeability">
+                  <td role="cell" aria-colindex={5} data-label="Mergeability">
                     <Tone
                       value={p.mergeable}
-                      tone={tone(p.mergeable, current)}
+                      tone={
+                        p.mergeable === "conflicting"
+                          ? tone(p.mergeable, current)
+                          : "neutral"
+                      }
+                      label={
+                        p.mergeable === "mergeable"
+                          ? "No conflicts observed"
+                          : p.mergeable === "conflicting"
+                            ? "Conflicts observed"
+                            : "Unknown"
+                      }
                     />
+                    <small>Merge rules not evaluated</small>
                   </td>
                 </tr>
               ))}
@@ -331,13 +363,22 @@ export function GitHubPanel({
   }
 
   const moduleOn = project.modules.includes("dependencies");
+  const now = useNow();
+  const expired =
+    !!view?.collectedAt &&
+    (now - view.collectedAt > 30 * 60000 || view.collectedAt > now + 30000);
+  const collectionState =
+    view && expired && ["fresh", "partial"].includes(view.state)
+      ? "stale"
+      : view?.state || "unknown";
   const current =
     !!view &&
     !failed &&
+    !expired &&
     view.freshness === "fresh" &&
     (view.state === "fresh" || view.state === "partial");
   const snapshot = view?.snapshot;
-  const cooling = !!view && view.nextAttemptAt > Date.now();
+  const cooling = !!view && view.nextAttemptAt > now;
 
   let body: ReactNode;
   if (!permissions)
@@ -405,7 +446,8 @@ export function GitHubPanel({
               <dd>
                 {failed
                   ? "Phoenix could not be reached"
-                  : stateText[view.state] || "Collection reported an error."}
+                  : stateText[collectionState] ||
+                    "Collection reported an error."}
               </dd>
               <dt>Last attempt</dt>
               <dd>{stamp(view.lastAttemptAt)}</dd>
@@ -450,18 +492,21 @@ export function GitHubPanel({
                 It is not current
                 {failed
                   ? " because the dashboard could not reach Phoenix"
-                  : ` (state: ${view.state.replaceAll("_", " ")})`}
+                  : expired
+                    ? " because the collection is older than 30 minutes or its timestamp cannot be verified"
+                    : ` (state: ${view.state.replaceAll("_", " ")})`}
                 . Values below are last known, not current health.
               </p>
             )}
             <ResponsiveDetails
               className="observation-counts"
               label={
-                <span>
+                <span className="bounded-counts">
                   {current ? "Observed" : "Last known"}: PRs{" "}
                   {count(snapshot.pulls)} · Updates{" "}
                   {count(snapshot.pulls, (p) => p.dependencyUpdate)} · Alerts{" "}
                   {count(snapshot.alerts)}
+                  <small>10 most recent PRs · up to 50 alerts</small>
                 </span>
               }
             >
@@ -545,25 +590,44 @@ export function GitHubPanel({
                   </p>
                 ) : (
                   <div className="table-scroll">
-                    <table className="responsive-table">
-                      <thead>
-                        <tr>
-                          <th>Workflow</th>
-                          <th>Result</th>
-                          <th>Commit</th>
+                    <table
+                      role="table"
+                      aria-colcount={3}
+                      className="responsive-table"
+                    >
+                      <thead role="rowgroup">
+                        <tr role="row">
+                          <th role="columnheader" aria-colindex={1} scope="col">
+                            Workflow
+                          </th>
+                          <th role="columnheader" aria-colindex={2} scope="col">
+                            Result
+                          </th>
+                          <th role="columnheader" aria-colindex={3} scope="col">
+                            Commit
+                          </th>
                         </tr>
                       </thead>
-                      <tbody>
+                      <tbody role="rowgroup">
                         {runs.map((r: WorkflowRun, i) => {
                           const result = r.conclusion || r.status || "unknown";
                           return (
-                            <tr key={`${r.url}-${i}`}>
-                              <td data-label="Workflow" className="wrap-cell">
+                            <tr role="row" key={`${r.url}-${i}`}>
+                              <td
+                                role="cell"
+                                aria-colindex={1}
+                                data-label="Workflow"
+                                className="wrap-cell"
+                              >
                                 <Link url={r.url}>
                                   {r.name || "Unnamed workflow"}
                                 </Link>
                               </td>
-                              <td data-label="Result">
+                              <td
+                                role="cell"
+                                aria-colindex={2}
+                                data-label="Result"
+                              >
                                 <Tone
                                   value={result}
                                   tone={tone(result, current)}
@@ -572,7 +636,11 @@ export function GitHubPanel({
                                   <small>{r.status}</small>
                                 )}
                               </td>
-                              <td data-label="Commit">
+                              <td
+                                role="cell"
+                                aria-colindex={3}
+                                data-label="Commit"
+                              >
                                 <code>{r.sha.slice(0, 12) || "unknown"}</code>
                               </td>
                             </tr>
@@ -598,33 +666,62 @@ export function GitHubPanel({
                   </p>
                 ) : (
                   <div className="table-scroll">
-                    <table className="responsive-table">
-                      <thead>
-                        <tr>
-                          <th>Alert</th>
-                          <th>Package</th>
-                          <th>Severity</th>
-                          <th>Fixed in</th>
+                    <table
+                      role="table"
+                      aria-colcount={4}
+                      className="responsive-table"
+                    >
+                      <thead role="rowgroup">
+                        <tr role="row">
+                          <th role="columnheader" aria-colindex={1} scope="col">
+                            Alert
+                          </th>
+                          <th role="columnheader" aria-colindex={2} scope="col">
+                            Package
+                          </th>
+                          <th role="columnheader" aria-colindex={3} scope="col">
+                            Severity
+                          </th>
+                          <th role="columnheader" aria-colindex={4} scope="col">
+                            Fixed in
+                          </th>
                         </tr>
                       </thead>
-                      <tbody>
+                      <tbody role="rowgroup">
                         {alerts.map((a: DependabotAlert) => (
-                          <tr key={a.number}>
-                            <td data-label="Alert" className="wrap-cell">
+                          <tr role="row" key={a.number}>
+                            <td
+                              role="cell"
+                              aria-colindex={1}
+                              data-label="Alert"
+                              className="wrap-cell"
+                            >
                               <Link url={a.url}>#{a.number}</Link>
                               <small>{a.summary}</small>
                             </td>
-                            <td data-label="Package">
+                            <td
+                              role="cell"
+                              aria-colindex={2}
+                              data-label="Package"
+                            >
                               {a.package}
                               <small>{a.ecosystem}</small>
                             </td>
-                            <td data-label="Severity">
+                            <td
+                              role="cell"
+                              aria-colindex={3}
+                              data-label="Severity"
+                            >
                               <Tone
                                 value={a.severity || "unknown"}
                                 tone={tone(a.severity, current)}
                               />
                             </td>
-                            <td data-label="Fixed in">
+                            <td
+                              role="cell"
+                              aria-colindex={4}
+                              data-label="Fixed in"
+                            >
                               {a.fixedIn || "Not supplied"}
                             </td>
                           </tr>
@@ -647,9 +744,9 @@ export function GitHubPanel({
           GitHub observations{" "}
           {view && canRead && !denied && (
             <Tone
-              value={failed ? "unknown" : view.state}
-              tone={failed ? "neutral" : sourceTone(view.state, current)}
-              label={`Collection: ${(failed ? "unreachable" : view.state).replaceAll("_", " ")}`}
+              value={failed ? "unknown" : collectionState}
+              tone={failed ? "neutral" : sourceTone(collectionState, current)}
+              label={`Collection: ${(failed ? "unreachable" : collectionState).replaceAll("_", " ")}`}
             />
           )}
         </h2>

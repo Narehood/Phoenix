@@ -1300,7 +1300,7 @@ time {
     gap: 4px;
   }
   .metric small {
-    font-size: 11px;
+    font-size: 12px;
     line-height: 1.35;
   }
   .metric strong {
@@ -1362,8 +1362,8 @@ time {
     overflow-wrap: anywhere;
   }
   .responsive-table td::before {
-    content: attr(data-label);
-    font-size: 11px;
+    content: attr(data-label) / "";
+    font-size: 12px;
     font-weight: 600;
     color: var(--text-3);
   }
@@ -1444,10 +1444,10 @@ time {
     font-size: 16px;
   }
   button {
-    min-height: 40px;
+    min-height: 44px;
   }
   .button-row button {
-    min-height: 40px;
+    min-height: 44px;
     font-size: 12px;
   }
   .history-labels small:nth-child(2) {
@@ -1529,7 +1529,7 @@ textarea:disabled {
   }
   .responsive-details > summary {
     display: block;
-    min-height: 40px;
+    min-height: 44px;
     padding: 9px 0;
   }
   .fleet-summary {
@@ -1615,10 +1615,12 @@ textarea:disabled {
     text-align: center;
   }
   .health-metrics .metric small {
-    font-size: 11px;
+    font-size: 12px;
   }
   .time-trigger {
     min-height: 44px;
+    min-width: 44px;
+    padding: 0 4px;
     font-size: 13px;
   }
 }
@@ -1777,7 +1779,7 @@ textarea:disabled {
   .attention-filter {
     margin-left: auto;
     margin-right: 0;
-    min-height: 36px;
+    min-height: 44px;
   }
   .filter-context {
     padding: 12px 16px;
@@ -1815,6 +1817,197 @@ textarea:disabled {
   border-top: 1px solid var(--border);
   font-size: 12px;
   color: var(--text-2);
+}
+.source-warning {
+  margin-bottom: 20px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-2);
+  background: var(--surface);
+  font-size: 13px;
+}
+.source-warning summary {
+  min-height: 44px;
+  padding: 12px 0;
+  color: var(--warning-text);
+}
+.source-warning details > div {
+  padding: 0 0 12px;
+}
+.source-warning p {
+  margin: 0 0 8px;
+}
+.source-warning.affected {
+  border-color: var(--warn-edge);
+  background: var(--warning-wash);
+}
+.agent-request-context {
+  max-width: 250px;
+  white-space: normal;
+  margin-bottom: 8px;
+  color: var(--warning-text);
+}
+.history-summary {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.history-dot {
+  fill: var(--accent-text);
+}
+.history-data {
+  margin-top: 12px;
+}
+.history-data summary {
+  min-height: 44px;
+  padding: 12px 0;
+}
+.history-data table {
+  width: 100%;
+}
+.history-empty .empty {
+  padding: 20px;
+}
+.bounded-counts small {
+  display: block;
+  margin-top: 3px;
+  font-weight: 400;
+}
+@media (max-width: 720px) {
+  main#content {
+    padding-top: 16px;
+  }
+  .page-heading {
+    margin-bottom: 16px;
+  }
+  .fleet-heading {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+  }
+  .fleet-heading > div {
+    display: contents;
+  }
+  .fleet-heading .eyebrow {
+    display: none;
+  }
+  .fleet-heading h1 {
+    grid-column: 1;
+    grid-row: 1;
+    font-size: 25px;
+    margin: 0;
+  }
+  .fleet-heading > button {
+    grid-column: 2;
+    grid-row: 1;
+    margin: 0;
+    font-size: 12px;
+    padding: 8px 10px;
+  }
+  .fleet-heading .muted {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    margin: 0;
+  }
+  .fleet-summary {
+    margin-bottom: 12px;
+  }
+  .fleet-summary > summary {
+    padding: 10px 14px;
+  }
+  .filter-context {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+    padding: 8px 14px;
+  }
+  .filter-context button {
+    flex-shrink: 0;
+  }
+  .host-status,
+  .host-resources {
+    margin-bottom: 16px;
+  }
+  .host-status .metric {
+    min-height: 0;
+    padding: 10px;
+    gap: 4px;
+  }
+  .host-resources {
+    gap: 0;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+    overflow: hidden;
+  }
+  .host-resources .metric {
+    min-height: 0;
+    border: 0;
+    border-radius: 0;
+    padding: 10px;
+  }
+  .host-resources .metric:nth-child(odd) {
+    border-right: 1px solid var(--border);
+  }
+  .host-resources .metric:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--border);
+  }
+  .host-resources .metric strong {
+    font-size: 18px;
+  }
+  .host-resources .metric small {
+    font-size: 12px;
+  }
+  .cpu-history .panel-heading {
+    padding: 12px 14px;
+  }
+  .cpu-history .empty {
+    padding: 12px 14px;
+  }
+  summary,
+  .host-actions > summary {
+    min-height: 44px;
+  }
+  .collection-summary summary,
+  .coverage-note summary {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .collection-summary summary::before,
+  .coverage-note summary::before {
+    content: "▸" / "";
+  }
+  .collection-summary details[open] > summary::before,
+  .coverage-note details[open] > summary::before {
+    content: "▾" / "";
+  }
+  .project-page-heading {
+    margin-bottom: 12px;
+  }
+  .repository-identity {
+    padding-bottom: 6px;
+  }
+  .collection-summary {
+    padding-bottom: 4px;
+    gap: 0 12px;
+  }
+  .observation-counts {
+    margin-bottom: 4px;
+  }
+  .observation-counts > summary {
+    font-size: 13px;
+  }
+  .github .coverage-note {
+    padding-bottom: 6px;
+    font-size: 13px;
+  }
+  .github .section {
+    padding: 14px 16px;
+  }
 }
 .mobile-resource-warning small {
   display: block;

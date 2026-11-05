@@ -25,6 +25,15 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await evaluate("document.querySelector('.host-actions').open = true");
   await shot("host-management-desktop");
   await evaluate("document.querySelector('.host-actions').open = false");
+  await evaluate("window.fixture.populateHistory()");
+  await wait("!!document.querySelector('.history svg')");
+  await shot("host-history-desktop");
+  await evaluate("document.querySelector('.history-data').open = true");
+  await section(".cpu-history");
+  await shot("host-history-data-desktop");
+  await evaluate("window.fixture.samples = []");
+  await wait("!document.querySelector('.history svg')");
+  await top();
   await evaluate("(() => { const h = window.fixture.hosts[0]; window.fixture.freshHost = structuredClone(h); h.freshness = 'stale'; h.connectivity = 'offline'; h.resourceHealth = 'unknown'; h.latest.measuredAt -= 900000; h.latest.collectedAt -= 900000; })()");
   await wait("!!document.querySelector('.reading-snapshot') && document.querySelectorAll('.retained-label').length === 4");
   await top();
@@ -96,6 +105,11 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await wait("document.querySelector('h1')?.textContent === 'edge-01'");
   await top();
   await shot("host-mobile");
+  await evaluate("window.fixture.populateHistory()");
+  await wait("!!document.querySelector('.history svg')");
+  await evaluate("document.querySelector('.history-data').open = true");
+  await section(".cpu-history");
+  await shot("host-history-mobile");
   await navigate("Projects");
   await wait("document.body.innerText.includes('Website')");
   await top();

@@ -233,22 +233,34 @@ function Inventory({
           <Empty>All projects in view are archived.</Empty>
         ) : (
           <div className="table-scroll">
-            <table className="project-table responsive-table">
+            <table
+              role="table"
+              aria-colcount={4}
+              className="project-table responsive-table"
+            >
               <caption className="sr-only">
                 Registered projects and selected features
               </caption>
-              <thead>
-                <tr>
-                  <th>Project</th>
-                  <th>Status</th>
-                  <th>Features</th>
-                  <th>Updated</th>
+              <thead role="rowgroup">
+                <tr role="row">
+                  <th role="columnheader" aria-colindex={1} scope="col">
+                    Project
+                  </th>
+                  <th role="columnheader" aria-colindex={2} scope="col">
+                    Status
+                  </th>
+                  <th role="columnheader" aria-colindex={3} scope="col">
+                    Features
+                  </th>
+                  <th role="columnheader" aria-colindex={4} scope="col">
+                    Updated
+                  </th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody role="rowgroup">
                 {visible.map((p) => (
-                  <tr key={p.id}>
-                    <td data-label="Project">
+                  <tr role="row" key={p.id}>
+                    <td role="cell" aria-colindex={1} data-label="Project">
                       <RouteLink
                         to={{ view: "projects", id: p.id }}
                         className="text-link"
@@ -257,13 +269,13 @@ function Inventory({
                       </RouteLink>
                       <small>{p.description || p.id}</small>
                     </td>
-                    <td data-label="Status">
+                    <td role="cell" aria-colindex={2} data-label="Status">
                       <Tone
                         value={p.archived ? "archived" : "active"}
                         tone="neutral"
                       />
                     </td>
-                    <td data-label="Features">
+                    <td role="cell" aria-colindex={3} data-label="Features">
                       {p.modules.length ? (
                         p.modules.map((m) => (
                           <span className="tag" key={m}>
@@ -276,7 +288,7 @@ function Inventory({
                         <span className="muted">None selected</span>
                       )}
                     </td>
-                    <td data-label="Updated">
+                    <td role="cell" aria-colindex={4} data-label="Updated">
                       <Time value={p.updatedAt} />
                       <small>Revision {p.revision}</small>
                     </td>
@@ -912,6 +924,7 @@ function ProjectDetail({
                       Name
                       <input
                         name="editName"
+                        disabled={busy}
                         value={edit.name}
                         onChange={(e) =>
                           setEdit({ ...edit, name: e.target.value })
@@ -925,6 +938,7 @@ function ProjectDetail({
                       Description
                       <textarea
                         name="editDescription"
+                        disabled={busy}
                         value={edit.description}
                         rows={4}
                         onChange={(e) =>
@@ -934,6 +948,7 @@ function ProjectDetail({
                     </label>
                     <ModulePicker
                       registered
+                      disabled={busy}
                       modules={edit.modules}
                       onChange={(modules) => setEdit({ ...edit, modules })}
                     />
