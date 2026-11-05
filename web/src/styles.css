@@ -1799,7 +1799,7 @@ textarea:disabled {
 .pull-table td small {
   font-size: 12px;
 }
-.host-edit-fields {
+.form fieldset.host-edit-fields {
   border: 0;
   padding: 0;
   margin: 0;
@@ -1826,6 +1826,24 @@ textarea:disabled {
   max-width: 280px;
   min-width: 0;
   white-space: normal;
+}
+.service-table {
+  table-layout: fixed;
+  width: 100%;
+}
+.service-table :is(th, td) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.service-table code {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.service-table th:first-child {
+  width: 36%;
+}
+.service-table th:nth-child(2) {
+  width: 22%;
 }
 .service-request-context,
 .service-pending {
@@ -2032,8 +2050,8 @@ textarea:disabled {
     margin-bottom: 16px;
   }
   .fleet-heading {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 8px;
   }
@@ -2044,21 +2062,20 @@ textarea:disabled {
     display: none;
   }
   .fleet-heading h1 {
-    grid-column: 1;
-    grid-row: 1;
+    flex: 1 1 auto;
+    max-width: 100%;
     font-size: 25px;
     margin: 0;
   }
   .fleet-heading > button {
-    grid-column: 2;
-    grid-row: 1;
-    margin: 0;
+    flex: 0 0 auto;
+    margin: 0 0 0 auto;
     font-size: 12px;
     padding: 8px 10px;
   }
   .fleet-heading .muted {
-    grid-column: 1 / -1;
-    grid-row: 2;
+    flex-basis: 100%;
+    order: 1;
     margin: 0;
   }
   .fleet-summary {

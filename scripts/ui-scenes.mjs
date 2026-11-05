@@ -5,6 +5,8 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   const shot = async (name) => {
     await settle();
     if (!await evaluate("document.documentElement.scrollWidth <= innerWidth")) throw Error(`Horizontal document overflow in ${name}`);
+    if (/host-(retained-services|service-pending|service-queued)/.test(name) && !await evaluate("(() => { const table = document.querySelector('.service-table').parentElement; return table.scrollWidth <= table.clientWidth; })()")) throw Error(`Service requests require sideways scrolling in ${name}`);
+    if (name === "fleet-text-enlarged-mobile" && !await evaluate("(() => { const node = document.querySelector('.fleet-heading h1').firstChild; const word = document.createRange(); word.setStart(node,6); word.setEnd(node,14); return word.getClientRects().length === 1; })()")) throw Error("Enlarged fleet title splits a word across lines");
     await capture(name);
   };
   const navigate = async (name) => {
@@ -13,7 +15,7 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   };
   const top = () => evaluate("window.scrollTo(0, 0)");
   const section = async (selector) => {
-    await evaluate(`document.querySelector(${JSON.stringify(selector)})?.scrollIntoView({block:'start'})`);
+    await evaluate(`(() => { const target = document.querySelector(${JSON.stringify(selector)}); (target?.matches('form') ? target.closest('section') : target)?.scrollIntoView({block:'start'}); })()`);
     await settle();
   };
   await evaluate("window.fixture.visualScene(); document.documentElement.dataset.mode = 'light'");
