@@ -382,7 +382,8 @@ try {
     throw new Error(`Browser assertion timed out: ${expression}`);
   };
   const click = async (text) => {
-    const point = await evaluate(`(() => { const button = [...document.querySelectorAll('button,a')].find(b => !b.closest('details:not([open])') && b.checkVisibility() && b.textContent.trim().startsWith(${JSON.stringify(text)})); if (!button) throw Error('Missing visible fixture control: ' + ${JSON.stringify(text)}); button.scrollIntoView({block:'nearest'}); const r = button.getBoundingClientRect(), x = r.x+r.width/2, y = r.y+r.height/2; if (document.elementFromPoint(x,y)?.closest('button,a') !== button) throw Error('Fixture control is obstructed: ' + ${JSON.stringify(text)}); return {x,y}; })()`);
+    const point = await evaluate(`(async () => { const button = [...document.querySelectorAll('button,a')].find(b => !b.closest('details:not([open])') && b.checkVisibility() && b.textContent.trim().startsWith(${JSON.stringify(text)})); if (!button) throw Error('Missing visible fixture control: ' + ${JSON.stringify(text)}); button.scrollIntoView({block:'nearest'}); await new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done))); const r = button.getBoundingClientRect(), x = r.x+r.width/2, y = r.y+r.height/2; if (!button.isConnected || document.elementFromPoint(x,y)?.closest('button,a') !== button) throw Error('Fixture control is obstructed or changed: ' + ${JSON.stringify(text)}); return {x,y}; })()`);
+    await send("Input.dispatchMouseEvent", { type: "mouseMoved", ...point }, sessionId);
     await send("Input.dispatchMouseEvent", { type: "mousePressed", ...point, button: "left", clickCount: 1 }, sessionId);
     await send("Input.dispatchMouseEvent", { type: "mouseReleased", ...point, button: "left", clickCount: 1 }, sessionId);
   };
@@ -717,6 +718,7 @@ try {
   pass("short desktop sidebars scroll account controls into view");
 
   await click("ADMIN-ONLY-HOST");
+  await wait("location.hash === '#/hosts/private-host'");
   await wait("[...document.querySelectorAll('.page-heading button')].some(b => b.textContent === 'Run diagnostic' && !b.disabled)");
   await click("Run diagnostic");
   await wait("location.hash === '#/jobs/fixture-job-3' && document.querySelector('dialog h2')?.innerText.includes('Diagnostic')");
