@@ -654,10 +654,10 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
         args,
         confirm: action === "service.restart" ? selected : "",
       });
-      setNotice(
-        "Job queued. Its outcome will appear in Jobs and the activity timeline.",
-      );
-      navigate({ view: "jobs", id: queued.id });
+      if (!navigate({ view: "jobs", id: queued.id }))
+        setNotice(
+          `${jobAction(action)} queued for ${current?.name || selected}. Open Remote jobs to view the outcome.`,
+        );
     });
   }
   function theme() {
@@ -2165,10 +2165,10 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                         },
                       );
                       setModal(null);
-                      navigate({ view: "jobs", id: queued.id });
-                      setNotice(
-                        "Reboot queued. Check acceptance and boot observation separately.",
-                      );
+                      if (!navigate({ view: "jobs", id: queued.id }))
+                        setNotice(
+                          `Reboot queued for ${current?.name || selected}. Open Remote jobs to check acceptance and boot observation separately.`,
+                        );
                     } else
                       await api(`/api/hosts/${selected}/revoke`, "POST", {
                         confirm: selected,
@@ -2439,9 +2439,9 @@ function Jobs({
                 <tr role="row" key={j.id}>
                   <td role="cell" aria-colindex={1} data-label="Action">
                     <strong>{jobAction(j.action)}</strong>
-                    <small>
-                      {j.args.service || j.args.diagnostic || j.id.slice(0, 12)}
-                    </small>
+                    {(j.args.service || j.args.diagnostic) && (
+                      <small>{j.args.service || j.args.diagnostic}</small>
+                    )}
                   </td>
                   <td role="cell" aria-colindex={2} data-label="Host">
                     {hosts.find((h) => h.id === j.hostId)?.name || j.hostId}
