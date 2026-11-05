@@ -80,6 +80,8 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await shot("job-outcome-restricted-desktop");
   await evaluate("window.fixture.hostPermissions = ['host.read','logs.read']; Object.assign(window.fixture.jobs[0], {state:'queued',dispatchedAt:0,finishedAt:0,result:null})");
   await click("×");
+  await wait("location.hash === '#/hosts/private-host' && !document.querySelector('dialog[open]')");
+  await navigate("Remote jobs");
   await wait("location.hash === '#/jobs' && document.querySelector('#content').innerText.includes('Cancellation not permitted')");
   await shot("jobs-permissions-limited-desktop");
   await evaluate("window.fixture.hostPermissions = null; history.back()");
@@ -192,6 +194,10 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await evaluate("document.querySelector('.sidebar').scrollTop = 0");
   await viewport(390, 844);
   await shot("fleet-mobile");
+  await evaluate("document.querySelector('.fleet-summary > summary').click()");
+  await wait("document.querySelector('.mobile-enroll').checkVisibility()");
+  await shot("fleet-summary-mobile");
+  await evaluate("document.querySelector('.fleet-summary > summary').click()");
   await evaluate("document.querySelector('.resource-details > summary').click()");
   await wait("document.querySelector('.mobile-host-evidence')?.checkVisibility()");
   await shot("fleet-details-mobile");
@@ -217,7 +223,7 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await evaluate("document.querySelector('.mobile-navigation').open = true");
   await shot("navigation-mobile");
   await viewport(390, 390);
-  await evaluate("document.querySelector('.mobile-menu-body nav').scrollTop = 10000");
+  await evaluate("document.querySelector('.mobile-menu-body .compact-navigation select').focus()");
   await shot("navigation-short-mobile");
   await viewport(390, 844);
   await evaluate("document.querySelector('.mobile-navigation').open = false");
@@ -284,6 +290,18 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await evaluate("document.querySelector('.activity-identifiers').open = true");
   await top();
   await shot("activity-populated-desktop");
+  await evaluate(`(() => { const input = document.querySelector('input[name=activitySearch]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'fixture-account-identifier'); input.dispatchEvent(new Event('input',{bubbles:true})); })()`);
+  await wait("document.querySelectorAll('.activity-event').length === 1");
+  await evaluate(`(() => { const select = document.querySelector('select[name=activityAction]'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(select,'logs.read'); select.dispatchEvent(new Event('change',{bubbles:true})); })()`);
+  await wait("document.querySelectorAll('.activity-event').length === 1");
+  await top();
+  await shot("activity-filtered-desktop");
+  await viewport(390,844);
+  await evaluate("document.querySelector('.activity-identifiers').open = false");
+  await top();
+  await shot("activity-filtered-mobile");
+  await click("Clear activity filters");
+  await wait("document.querySelectorAll('.activity-event').length === 2");
   await viewport(390, 844);
   await evaluate("document.querySelector('.activity-identifiers').open = false");
   await top();

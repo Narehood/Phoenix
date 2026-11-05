@@ -806,8 +806,8 @@ export function GitHubPanel({
         <StatusNotice>{notice}</StatusNotice>
         {!moduleOn && (
           <p className="notice">
-            Repository health is not enabled. Open Project settings below and
-            select Repository health before connecting a repository.
+            Repository observations are not enabled. Open Project settings below
+            and select Repository observations before connecting a repository.
           </p>
         )}
         {project.archived && (
@@ -1014,8 +1014,8 @@ function GitHubSettings({
           </p>
         ) : !usable ? (
           <p className="muted">
-            Enable Repository health in Project settings on an active project
-            before connecting a repository.
+            Enable Repository observations in Project settings on an active
+            project before connecting a repository.
           </p>
         ) : null}
         {conflict && view && (

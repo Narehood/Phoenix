@@ -455,8 +455,9 @@ export function ServiceGuidance({ host }: { host: Host }) {
           : host.connectivity !== "connected"
             ? `Agent ${host.connectivity.replaceAll("_", " ")}. Requests queue for up to 5 minutes awaiting connection.`
             : "Requests run through this host’s agent. Track completion in Remote jobs."}{" "}
-      Restart requires confirmation, recent password/MFA verification and the
-      agent’s local allowlist.
+      Restart requests require confirmation and recent password/MFA
+      verification. The agent rejects services outside its local restart
+      allowlist.
     </p>
   );
 }
@@ -549,11 +550,13 @@ export function ServiceRequests({
           title={
             !can("service.restart")
               ? "Service restart permission required"
-              : undefined
+              : "The agent rejects restarts outside its local service allowlist."
           }
           onClick={() => void request("service.restart")}
         >
-          {pending === "service.restart" ? "Requesting restart…" : "Restart"}
+          {pending === "service.restart"
+            ? "Requesting restart…"
+            : "Request restart"}
         </button>
       </div>
       {(!can("logs.read") || !can("service.restart")) && (

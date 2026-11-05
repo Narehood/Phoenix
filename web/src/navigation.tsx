@@ -55,14 +55,19 @@ export function routeHref(route: Route) {
     return `#/jobs/${encodeURIComponent(route.id)}`;
   return `#/${pages.has(route.view) ? route.view : "fleet"}`;
 }
-function focusHeading() {
+function focusHeading(scrollY = 0, outcomeHref?: string) {
   const frame = requestAnimationFrame(() => {
-    const heading = document.querySelector<HTMLElement>("#content h1");
+    const heading =
+      (outcomeHref &&
+        [
+          ...document.querySelectorAll<HTMLAnchorElement>("#content a[href]"),
+        ].find((link) => link.getAttribute("href") === outcomeHref)) ||
+      document.querySelector<HTMLElement>("#content h1");
     if (heading) {
-      heading.tabIndex = -1;
+      if (!(heading instanceof HTMLAnchorElement)) heading.tabIndex = -1;
       heading.focus({ preventScroll: true });
     }
-    window.scrollTo(0, 0);
+    window.scrollTo(0, scrollY);
   });
   return () => cancelAnimationFrame(frame);
 }
@@ -73,13 +78,23 @@ type Navigation = {
     options?: { replace?: boolean; force?: boolean },
   ) => boolean;
   canLeave: () => boolean;
+  closeOutcome: () => void;
   register: (guard: () => string | null) => () => void;
 };
 const Context = createContext<Navigation | null>(null);
 export function NavigationProvider({ children }: { children: ReactNode }) {
   const [route, setRoute] = useState(readRoute);
   const current = useRef(route);
+  const outcomeOrigin = useRef<{
+    route: Route;
+    scrollY: number;
+    href: string;
+  } | null>(null);
+  const restorePosition = useRef<{ scrollY: number; href: string } | null>(
+    null,
+  );
   const guards = useRef(new Set<() => string | null>());
+  const closingOutcome = useRef(false);
   const register = useCallback((guard: () => string | null) => {
     guards.current.add(guard);
     return () => {
@@ -102,6 +117,19 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
         return true;
       }
       if (!options.force && !canLeave()) return false;
+      restorePosition.current = null;
+      closingOutcome.current = false;
+      if (next.view === "jobs" && next.id) {
+        if (
+          !options.replace &&
+          !(current.current.view === "jobs" && current.current.id)
+        )
+          outcomeOrigin.current = {
+            route: current.current,
+            scrollY: window.scrollY,
+            href: routeHref(next),
+          };
+      } else outcomeOrigin.current = null;
       history[options.replace ? "replaceState" : "pushState"](
         null,
         "",
@@ -113,11 +141,23 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
     },
     [canLeave],
   );
+  const closeOutcome = useCallback(() => {
+    if (closingOutcome.current) return;
+    if (
+      outcomeOrigin.current?.href === routeHref(current.current) &&
+      current.current.view === "jobs" &&
+      current.current.id
+    ) {
+      closingOutcome.current = true;
+      history.back();
+    } else navigate({ view: "jobs" }, { replace: true });
+  }, [navigate]);
   useEffect(() => {
     if (location.hash !== routeHref(current.current))
       history.replaceState(null, "", routeHref(current.current));
     const changed = () => {
       const next = readRoute();
+      closingOutcome.current = false;
       if (routeHref(next) === routeHref(current.current)) {
         if (location.hash !== routeHref(next))
           history.replaceState(null, "", routeHref(next));
@@ -127,6 +167,15 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
         history.pushState(null, "", routeHref(current.current));
         return;
       }
+      const origin = outcomeOrigin.current;
+      if (origin && routeHref(next) === routeHref(origin.route)) {
+        restorePosition.current = {
+          scrollY: origin.scrollY,
+          href: origin.href,
+        };
+        outcomeOrigin.current = null;
+      } else if (!(next.view === "jobs" && next.id))
+        outcomeOrigin.current = null;
       current.current = next;
       if (location.hash !== routeHref(next))
         history.replaceState(null, "", routeHref(next));
@@ -147,9 +196,15 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
       window.removeEventListener("beforeunload", unloading);
     };
   }, [canLeave]);
-  useEffect(focusHeading, [route.view, route.id]);
+  useEffect(() => {
+    const restore = restorePosition.current;
+    restorePosition.current = null;
+    return focusHeading(restore?.scrollY, restore?.href);
+  }, [route.view, route.id]);
   return (
-    <Context.Provider value={{ route, navigate, canLeave, register }}>
+    <Context.Provider
+      value={{ route, navigate, canLeave, closeOutcome, register }}
+    >
       {children}
     </Context.Provider>
   );

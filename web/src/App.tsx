@@ -393,7 +393,9 @@ function ageHost(host: Host, now: number): Host {
 }
 
 function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
-  const { route, navigate, canLeave } = useNavigation();
+  const { route, navigate, canLeave, closeOutcome } = useNavigation();
+  const jobFilterMemory = useRef<Record<string, JobFilters>>({});
+  const activityFilterMemory = useRef<Record<string, ActivityFilters>>({});
   const view = route.view,
     selected = view === "host" ? route.id || "" : "";
   const setView = (next: string) => {
@@ -691,6 +693,27 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
   ];
   const sectionName =
     destinations.find(([key]) => key === view)?.[1] || "Host details";
+  const compactNavigation = (mobile = false) => (
+    <label className="compact-navigation">
+      Workspace section
+      <select
+        aria-label={mobile ? "Mobile workspace section" : "Workspace section"}
+        value={view === "host" ? "fleet" : view}
+        onChange={(event) => {
+          if (navigate({ view: event.target.value })) {
+            const menu = event.currentTarget.closest("details");
+            if (menu) menu.open = false;
+          }
+        }}
+      >
+        {destinations.map(([key, label]) => (
+          <option key={key} value={key}>
+            {label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
   const navigation = (mobile = false) => (
     <nav aria-label={mobile ? "Mobile navigation" : "Main navigation"}>
       {destinations.map(([key, label]) => (
@@ -795,6 +818,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
           </span>
         </RouteLink>
         <span className="nav-label">WORKSPACE</span>
+        {compactNavigation()}
         {navigation()}
         <div className="sidebar-bottom">
           <div className="companion">
@@ -861,6 +885,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
             </summary>
             <div className="mobile-menu-body">
               <p className="nav-scroll-note">↕ Scroll for more sections</p>
+              {compactNavigation(true)}
               {navigation(true)}
               <div className="mobile-account">
                 <b>{user.name}</b>
@@ -947,8 +972,10 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                 className="fleet-summary"
                 label={
                   <>
-                    Fleet summary{" "}
-                    <span className="muted">
+                    {user.role === "admin" && hosts.length
+                      ? "Summary & enrollment"
+                      : "Fleet summary"}{" "}
+                    <span className="muted fleet-summary-count">
                       {sourceLoaded.Hosts
                         ? `${hosts.length} hosts`
                         : sourceErrors.Hosts
@@ -958,6 +985,17 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                   </>
                 }
               >
+                {user.role === "admin" && !!hosts.length && (
+                  <button
+                    className="mobile-enroll"
+                    onClick={() => {
+                      setInvitation(null);
+                      setModal("enroll");
+                    }}
+                  >
+                    Enroll a host
+                  </button>
+                )}
                 <div className="metrics">
                   <Metric
                     label="Managed hosts"
@@ -1827,6 +1865,9 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                   </div>
                 </details>
                 <Jobs
+                  key={current.id}
+                  memory={jobFilterMemory.current}
+                  memoryKey={`host:${current.id}`}
                   loaded={!!sourceLoaded.Jobs}
                   unavailable={!!sourceErrors.Jobs}
                   jobs={hostJobs}
@@ -1835,6 +1876,9 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                   id="host-jobs"
                 />
                 <Activity
+                  key={current.id}
+                  memory={activityFilterMemory.current}
+                  memoryKey={`host:${current.id}`}
                   hosts={hosts}
                   loaded={!!sourceLoaded.Activity}
                   unavailable={!!sourceErrors.Activity}
@@ -1855,6 +1899,8 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                 </div>
               </div>
               <Jobs
+                memory={jobFilterMemory.current}
+                memoryKey="all"
                 loaded={!!sourceLoaded.Jobs}
                 unavailable={!!sourceErrors.Jobs}
                 jobs={jobs}
@@ -1876,6 +1922,8 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                 </div>
               </div>
               <Activity
+                memory={activityFilterMemory.current}
+                memoryKey="all"
                 hosts={hosts}
                 loaded={!!sourceLoaded.Activity}
                 audit={audit}
@@ -2220,11 +2268,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
         </Dialog>
       )}
       {view === "jobs" && route.id && (
-        <JobOutcome
-          key={route.id}
-          id={route.id}
-          onClose={() => navigate({ view: "jobs" }, { replace: true })}
-        />
+        <JobOutcome key={route.id} id={route.id} onClose={closeOutcome} />
       )}
     </div>
   );
@@ -2393,7 +2437,10 @@ function History({ samples }: { samples: Reading[] }) {
     </div>
   );
 }
+type JobFilters = { query: string; state: string; action: string };
 function Jobs({
+  memory,
+  memoryKey,
   jobs,
   hosts,
   onChanged,
@@ -2401,6 +2448,8 @@ function Jobs({
   loaded,
   unavailable = false,
 }: {
+  memory: Record<string, JobFilters>;
+  memoryKey: string;
   jobs: Job[];
   hosts: Host[];
   onChanged: () => void;
@@ -2408,9 +2457,18 @@ function Jobs({
   loaded: boolean;
   unavailable?: boolean;
 }) {
-  const [query, setQuery] = useState(""),
-    [state, setState] = useState(""),
-    [action, setAction] = useState("");
+  const [filters, setFilters] = useState<JobFilters>(
+    () => memory[memoryKey] || { query: "", state: "", action: "" },
+  );
+  const { query, state, action } = filters;
+  const changeFilters = (patch: Partial<JobFilters>) => {
+    const next = { ...filters, ...patch };
+    memory[memoryKey] = next;
+    setFilters(next);
+  };
+  const setQuery = (query: string) => changeFilters({ query });
+  const setState = (state: string) => changeFilters({ state });
+  const setAction = (action: string) => changeFilters({ action });
   const boundsId = useId();
   const hostName = (job: Job) =>
     hosts.find((host) => host.id === job.hostId)?.name ||
@@ -2425,9 +2483,7 @@ function Jobs({
         .includes(query.trim().toLowerCase()),
   );
   const clearFilters = () => {
-    setQuery("");
-    setState("");
-    setAction("");
+    changeFilters({ query: "", state: "", action: "" });
   };
   return (
     <section className="panel jobs-panel" id={id}>
@@ -2618,23 +2674,116 @@ function Jobs({
     </section>
   );
 }
+function activityAction(action: string) {
+  return (
+    (
+      {
+        setup: "Workspace setup",
+        "sessions.revoke": "Sessions revoked",
+        "account.create": "Account created",
+        "account.disable": "Account disabled",
+        "grants.replace": "Account permissions replaced",
+        "canary.mapping": "Uptime mappings updated",
+        "inventory.update": "Host details updated",
+        "invitation.create": "Enrollment invitation issued",
+        "agent.enroll": "Agent enrolled",
+        "agent.approve": "Agent approved",
+        "agent.revoke": "Agent revoked",
+        "certificate.rotate": "Agent certificate rotated",
+        "receipt.unmatched": "Unmatched agent receipt",
+        "admin.recover": "Administrator recovery",
+      } as Record<string, string>
+    )[action] || jobAction(action)
+  );
+}
+type ActivityFilters = { query: string; action: string };
 function Activity({
+  memory,
+  memoryKey,
   audit,
   hosts,
   loaded,
   unavailable = false,
 }: {
+  memory: Record<string, ActivityFilters>;
+  memoryKey: string;
   audit: Audit[];
   hosts: Host[];
   loaded: boolean;
   unavailable?: boolean;
 }) {
+  const [filters, setFilters] = useState<ActivityFilters>(
+    () => memory[memoryKey] || { query: "", action: "" },
+  );
+  const { query, action } = filters;
+  const changeFilters = (patch: Partial<ActivityFilters>) => {
+    const next = { ...filters, ...patch };
+    memory[memoryKey] = next;
+    setFilters(next);
+  };
+  const setQuery = (query: string) => changeFilters({ query });
+  const setAction = (action: string) => changeFilters({ action });
+  const boundsId = useId();
+  const filtered = audit.filter(
+    (event) =>
+      (!action || event.action === action) &&
+      `${activityAction(event.action)} ${event.action} ${event.actor} ${event.hostId} ${hosts.find((host) => host.id === event.hostId)?.name || ""} ${event.jobId} ${event.state.replaceAll("_", " ")}`
+        .toLowerCase()
+        .includes(query.trim().toLowerCase()),
+  );
+  const clearFilters = () => changeFilters({ query: "", action: "" });
   return (
-    <section className="panel">
+    <section className="panel activity-panel">
       <div className="panel-heading">
         <h2>Activity timeline</h2>
-        <span className="muted">Latest 500 · retained 90 days</span>
+        <span className="muted" id={boundsId} role="status">
+          {!!audit.length && `${filtered.length} of ${audit.length} · `}
+          Within latest 500 · retained 90 days
+        </span>
       </div>
+      <form
+        className="activity-filters"
+        role="search"
+        aria-label="Filter activity"
+        aria-describedby={boundsId}
+        onSubmit={(event) => event.preventDefault()}
+      >
+        <label>
+          Search activity
+          <input
+            type="search"
+            name="activitySearch"
+            placeholder="Action, actor, host or job ID…"
+            value={query}
+            disabled={!loaded || !audit.length}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </label>
+        <label>
+          Action
+          <select
+            name="activityAction"
+            value={action}
+            disabled={!loaded || !audit.length}
+            onChange={(event) => setAction(event.target.value)}
+          >
+            <option value="">All actions</option>
+            {[...new Set([action, ...audit.map((event) => event.action)])]
+              .filter(Boolean)
+              .sort()
+              .map((value) => (
+                <option key={value} value={value}>
+                  {activityAction(value)}
+                </option>
+              ))}
+          </select>
+        </label>
+        {(query || action) && (
+          <button type="button" onClick={clearFilters}>
+            Clear activity filters
+          </button>
+        )}
+      </form>
       {!audit.length ? (
         <Empty>
           {unavailable
@@ -2643,29 +2792,18 @@ function Activity({
               ? "Loading activity history…"
               : "No activity in view."}
         </Empty>
+      ) : !filtered.length ? (
+        <Empty>
+          No matching events within the latest 500.{" "}
+          <button type="button" onClick={clearFilters}>
+            Clear activity filters
+          </button>
+        </Empty>
       ) : (
         <ol className="timeline">
-          {audit.map((a) => {
+          {filtered.map((a) => {
             const host = hosts.find((host) => host.id === a.hostId);
-            const label =
-              (
-                {
-                  setup: "Workspace setup",
-                  "sessions.revoke": "Sessions revoked",
-                  "account.create": "Account created",
-                  "account.disable": "Account disabled",
-                  "grants.replace": "Account permissions replaced",
-                  "canary.mapping": "Uptime mappings updated",
-                  "inventory.update": "Host details updated",
-                  "invitation.create": "Enrollment invitation issued",
-                  "agent.enroll": "Agent enrolled",
-                  "agent.approve": "Agent approved",
-                  "agent.revoke": "Agent revoked",
-                  "certificate.rotate": "Agent certificate rotated",
-                  "receipt.unmatched": "Unmatched agent receipt",
-                  "admin.recover": "Administrator recovery",
-                } as Record<string, string>
-              )[a.action] || jobAction(a.action);
+            const label = activityAction(a.action);
             return (
               <li key={a.id}>
                 <span className="timeline-dot" />

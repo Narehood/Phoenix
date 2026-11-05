@@ -16,8 +16,8 @@ const actionLabels: Record<string, string> = {
   "jobs.cancel": "Cancel jobs",
   "project.read": "View project",
   "project.manage": "Edit project details",
-  "github.read": "View repository health",
-  "github.sync": "Refresh repository health",
+  "github.read": "View repository observations",
+  "github.sync": "Refresh repository observations",
 };
 
 const hostActions = [
@@ -439,7 +439,7 @@ export function GrantEditor({
                       {scopeType === "host"
                         ? hosts.map((host) => (
                             <option key={host.id} value={host.id}>
-                              {host.name}
+                              {host.name} ({host.id})
                             </option>
                           ))
                         : groups.map((group) => (
@@ -562,6 +562,12 @@ export function GrantEditor({
                               ? "All hosts"
                               : `${grant.scopeType === "project" ? "Project" : grant.scopeType === "host" ? "Host" : "Group"}: ${scopeName(grant) || grant.scope}`}
                           </span>
+                          {["host", "project"].includes(grant.scopeType) && (
+                            <small>
+                              {grant.scopeType === "host" ? "Host" : "Project"}{" "}
+                              ID: <code>{grant.scope}</code>
+                            </small>
+                          )}
                         </li>
                       ))}
                     </ul>

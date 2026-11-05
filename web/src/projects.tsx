@@ -14,7 +14,10 @@ import {
 import { RouteLink, useNavigation, useUnsavedChanges } from "./navigation";
 
 export const moduleInfo: [string, string][] = [
-  ["dependencies", "Repository health · read-only GitHub checks and alerts"],
+  [
+    "dependencies",
+    "Repository observations · read-only GitHub checks and alerts",
+  ],
   ["documentation", "Documentation · planned"],
   ["content", "Content · planned"],
   ["releases", "Releases · planned"],
@@ -286,7 +289,7 @@ function Inventory({
                         p.modules.map((m) => (
                           <span className="tag" key={m}>
                             {m === "dependencies"
-                              ? "Repository health"
+                              ? "Repository observations"
                               : m + " · planned"}
                           </span>
                         ))
@@ -1035,7 +1038,7 @@ function ProjectDetail({
                           <tr key={m.id}>
                             <td>
                               {m.id === "dependencies"
-                                ? "Repository health"
+                                ? "Repository observations"
                                 : m.id}
                               <small>
                                 {m.enabled ? "Selected" : "Not selected"}

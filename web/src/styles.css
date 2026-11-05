@@ -3039,6 +3039,42 @@ textarea:disabled {
   line-height: 1.6;
   color: var(--text-2);
 }
+.compact-navigation,
+.mobile-enroll {
+  display: none;
+}
+.compact-navigation select {
+  width: 100%;
+  min-height: 44px;
+}
+.activity-filters {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.activity-filters label {
+  display: grid;
+  gap: 5px;
+  flex: 1 1 180px;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.activity-filters label:first-child {
+  flex: 2 1 280px;
+}
+.activity-filters :is(input, select) {
+  width: 100%;
+  font-weight: 400;
+}
+.grant-change-columns small {
+  display: block;
+  overflow-wrap: anywhere;
+  color: var(--text-2);
+}
 @media (max-height: 600px) and (min-width: 721px) {
   .sidebar {
     padding-top: 12px;
@@ -3048,14 +3084,21 @@ textarea:disabled {
     padding-bottom: 10px;
   }
   .sidebar > .nav-label,
+  .sidebar > .nav-scroll-note,
+  .sidebar > nav,
   .sidebar-bottom :is(.companion, p) {
     display: none;
   }
-  .sidebar > nav {
-    min-height: 44px;
-    flex: 1 1 auto;
-    overflow-y: auto;
-    overscroll-behavior: contain;
+  .sidebar > .compact-navigation {
+    display: grid;
+    gap: 6px;
+    padding: 8px;
+    font-size: 13px;
+  }
+  .sidebar > .compact-navigation select {
+    background: var(--ink);
+    color: var(--ink-text-1);
+    border-color: var(--ink-muted);
   }
   .sidebar-bottom {
     margin-top: 0;
@@ -3073,10 +3116,19 @@ textarea:disabled {
     overflow: hidden;
   }
   .mobile-menu-body nav {
-    flex: 1 1 auto;
-    min-height: 44px;
-    overflow-y: auto;
-    overscroll-behavior: contain;
+    display: none;
+  }
+  .mobile-menu-body > .nav-scroll-note {
+    display: none;
+  }
+  .mobile-menu-body > .compact-navigation {
+    display: grid;
+    gap: 6px;
+    font-size: 13px;
+    padding: 0 8px 6px;
+  }
+  .mobile-menu-body .compact-navigation select {
+    font-size: 16px;
   }
   .mobile-account {
     flex-shrink: 0;
@@ -3088,6 +3140,36 @@ textarea:disabled {
   }
 }
 @media (max-width: 720px) {
+  .sidebar {
+    padding: 10px 14px;
+  }
+  .brand img {
+    width: 28px;
+    height: 28px;
+  }
+  .brand span {
+    font-size: 20px;
+  }
+  .fleet-heading > .enroll-existing,
+  .fleet-summary-count {
+    display: none;
+  }
+  .mobile-enroll {
+    display: inline-flex;
+    min-height: 44px;
+    margin: 0 12px 12px;
+  }
+  .fleet-panel > .panel-heading {
+    padding: 10px 12px;
+    gap: 8px;
+  }
+  .activity-filters {
+    padding: 12px 14px;
+  }
+  .activity-filters :is(input, select, button) {
+    min-height: 44px;
+    font-size: 16px;
+  }
   .project-actor summary {
     min-height: 44px;
   }
