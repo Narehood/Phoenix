@@ -3114,7 +3114,7 @@ textarea:disabled {
     background: var(--surface-2);
   }
   .fleet-compare .fleet-table :is(thead, tbody) tr {
-    grid-template-columns: minmax(0, 1.3fr) repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 4px 8px;
     padding: 6px 12px;
     align-items: center;
@@ -3127,7 +3127,7 @@ textarea:disabled {
     text-transform: none;
     letter-spacing: 0;
   }
-  .fleet-compare .fleet-table th:last-child {
+  .fleet-compare .fleet-table :is(th:first-child, th:last-child) {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -3135,7 +3135,7 @@ textarea:disabled {
     clip-path: inset(50%);
   }
   .fleet-compare .fleet-table td[data-label="Host"] {
-    grid-column: 1;
+    grid-column: 1 / -1;
     grid-row: 1;
   }
   .fleet-compare .host-identity > a {
@@ -3149,22 +3149,25 @@ textarea:disabled {
     display: none;
   }
   .fleet-compare .fleet-table td[data-label="Canary uptime"] {
-    grid-column: 2;
-    grid-row: 1;
+    grid-column: 1;
+    grid-row: 2;
   }
   .fleet-compare .fleet-table td[data-label="Agent connection"] {
-    grid-column: 3;
-    grid-row: 1;
+    grid-column: 2;
+    grid-row: 2;
   }
   .fleet-compare .fleet-table td[data-label="Reading freshness"] {
     display: flex;
-    grid-column: 4;
-    grid-row: 1;
+    grid-column: 3;
+    grid-row: 2;
   }
   .fleet-compare .fleet-table .chip {
     padding: 0;
     background: transparent;
     font-size: 13px;
+  }
+  .fleet-compare .fleet-table .chip > span:first-child {
+    display: none;
   }
   .fleet-compare .fleet-table td[data-label="Resources"],
   .fleet-compare .fleet-table td[data-label="Reading freshness"]::before,
@@ -3177,7 +3180,7 @@ textarea:disabled {
     td[data-label="Resources"] {
     display: flex;
     grid-column: 1 / -1;
-    grid-row: 2;
+    grid-row: 3;
   }
   .fleet-compare .desktop-resource-warning {
     display: block;
