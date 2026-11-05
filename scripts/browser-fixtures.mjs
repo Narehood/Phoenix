@@ -770,7 +770,7 @@ try {
   await evaluate("window.fixture.audit = [{id:1,at:Date.now(),actor:'fixture-actor-full-identifier-123456',hostId:'private-host',jobId:'fixture-job-1',action:'logs.read',state:'cancellation_requested'},{id:2,at:Date.now(),actor:'fixture-admin',hostId:'',jobId:'',action:'grants.replace',state:'completed'}]");
   await click("Activity & audit");
   await wait("document.querySelectorAll('.activity-event').length === 2");
-  assert.ok(await evaluate("document.querySelector('.timeline').innerText.includes('Account permissions replaced') && document.querySelector('.timeline a[href=\"#/hosts/private-host\"]')?.textContent === 'ADMIN-ONLY-HOST' && document.querySelector('.timeline a[href=\"#/jobs/fixture-job-1\"]')"), "Activity loses readable action labels or exact host/job destinations");
+  assert.ok(await evaluate("document.querySelector('.timeline').innerText.includes('Account permissions replaced') && document.querySelector('.timeline a[href=\"#/hosts/private-host\"]')?.textContent === 'ADMIN-ONLY-HOST' && !!document.querySelector('.timeline a[href=\"#/jobs/fixture-job-1\"]')"), "Activity loses readable action labels or exact host/job destinations");
   await evaluate("document.querySelector('.activity-identifiers').open = true");
   assert.ok(await evaluate("document.querySelector('.activity-identifiers').innerText.includes('fixture-actor-full-identifier-123456') && document.querySelector('.activity-identifiers').innerText.includes('fixture-job-1') && document.querySelector('.activity-identifiers').innerText.includes('private-host')"), "Activity exact identities cannot be recovered");
   await click("View job outcome");
