@@ -20,6 +20,7 @@ import { GrantEditor } from "./grants";
 import {
   HostInventoryForm,
   MappingForm,
+  ServiceGuidance,
   ServiceRequests,
 } from "./host-controls";
 import {
@@ -49,6 +50,13 @@ const needsAttention = (host: Host) =>
   host.freshness === "stale" ||
   host.freshness === "unknown" ||
   host.resourceHealth === "warning";
+type HostDetail = { host: Host; samples: Reading[]; permissions?: string[] };
+const requestNames = [
+  ["diagnostic", "diagnostics"],
+  ["logs.read", "service logs"],
+  ["service.restart", "service restarts"],
+  ["host.reboot", "host reboot"],
+];
 function resourceSummary(reading?: Reading | null) {
   if (!reading) return "No measurements available";
   const percentage = (value: number | null) =>
@@ -378,9 +386,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
     }),
     [jobs, setJobs] = useState<Job[]>([]),
     [audit, setAudit] = useState<Audit[]>([]),
-    [detail, setDetail] = useState<{ host: Host; samples: Reading[] } | null>(
-      null,
-    ),
+    [detail, setDetail] = useState<HostDetail | null>(null),
     [error, setError] = useState(""),
     [sourceErrors, setSourceErrors] = useState<Record<string, string>>({}),
     [sourceLoaded, setSourceLoaded] = useState<Record<string, boolean>>({}),
@@ -540,9 +546,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
       const version = (versions.current.Detail =
         (versions.current.Detail || 0) + 1);
       try {
-        const d = await api<{ host: Host; samples: Reading[] }>(
-          `/api/hosts/${selected}`,
-        );
+        const d = await api<HostDetail>(`/api/hosts/${selected}`);
         if (alive && version === versions.current.Detail) {
           setDetail(d);
           setDetailError("");
@@ -609,7 +613,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
     }
   }
   async function job(action: string, args: object = {}) {
-    if (!selected) return;
+    if (!selected || !canRequest(action)) return;
     await act(async () => {
       await api(`/api/hosts/${selected}/jobs`, "POST", {
         action,
@@ -684,6 +688,16 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
       : hosts.find((h) => h.id === selected),
     reading = current?.latest;
   const retainedReading = !!reading && current?.freshness !== "fresh";
+  const hostPermissions = !detailError
+    ? selectedDetail?.permissions
+    : undefined;
+  const canRequest = (action: string) =>
+    !!hostPermissions?.includes(action) &&
+    !!current?.verified &&
+    !current.revoked;
+  const permittedRequests = requestNames
+    .filter(([key]) => hostPermissions?.includes(key))
+    .map(([, label]) => label);
   const attentionCount = hosts.filter(needsAttention).length;
   const filtered = hosts.filter(
     (h) =>
@@ -974,7 +988,8 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                   <input
                     className="search"
                     aria-label="Search hosts"
-                    placeholder="Search name, address, tag or group…"
+                    placeholder="Search hosts…"
+                    title="Search by name, address, tag or group"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                   />
@@ -1156,8 +1171,33 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                               )}
                               <ResponsiveDetails
                                 className="resource-details"
-                                label="Resource readings"
+                                label={
+                                  <>
+                                    <span className="resource-disclosure-label">
+                                      {h.latest &&
+                                        h.freshness !== "fresh" &&
+                                        "Last known · "}
+                                      {resourceSummary(h.latest)}
+                                    </span>
+                                    <span className="resource-disclosure-action">
+                                      Details
+                                    </span>
+                                  </>
+                                }
                               >
+                                <div className="mobile-host-evidence">
+                                  <p>
+                                    {h.osVersion || "Awaiting enrollment"} ·{" "}
+                                    {h.addresses.join(", ") || "No address"}
+                                  </p>
+                                  <p>
+                                    Groups: {h.groups.join(", ") || "None"} ·{" "}
+                                    {mappings(h).length} mapped monitors
+                                  </p>
+                                  <p>
+                                    Agent contact <Time value={h.lastContact} />
+                                  </p>
+                                </div>
                                 <small className="mobile-reading-time">
                                   Measured{" "}
                                   <Time value={h.latest?.measuredAt || 0} />
@@ -1298,7 +1338,12 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                               diagnostic: "system.summary",
                             })
                           }
-                          disabled={busy}
+                          disabled={busy || !canRequest("diagnostic")}
+                          title={
+                            !canRequest("diagnostic")
+                              ? "Requires diagnostic permission and a verified, non-revoked agent"
+                              : undefined
+                          }
                         >
                           Run diagnostic
                         </button>
@@ -1314,6 +1359,12 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                         <div className="button-row">
                           <button
                             className="danger"
+                            disabled={!canRequest("host.reboot")}
+                            title={
+                              !canRequest("host.reboot")
+                                ? "Requires host reboot permission and a verified, non-revoked agent"
+                                : undefined
+                            }
                             onClick={() => setModal("reboot")}
                           >
                             Reboot host
@@ -1331,6 +1382,15 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                     )}
                   </div>
                 </div>
+                {user.role !== "viewer" &&
+                  (user.role === "operator" ||
+                    permittedRequests.length < requestNames.length) && (
+                    <p className="host-permission-context">
+                      {!hostPermissions
+                        ? "Action permissions unavailable. Requests stay disabled until host details can be read."
+                        : `Your permitted requests: ${permittedRequests.join(", ") || "none"}. Each request is checked again when submitted.`}
+                    </p>
+                  )}
                 <div className="metrics host-status">
                   <Metric
                     label="Canary uptime"
@@ -1450,7 +1510,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                     </section>
                   </>
                 )}
-                <div className="two-columns">
+                <div className="host-observations">
                   <section className="panel">
                     <div className="panel-heading">
                       <h2>systemd services</h2>
@@ -1460,6 +1520,9 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                           : "Service state snapshot"}
                       </span>
                     </div>
+                    {user.role !== "viewer" && (
+                      <ServiceGuidance host={current} />
+                    )}
                     {!reading?.services.length ? (
                       <Empty>No service readings available.</Empty>
                     ) : (
@@ -1532,6 +1595,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                                       key={current.id + "/" + s.name}
                                       host={current}
                                       service={s.name}
+                                      permissions={hostPermissions}
                                       onQueued={() => void refresh()}
                                       onVerify={() => setModal("auth")}
                                     />
@@ -1547,10 +1611,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                     )}
                     {retainedReading && (
                       <p className="snapshot-action-note">
-                        Service states are last known and may have changed. Logs
-                        and restart send new requests to this host’s agent;
-                        restart still requires confirmation and the agent’s
-                        allowlist.
+                        Service states are last known and may have changed.
                       </p>
                     )}
                   </section>
@@ -1637,6 +1698,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                       <HostInventoryForm
                         key={current.id}
                         host={current}
+                        canEdit={!!hostPermissions?.includes("host.manage")}
                         onSaved={() => {
                           refreshDetail.current();
                           void refresh();

@@ -149,7 +149,19 @@ func (s *Server) hostDetail(w http.ResponseWriter, r *http.Request, u core.User)
 	if e != nil {
 		return e
 	}
-	write(w, 200, map[string]any{"host": h, "samples": samples, "now": s.Now().UnixMilli()})
+	// Advisory UI permissions use the same grant checks as job submission.
+	// Every mutation still rechecks authorization when it is submitted.
+	permissions := []string{}
+	for _, action := range []string{"host.read", "host.manage", "diagnostic", "service.restart", "services.inspect", "logs.read", "host.reboot", "jobs.output", "jobs.cancel"} {
+		ok, e := s.allowed(u.ID, h.ID, action)
+		if e != nil {
+			return e
+		}
+		if ok {
+			permissions = append(permissions, action)
+		}
+	}
+	write(w, 200, map[string]any{"host": h, "samples": samples, "permissions": permissions, "now": s.Now().UnixMilli()})
 	return nil
 }
 func (s *Server) updateHost(w http.ResponseWriter, r *http.Request, u core.User) error {

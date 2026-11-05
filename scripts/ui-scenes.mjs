@@ -5,7 +5,7 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   const shot = async (name) => {
     await settle();
     if (!await evaluate("document.documentElement.scrollWidth <= innerWidth")) throw Error(`Horizontal document overflow in ${name}`);
-    if (/host-(retained-services|service-pending|service-queued)/.test(name) && !await evaluate("(() => { const table = document.querySelector('.service-table').parentElement; return table.scrollWidth <= table.clientWidth; })()")) throw Error(`Service requests require sideways scrolling in ${name}`);
+    if (/host-(retained-services|service-pending|service-queued|services-multiple)/.test(name) && !await evaluate("(() => { const table = document.querySelector('.service-table').parentElement; return table.scrollWidth <= table.clientWidth; })()")) throw Error(`Service requests require sideways scrolling in ${name}`);
     if (name === "fleet-text-enlarged-mobile" && !await evaluate("(() => { const node = document.querySelector('.fleet-heading h1').firstChild; const word = document.createRange(); word.setStart(node,6); word.setEnd(node,14); return word.getClientRects().length === 1; })()")) throw Error("Enlarged fleet title splits a word across lines");
     await capture(name);
   };
@@ -27,6 +27,16 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await evaluate("document.querySelector('.host-actions').open = true");
   await shot("host-management-desktop");
   await evaluate("document.querySelector('.host-actions').open = false");
+  await evaluate("window.fixture.savedServices = window.fixture.hosts[0].latest.services; window.fixture.hosts[0].latest.services = ['phoenix-acceptance.service','systemd-journald.service','systemd-networkd.service','cron.service'].map(name => ({name,load:'loaded',active:'active',sub:'running'}))");
+  await wait("document.querySelectorAll('.service-requests').length === 4");
+  await section(".host-observations > section");
+  await shot("host-services-multiple-desktop");
+  await evaluate("window.fixture.hosts[0].latest.services = window.fixture.savedServices; delete window.fixture.savedServices; window.fixture.hostPermissions = ['host.read','logs.read']");
+  await wait("document.querySelectorAll('.service-requests').length === 1 && document.querySelector('.service-permission-note')?.innerText.includes('not permitted')");
+  await top();
+  await shot("host-permissions-limited-desktop");
+  await evaluate("window.fixture.hostPermissions = null");
+  await wait("!document.querySelector('.service-requests button:nth-child(2)').disabled");
   await evaluate("window.fixture.populateHistory()");
   await wait("!!document.querySelector('.history svg')");
   await shot("host-history-desktop");
@@ -79,6 +89,13 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await click("Website");
   await wait("document.querySelector('h1')?.textContent.includes('Website') && document.body.innerText.includes('example/website')");
   await shot("repository-desktop");
+  await evaluate("window.fixture.hold.add('POST /api/projects/website/github/sync')");
+  await click("Request refresh");
+  await wait("typeof window.fixture.holds['POST /api/projects/website/github/sync'] === 'function'");
+  await top();
+  await shot("repository-refresh-pending-desktop");
+  await evaluate("window.fixture.holds['POST /api/projects/website/github/sync']()");
+  await wait("document.querySelector('.github-feedback')?.innerText.includes('Refresh is cooling down')");
   await section(".github .section");
   await shot("repository-checks-desktop");
   await evaluate("document.querySelector('.project-settings > summary').click()");
@@ -115,6 +132,10 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await evaluate("document.querySelector('.sidebar').scrollTop = 0");
   await viewport(390, 844);
   await shot("fleet-mobile");
+  await evaluate("document.querySelector('.resource-details > summary').click()");
+  await wait("document.querySelector('.mobile-host-evidence')?.checkVisibility()");
+  await shot("fleet-details-mobile");
+  await evaluate("document.querySelector('.resource-details > summary').click()");
   await evaluate("window.fixture.longFleet()");
   await wait("document.querySelectorAll('.fleet-table tbody tr').length === 12");
   await top();

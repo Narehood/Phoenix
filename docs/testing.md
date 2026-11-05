@@ -68,9 +68,11 @@ removed. This is container evidence, not an installed-host restore drill.
 
 The browser regressions use the built dashboard with temporary API fixtures.
 They cover independently held initial reads, local aging of positive evidence,
-project/grant controls during delayed saves, and populated CPU history with gaps
-and missing values. Chrome accessibility-tree checks retain responsive table
-roles and column headers; these are not a screen-reader acceptance test.
+project/grant/host controls during delayed saves, guarded service submissions,
+effective host-action permissions, compact mobile summaries, and populated CPU
+history with gaps and missing values. Chrome accessibility-tree checks retain
+responsive table roles and column headers; these are not a screen-reader
+acceptance test.
 The smoke uses real APIs but does not drive a browser. Neither substitutes for
 manual end-to-end browser acceptance. Container systemd service/log inspection
 may be unavailable; the smoke never installs or executes the root helper.
@@ -87,7 +89,7 @@ administrative-action failure.
 | Authentication | Complete setup/TOTP, sign out/in, refresh identity, expire/revoke a session; rejected access must not leave another user's data on screen. |
 | Hosts | Enroll and compare fingerprint through a trusted channel before approval; compare two telemetry samples and process/service/log readings with the test host; disconnect one agent and distinguish offline from stale resources and Canary status. |
 | Jobs | Run the fixed diagnostic; use only the new disposable acceptance service for a confirmed allowlisted restart; verify forbidden services/shell and unauthorized output are refused; verify audit and uncertainty handling. Do not test real reboot. |
-| Accounts | Create an operator and viewer with narrow host/project grants; verify role ceilings, inaccessible resources, failed grant loading and preservation of mixed grants. |
+| Accounts | Create an operator and viewer with narrow host/project grants; verify role ceilings, inaccessible resources, failed grant loading and preservation of mixed grants. Confirm host request controls reflect effective action grants, update after grant removal, and stay disabled when permissions cannot be loaded; submitted requests must still be authorized by the server. |
 | Projects | Start empty; register a temporary project, edit metadata, provoke a two-tab revision conflict, archive and restore; verify bounded audit and explicit unsupported modules. |
 | GitHub | Optionally connect an operator-supplied disposable repository with a dedicated read-only token; verify PR checks/reviews, recent push CI and Dependabot observations, cooldowns and stale/permission states; disable/disconnect and ensure old observations do not reappear. Empty results never prove packages current. |
 | Canary | Only with a reachable operator-supplied node API/viewer account, verify source/build, independent freshness, mappings and unavailable-source behavior. Do not modify Canary or contact notification destinations. |

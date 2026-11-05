@@ -28,6 +28,10 @@ button:hover {
 }
 button:disabled {
   opacity: 0.5;
+  cursor: not-allowed;
+}
+[aria-busy="true"] button:disabled,
+button[aria-busy="true"] {
   cursor: wait;
 }
 button.primary {
@@ -350,7 +354,7 @@ main#content {
   margin: 0;
 }
 .panel-heading > .muted {
-  font-size: 11px;
+  font-size: 13px;
 }
 .panel-body {
   padding: 20px;
@@ -1797,7 +1801,7 @@ textarea:disabled {
 }
 .fleet-table td small,
 .pull-table td small {
-  font-size: 12px;
+  font-size: 13px;
 }
 .form fieldset.host-edit-fields {
   border: 0;
@@ -1823,7 +1827,7 @@ textarea:disabled {
   margin: 12px 0;
 }
 .service-requests {
-  max-width: 280px;
+  max-width: 540px;
   min-width: 0;
   white-space: normal;
 }
@@ -1840,14 +1844,96 @@ textarea:disabled {
   overflow-wrap: anywhere;
 }
 .service-table th:first-child {
-  width: 36%;
+  width: 38%;
 }
 .service-table th:nth-child(2) {
-  width: 22%;
+  width: 18%;
 }
-.service-request-context,
+.service-guidance,
+.host-permission-context {
+  padding: 12px 20px;
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-2);
+  border-bottom: 1px solid var(--border);
+}
+.host-permission-context {
+  padding: 0 0 16px;
+  border: 0;
+}
+.service-permission-note {
+  color: var(--text-2);
+}
+.service-receipt-time {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-right: 8px;
+}
+.service-requests .status-notice {
+  padding: 8px 12px;
+}
+.mobile-host-evidence {
+  display: none;
+}
+.collection-summary,
+.collection-coverage,
+.repository-identity p,
+.github .coverage-note,
+.service-table small {
+  font-size: 13px;
+}
+.collection-coverage {
+  max-width: 760px;
+  color: var(--text-2);
+}
+@media (max-width: 720px) {
+  .fleet-table tbody tr {
+    padding: 10px 12px;
+    gap: 4px 10px;
+  }
+  .fleet-table .host-metadata,
+  .fleet-table td[data-label="Canary uptime"] > small,
+  .fleet-table td[data-label="Agent connection"] > small {
+    display: none;
+  }
+  .mobile-host-evidence {
+    display: block;
+    margin: 8px 0;
+    color: var(--text-2);
+    font-size: 13px;
+  }
+  .mobile-host-evidence p {
+    margin: 4px 0;
+  }
+  .resource-details.responsive-details > summary {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 44px;
+    padding: 6px 0;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-2);
+  }
+  .resource-disclosure-label {
+    flex: 1;
+    min-width: 0;
+  }
+  .resource-disclosure-action {
+    color: var(--accent-text);
+    font-weight: 650;
+  }
+  .fleet-table .resource-details .resource-summary {
+    gap: 10px;
+  }
+  .service-guidance {
+    padding: 12px 16px;
+  }
+}
 .service-pending {
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.4;
   margin: 0 0 8px;
   color: var(--text-2);

@@ -151,10 +151,12 @@ function Feedback({
 
 export function HostInventoryForm({
   host,
+  canEdit,
   onSaved,
   onVerify,
 }: {
   host: Host;
+  canEdit: boolean;
   onSaved: () => void;
   onVerify: () => void;
 }) {
@@ -171,6 +173,7 @@ export function HostInventoryForm({
       aria-busy={model.busy}
       onSubmit={(event) => {
         event.preventDefault();
+        if (!canEdit) return;
         const submitted = {
           ...model.draft,
           tags: split(model.draft.tags).join(", "),
@@ -210,7 +213,13 @@ export function HostInventoryForm({
           )
         }
       />
-      <fieldset className="host-edit-fields" disabled={model.busy}>
+      {!canEdit && (
+        <p className="muted">
+          Editing inventory requires permission to manage this host. Any draft
+          is kept.
+        </p>
+      )}
+      <fieldset className="host-edit-fields" disabled={model.busy || !canEdit}>
         <label>
           Display name
           <input
@@ -247,7 +256,7 @@ export function HostInventoryForm({
       <div className="button-row">
         <button
           className="primary"
-          disabled={model.busy || !model.dirty || !!model.incoming}
+          disabled={model.busy || !canEdit || !model.dirty || !!model.incoming}
         >
           {model.busy ? "Saving inventory…" : "Save inventory"}
         </button>
@@ -436,14 +445,32 @@ export function MappingForm({
   );
 }
 
+export function ServiceGuidance({ host }: { host: Host }) {
+  return (
+    <p className="service-guidance" id="service-request-guidance">
+      {host.revoked
+        ? "Agent revoked. New requests unavailable."
+        : !host.verified
+          ? "An administrator must verify this identity before jobs can be requested."
+          : host.connectivity !== "connected"
+            ? `Agent ${host.connectivity.replaceAll("_", " ")}. Requests queue for up to 5 minutes awaiting connection.`
+            : "Requests run through this host’s agent. Track completion in Remote jobs."}{" "}
+      Restart requires confirmation, recent password/MFA verification and the
+      agent’s local allowlist.
+    </p>
+  );
+}
+
 export function ServiceRequests({
   host,
   service,
+  permissions,
   onQueued,
   onVerify,
 }: {
   host: Host;
   service: string;
+  permissions?: string[];
   onQueued: () => void;
   onVerify: () => void;
 }) {
@@ -463,8 +490,9 @@ export function ServiceRequests({
     "service request in progress (it can complete after leaving)",
   );
   const blocked = host.revoked || !host.verified;
+  const can = (action: string) => !!permissions?.includes(action);
   async function request(action: "logs.read" | "service.restart") {
-    if (inFlight.current || blocked) return;
+    if (inFlight.current || blocked || !can(action)) return;
     if (
       action === "service.restart" &&
       !window.confirm(
@@ -497,32 +525,48 @@ export function ServiceRequests({
     }
   }
   return (
-    <div className="service-requests" aria-busy={!!pending}>
-      <p className="service-request-context">
-        {host.revoked
-          ? "Agent revoked. New requests unavailable."
-          : !host.verified
-            ? "An administrator must verify this identity before jobs can be requested."
-            : host.connectivity !== "connected"
-              ? `Agent ${host.connectivity.replaceAll("_", " ")}. Requests queue for up to 5 minutes awaiting connection.`
-              : "Requests run through the agent. Track completion in Remote jobs."}
-      </p>
+    <div
+      className="service-requests"
+      role="group"
+      aria-label={`Requests for ${service}`}
+      aria-busy={!!pending}
+      aria-describedby="service-request-guidance"
+    >
       <div className="button-row">
         <button
           type="button"
-          disabled={!!pending || blocked}
+          disabled={!!pending || blocked || !can("logs.read")}
+          title={
+            !can("logs.read") ? "Service log permission required" : undefined
+          }
           onClick={() => void request("logs.read")}
         >
           {pending === "logs.read" ? "Requesting logs…" : "Request logs"}
         </button>
         <button
           type="button"
-          disabled={!!pending || blocked}
+          disabled={!!pending || blocked || !can("service.restart")}
+          title={
+            !can("service.restart")
+              ? "Service restart permission required"
+              : undefined
+          }
           onClick={() => void request("service.restart")}
         >
           {pending === "service.restart" ? "Requesting restart…" : "Restart"}
         </button>
       </div>
+      {(!can("logs.read") || !can("service.restart")) && (
+        <small className="service-permission-note">
+          {!permissions
+            ? "Request permissions unavailable."
+            : !can("logs.read") && !can("service.restart")
+              ? "No service request permissions for this host."
+              : !can("logs.read")
+                ? "Service logs are not permitted for your account."
+                : "Service restarts are not permitted for your account."}
+        </small>
+      )}
       <p className="service-pending" role="status">
         {pending ? "Submitting request. No execution is confirmed yet." : ""}
       </p>
@@ -541,11 +585,12 @@ export function ServiceRequests({
       <StatusNotice>
         {receipt ? (
           <>
-            Request queued <Time value={receipt.createdAt} />.{" "}
+            <span className="service-receipt-time">
+              Request queued <Time value={receipt.createdAt} />
+            </span>{" "}
             <RouteLink to={{ view: "jobs" }}>
-              View outcome in Remote jobs
+              View outcome in Remote jobs →
             </RouteLink>
-            .
           </>
         ) : (
           ""

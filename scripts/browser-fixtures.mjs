@@ -53,7 +53,7 @@ function installFixture() {
   };
   const control = window.fixture = { role: "admin", hosts: fixtureHosts, offline: false, htmlFailure: false, logoutFailure: 0, grantWrites: 0, holdHosts: false, releaseHosts: null,
     // Project, GitHub and grant stores start empty: nothing is preseeded in the product.
-    usersFail: true, recent: true, authFailure: 0, githubFail: false, syncStatus: 429, projects: {}, events: {}, githubViews: {}, githubPuts: [], failSources: new Set(), failWrites: new Set(), createdUsers: [], jobs: [], canary,
+    usersFail: true, recent: true, authFailure: 0, githubFail: false, syncStatus: 429, projects: {}, events: {}, githubViews: {}, githubPuts: [], failSources: new Set(), failWrites: new Set(), createdUsers: [], jobs: [], canary, hostPermissions: null,
     grantStore: {
       "operator-fixture": [{ scopeType: "host", scope: "viewer-host", action: "host.read" }, { scopeType: "project", scope: "fixture-project", action: "project.read" }],
       "viewer-fixture": [{ scopeType: "host", scope: "viewer-host", action: "host.read" }],
@@ -82,6 +82,7 @@ function installFixture() {
   };
   const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
   const recentRequired = () => json({ error: "recent password and MFA required" }, 403);
+  const hostPermissions = () => control.hostPermissions ?? (control.role === "admin" ? ["host.read", "host.manage", "diagnostic", "logs.read", "service.restart", "host.reboot"] : ["host.read"]);
   const allModules = ["documentation", "dependencies", "content", "releases", "operations"];
   const permissionsFor = () => control.role === "admin" ? ["project.read", "project.manage", "github.read", "github.sync"] : ["project.read"];
   const visible = (id) => !!control.projects[id] && (control.role === "admin" || control.shared.includes(id));
@@ -264,6 +265,7 @@ function installFixture() {
         return json({mappings: body.mappings});
       }
       if (hostWrite[2] === "/jobs" && method === "POST") {
+        if (!hostPermissions().includes(body.action)) return json({error:"action forbidden"}, 403);
         if (!h.verified || h.revoked) return json({error: "agent identity unavailable"}, 409);
         if (!["logs.read", "service.restart"].includes(body.action)) return json({error: "unexpected fixture action"}, 400);
         if (body.action === "service.restart" && (!control.recent || body.confirm !== h.id)) return recentRequired();
@@ -274,8 +276,8 @@ function installFixture() {
         return json(job, 201);
       }
     }
-    if (path === "/api/hosts/private-host") { refreshEvidence(); return admin ? json({ host: privateHost, samples: control.samples }) : json({ error: "action forbidden" }, 403); }
-    if (path === "/api/hosts/viewer-host") { refreshEvidence(); return json({ host: viewerHost, samples: [] }); }
+    if (path === "/api/hosts/private-host") { refreshEvidence(); return admin ? json({ host: privateHost, samples: control.samples, permissions: hostPermissions() }) : json({ error: "action forbidden" }, 403); }
+    if (path === "/api/hosts/viewer-host") { refreshEvidence(); return json({ host: viewerHost, samples: [], permissions: hostPermissions() }); }
     if (path === "/api/canary") { refreshEvidence(); return json(admin ? canary : emptyCanary); }
     if (path === "/api/jobs") return json(control.jobs.filter(j => admin || j.hostId === viewerHost.id));
     if (path === "/api/audit") return json([]);
@@ -476,6 +478,8 @@ try {
   const columnNames = accessibleFleet.filter(n => n.role?.value === "columnheader").map(n => String(n.name?.value || "").trim().replace(/\s+/g, " ").toLowerCase());
   for (const column of ["Host", "Canary uptime", "Agent connection", "Reading freshness", "Resources"]) assert.ok(columnNames.includes(column.toLowerCase()), `Responsive fleet lost header: ${column}; accessible headers: ${JSON.stringify(columnNames)}`);
   assert.equal(await evaluate("document.querySelector('.fleet-table td[data-label=Resources]').getAttribute('aria-colindex')"), "5", "Hidden mobile freshness cell shifted the resource column association");
+  assert.ok(await evaluate("[...document.querySelectorAll('.fleet-table tbody tr')].filter(r => r.getBoundingClientRect().bottom <= innerHeight).length >= 2 && document.querySelector('.resource-details > summary').innerText.includes('CPU 12.0%')"), "Compact mobile inventory cannot compare two complete hosts or see resource summaries without expansion");
+  pass("compact mobile rows expose independent statuses and resource summaries while fitting two complete hosts");
   pass("Chrome accessibility tree retains mobile table and column headers with explicit column positions");
   await evaluate("window.fixture.hosts[0].resourceHealth = 'warning'; window.fixture.hosts[0].latest.cpuPercent = 96");
   await wait("document.querySelector('.attention-filter')?.textContent.includes('(1)') && [...document.querySelectorAll('.mobile-resource-warning .chip')].some(c => c.checkVisibility() && c.textContent.includes('Resource warning'))");
@@ -491,6 +495,8 @@ try {
   await click("Show all hosts");
   await wait("document.querySelectorAll('.fleet-table tbody tr').length === 2");
   pass("collapsed mobile cards expose resource-warning causes, include unknown evidence in the issues filter and preserve independent freshness");
+  await evaluate("document.querySelector('.resource-details > summary').click()");
+  await wait("document.querySelector('.mobile-host-evidence')?.checkVisibility()");
   await click("Just now");
   assert.ok(await evaluate("(() => {const b = [...document.querySelectorAll('.time-trigger')].find(b => b.getAttribute('aria-expanded') === 'true'); const exact = b && document.getElementById(b.getAttribute('aria-controls')); return exact?.checkVisibility() && exact.textContent.length > 15;})()"), "Exact operational times are not available by tap");
   await click("Just now");
@@ -567,6 +573,15 @@ try {
   await evaluate("window.fixture.holds['POST /api/hosts/private-host/jobs']()");
   await wait("window.fixture.jobs.length === 2 && document.querySelector('.service-requests .status-notice').innerText.includes('Request queued')");
   pass("service requests prevent repeat clicks, retain local progress/receipts and preserve restart confirmation and recent-verification gates");
+  await evaluate("window.fixture.hostPermissions = ['host.read','logs.read']");
+  await wait("document.querySelector('.service-requests button:nth-child(2)').disabled && !document.querySelector('.service-requests button:first-child').disabled && document.querySelector('.host-permission-context')?.innerText.includes('service logs')");
+  assert.ok(await evaluate("[...document.querySelectorAll('button')].find(b => b.textContent === 'Run diagnostic').disabled && document.querySelector('.host-actions button').disabled && document.querySelector('.host-inventory-form fieldset').disabled && document.querySelector('.service-permission-note').innerText.includes('not permitted')"), "Action controls ignored effective host permissions");
+  const jobsBeforeDenied = await evaluate("window.fixture.requests.filter(r => r.method === 'POST' && r.path.endsWith('/jobs')).length");
+  await evaluate("document.querySelector('.service-requests button:nth-child(2)').click()");
+  assert.equal(await evaluate("window.fixture.requests.filter(r => r.method === 'POST' && r.path.endsWith('/jobs')).length"), jobsBeforeDenied, "Disabled ungranted action submitted a request");
+  await evaluate("window.fixture.hostPermissions = null");
+  await wait("!document.querySelector('.service-requests button:nth-child(2)').disabled");
+  pass("effective host permissions disable unavailable requests and explain the restriction without attempting a mutation");
   await evaluate("window.fixture.hosts[0].name = 'ADMIN-ONLY-HOST'; window.fixture.canary.mappings = [{hostId:'private-host',sourceId:'fixture-source',monitorId:'unobserved'}]");
   await wait("document.querySelector('h1')?.textContent === 'ADMIN-ONLY-HOST' && document.querySelector('.host-mapping-form input[value=\"fixture-source/unobserved\"]').checked");
   await click("← All hosts");
@@ -738,8 +753,14 @@ try {
   await wait(`document.body.innerText.includes('Retained observation') && document.body.innerText.includes('Workflow runs could not be read') && document.body.innerText.includes('Truncated') && document.body.innerText.includes('not a package-version inventory') && !document.body.innerText.includes('Polling failed') && ${goodChips} === 0`);
   assert.equal(await evaluate("[...document.querySelectorAll('.github .metric')].find(m => m.innerText.includes('Dependabot alerts')).innerText.includes('1+')"), true, "Truncated alerts rendered as a complete count");
   await capture("08-github-retained");
+  await evaluate("window.fixture.hold.add('POST /api/projects/fixture-project/github/sync')");
   await click("Request refresh");
+  await wait("typeof window.fixture.holds['POST /api/projects/fixture-project/github/sync'] === 'function' && [...document.querySelectorAll('.github button')].some(b => b.textContent === 'Requesting refresh…' && b.disabled && b.getAttribute('aria-busy') === 'true')");
+  await evaluate("[...document.querySelectorAll('.github button')].find(b => b.textContent === 'Requesting refresh…').click()");
+  assert.equal(await evaluate("window.fixture.requests.filter(r => r.method === 'POST' && r.path.endsWith('/github/sync')).length"), 1, "Pending GitHub refresh submitted a repeat request");
+  await evaluate("window.fixture.holds['POST /api/projects/fixture-project/github/sync']()");
   await wait("document.body.innerText.includes('Refresh is cooling down')");
+  pass("GitHub refresh shows pending feedback and rejects repeated submission before a response");
   assert.ok(await evaluate("[...document.querySelectorAll('.github-feedback [role=status]')].some(s => s.innerText.includes('Refresh is cooling down'))"), "Refresh feedback is outside its status region");
   assert.ok(await evaluate("window.fixture.requests.some(r => r.method === 'POST' && r.path === '/api/projects/fixture-project/github/sync')"));
   pass("retained, partial, unreadable and truncated GitHub data stay explicit; refresh cooldown is reported");

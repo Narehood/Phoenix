@@ -273,6 +273,7 @@ export function GitHubPanel({
     [busy, setBusy] = useState(false),
     [, setTick] = useState(0);
   const alive = useRef(true),
+    syncPending = useRef(false),
     seq = useRef(0),
     fastUntil = useRef(0),
     wake = useRef<() => void>(() => {});
@@ -337,7 +338,8 @@ export function GitHubPanel({
   }, [canRead]);
 
   async function sync() {
-    if (busy) return;
+    if (syncPending.current) return;
+    syncPending.current = true;
     setBusy(true);
     setError(null);
     setNotice("");
@@ -353,11 +355,12 @@ export function GitHubPanel({
       if (!alive.current) return;
       if (e instanceof ApiError && e.status === 429)
         setNotice(
-          "Refresh is cooling down (15-minute minimum per source). Collection details will show the latest refresh eligibility.",
+          "Refresh is cooling down (15-minute minimum per source). Collection & coverage shows the latest refresh eligibility.",
         );
       else setError(e);
       void load();
     } finally {
+      syncPending.current = false;
       if (alive.current) setBusy(false);
     }
   }
@@ -440,7 +443,7 @@ export function GitHubPanel({
             </span>
           </div>
           <details>
-            <summary>Collection details</summary>
+            <summary>Collection & coverage</summary>
             <dl className="facts">
               <dt>Source state</dt>
               <dd>
@@ -470,6 +473,16 @@ export function GitHubPanel({
                 promised collection time.
               </dd>
             </dl>
+            {snapshot && (
+              <p className="collection-coverage">
+                Last push {iso(snapshot.repository.pushedAt)}. Code scanning:{" "}
+                {snapshot.codeScanning}. Secret scanning:{" "}
+                {snapshot.secretScanning}. Dependency coverage is limited to
+                recognized update PRs and Dependabot alerts. Checks and reviews
+                do not evaluate required-review rules. Empty results do not
+                prove dependencies are current.
+              </p>
+            )}
           </details>
         </div>
         {view.error && (
@@ -533,17 +546,6 @@ export function GitHubPanel({
                 Read-only PRs, CI and Dependabot alerts. Code/secret scanning
                 unsupported; not a package-version inventory.
               </p>
-              <details>
-                <summary>Scope & coverage</summary>
-                <p>
-                  Last push {iso(snapshot.repository.pushedAt)}. Code scanning:{" "}
-                  {snapshot.codeScanning}. Secret scanning:{" "}
-                  {snapshot.secretScanning}. Dependency coverage is limited to
-                  recognized update PRs and Dependabot alerts. Checks and
-                  reviews do not evaluate required-review rules. Empty results
-                  do not prove dependencies are current.
-                </p>
-              </details>
             </div>
             <div className="panel-body section">
               <h3>Open pull requests</h3>
@@ -771,6 +773,7 @@ export function GitHubPanel({
           {canSync && view?.configured && (
             <button
               onClick={() => void sync()}
+              aria-busy={busy}
               disabled={
                 busy ||
                 !view.enabled ||
@@ -785,7 +788,11 @@ export function GitHubPanel({
                   : undefined
               }
             >
-              {cooling ? "Refresh cooling down" : "Request refresh"}
+              {busy
+                ? "Requesting refresh…"
+                : cooling
+                  ? "Refresh cooling down"
+                  : "Request refresh"}
             </button>
           )}
         </div>

@@ -373,6 +373,13 @@ func TestAuthorizationCSRFRecentAuthAndOutput(t *testing.T) {
 	}
 	f.request(operator, f.web.URL, "POST", "/api/auth/login", map[string]string{"name": "operator", "password": "another fixture password", "code": code}, 200, &auth, "")
 	f.request(operator, f.web.URL, "GET", "/api/hosts/"+b.id, nil, 403, nil, "")
+	var detail struct {
+		Permissions []string `json:"permissions"`
+	}
+	f.request(operator, f.web.URL, "GET", "/api/hosts/"+a.id, nil, 200, &detail, "")
+	if strings.Join(detail.Permissions, ",") != "host.read,diagnostic" {
+		t.Fatalf("host detail permissions do not match scoped operator grants: %v", detail.Permissions)
+	}
 	f.request(operator, f.web.URL, "POST", "/api/hosts/"+a.id+"/jobs", map[string]any{"action": "service.restart", "args": core.Args{Service: "fixture.service"}, "confirm": a.id}, 403, nil, auth.CSRF)
 	j := f.job(a, "diagnostic", core.Args{Diagnostic: "system.summary"})
 	f.exchange(a, nil, nil, "")
@@ -382,6 +389,24 @@ func TestAuthorizationCSRFRecentAuthAndOutput(t *testing.T) {
 	if got.Result != nil {
 		t.Fatal("output leaked without grant")
 	}
+	if _, e := f.s.DB.Exec(`DELETE FROM grants WHERE user_id=? AND action='diagnostic'`, account.User.ID); e != nil {
+		t.Fatal(e)
+	}
+	f.request(operator, f.web.URL, "GET", "/api/hosts/"+a.id, nil, 200, &detail, "")
+	if strings.Join(detail.Permissions, ",") != "host.read" {
+		t.Fatal("host detail retained a removed action permission")
+	}
+	if _, e := f.s.DB.Exec(`UPDATE users SET role='viewer' WHERE id=?`, account.User.ID); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := f.s.DB.Exec(`INSERT INTO grants VALUES(?,'all','*','*')`, account.User.ID); e != nil {
+		t.Fatal(e)
+	}
+	f.request(operator, f.web.URL, "GET", "/api/hosts/"+a.id, nil, 200, &detail, "")
+	if strings.Join(detail.Permissions, ",") != "host.read" {
+		t.Fatal("host detail action permissions exceeded the viewer role ceiling")
+	}
+	f.request(operator, f.web.URL, "POST", "/api/hosts/"+a.id+"/jobs", map[string]any{"action": "diagnostic", "args": core.Args{Diagnostic: "system.summary"}}, 403, nil, auth.CSRF)
 	f.advance(6 * time.Minute)
 	f.call("POST", "/api/hosts/"+a.id+"/jobs", map[string]any{"action": "host.reboot", "args": core.Args{}, "confirm": a.id}, 403, nil)
 	f.call("POST", "/api/hosts/"+a.id+"/jobs", map[string]any{"action": "diagnostic", "args": core.Args{Diagnostic: "sh -c evil"}}, 400, nil)
