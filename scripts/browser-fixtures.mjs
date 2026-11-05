@@ -53,7 +53,7 @@ function installFixture() {
   };
   const control = window.fixture = { role: "admin", offline: false, htmlFailure: false, logoutFailure: 0, grantWrites: 0, holdHosts: false, releaseHosts: null,
     // Project, GitHub and grant stores start empty: nothing is preseeded in the product.
-    usersFail: true, recent: true, githubFail: false, syncStatus: 429, projects: {}, events: {}, githubViews: {}, githubPuts: [],
+    usersFail: true, recent: true, authFailure: 0, githubFail: false, syncStatus: 429, projects: {}, events: {}, githubViews: {}, githubPuts: [],
     grantStore: {
       "operator-fixture": [{ scopeType: "host", scope: "viewer-host", action: "host.read" }, { scopeType: "project", scope: "fixture-project", action: "project.read" }],
       "viewer-fixture": [{ scopeType: "host", scope: "viewer-host", action: "host.read" }],
@@ -183,6 +183,11 @@ function installFixture() {
     if (control.role === "signedout") return json({ error: "sign in required" }, 401);
     const admin = control.role === "admin";
     if (path === "/api/session") return json({ user: user(control.role), csrfToken: "fixture-csrf" });
+    if (path === "/api/auth/recent") {
+      if (control.authFailure) return json({ error: "Fixture verification unavailable" }, control.authFailure);
+      control.recent = true;
+      return json({ verified: true });
+    }
     if (path === "/api/users") return control.usersFail ? json({ error: "Fixture account list unavailable" }, 503)
       : json([user("admin"), user("operator"), user("viewer"), { id: "unreadable-fixture", name: "unreadable-fixture", role: "operator", active: true }]);
     const grants = path.match(/^\/api\/users\/([^/]+)\/grants$/);
@@ -286,7 +291,7 @@ try {
     }
     throw new Error(`Browser assertion timed out: ${expression}`);
   };
-  const click = (text) => evaluate(`(() => { const button = [...document.querySelectorAll('button')].find(b => b.textContent.trim().startsWith(${JSON.stringify(text)})); if (!button) throw Error('Missing fixture button'); button.click(); })()`);
+  const click = (text) => evaluate(`(() => { const button = [...document.querySelectorAll('button')].find(b => b.getClientRects().length && b.textContent.trim().startsWith(${JSON.stringify(text)})); if (!button) throw Error('Missing fixture button: ' + ${JSON.stringify(text)}); button.focus(); button.click(); })()`);
   const screenshots = [];
   let cases = 0;
   const pass = (name) => { cases++; console.log(`PASS ${name}`); };
@@ -312,6 +317,59 @@ try {
   if (visual) {
     await captureUI({ send, sessionId, evaluate, wait, click, capture });
   } else {
+  // Native modal focus, background inertness and durable in-dialog errors.
+  await click("Verify identity");
+  await wait("document.querySelector('dialog[open]') && document.activeElement?.name === 'password'");
+  await evaluate("window.fixture.authFailure = 503");
+  await setValue("dialog input[name=password]", "temporary fixture password");
+  await setValue("dialog input[name=code]", "123456");
+  await evaluate("document.querySelector('dialog form').requestSubmit()");
+  await wait("document.querySelector('dialog [role=alert]')?.textContent.includes('Fixture verification unavailable')");
+  await sleep(5500);
+  assert.ok(await evaluate("document.querySelector('dialog [role=alert]')?.textContent.includes('Fixture verification unavailable')"), "Successful background polling cleared a mutation error");
+  await evaluate("document.querySelector('nav button').focus()");
+  assert.ok(await evaluate("document.querySelector('dialog').contains(document.activeElement)"), "Modal focus escaped to the inert background");
+  await capture("10-dialog-verification-error");
+  await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, sessionId);
+  await send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, sessionId);
+  await wait("!document.querySelector('dialog') && document.activeElement?.textContent === 'Verify identity'");
+  await evaluate("window.fixture.authFailure = 0");
+  pass("verification errors remain in a keyboard-contained modal across polling; Escape restores focus");
+
+  await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true }, sessionId);
+  await evaluate("document.querySelector('.mobile-navigation summary').click()");
+  await wait("document.querySelector('.mobile-navigation').open");
+  assert.ok(await evaluate("[...document.querySelectorAll('.mobile-account button')].some(b => b.textContent === 'Sign out' && b.getClientRects().length)"), "Mobile sign-out is not discoverable");
+  await click("Projects");
+  await wait("document.querySelector('h1')?.textContent === 'Projects' && !document.querySelector('.mobile-navigation').open");
+  assert.ok(await evaluate("document.querySelector('.mobile-navigation [aria-current=page]')?.textContent.includes('Projects')"), "Mobile current destination is not exposed");
+  await evaluate("document.querySelector('.mobile-navigation summary').click()");
+  const priorMode = await evaluate("document.documentElement.dataset.mode");
+  await click("Switch appearance");
+  assert.notEqual(await evaluate("document.documentElement.dataset.mode"), priorMode);
+  await click("Switch appearance");
+  await capture("11-mobile-navigation");
+  await click("Fleet overview");
+  await wait("!!document.querySelector('.fleet-table')");
+  assert.ok(await evaluate("document.documentElement.scrollWidth <= innerWidth && document.querySelector('.fleet-table').scrollWidth <= innerWidth"), "Host statuses require horizontal document/table scrolling on mobile");
+  await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false }, sessionId);
+  pass("mobile navigation exposes the current section, account/sign-out and appearance; host statuses fit without sideways scrolling");
+
+  for (const mode of ['light', 'dark']) {
+    const ratio = await evaluate(`(() => {
+      document.documentElement.dataset.mode = ${JSON.stringify(mode)};
+      const el = document.querySelector('.fleet-table .chip.good');
+      const rgb = c => c.match(/[\\d.]+/g).map(Number);
+      const base = rgb(getComputedStyle(document.querySelector('.panel')).backgroundColor);
+      const bg = rgb(getComputedStyle(el).backgroundColor), fg = rgb(getComputedStyle(el).color);
+      const blend = bg.slice(0, 3).map((v, i) => v * (bg[3] ?? 1) + base[i] * (1 - (bg[3] ?? 1)));
+      const l = c => c.slice(0, 3).map(v => { v /= 255; return v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }).reduce((sum,v,i) => sum + v * [.2126,.7152,.0722][i], 0);
+      const a = l(fg), b = l(blend); return (Math.max(a,b) + .05) / (Math.min(a,b) + .05);
+    })()`);
+    assert.ok(ratio >= 4.5, `Good status text contrast is below 4.5:1 in ${mode}: ${ratio}`);
+  }
+  await evaluate("document.documentElement.dataset.mode = 'light'");
+  pass("actual light and dark good-status text meets 4.5:1 contrast");
   await click("Access & accounts");
   await wait("document.querySelector('[role=alert]')?.innerText.includes('Fixture account list unavailable') && !!document.querySelector('select[name=user]')");
   assert.equal(await evaluate("document.querySelector('select[name=user]').checkValidity()"), false, "Empty account select allows grant submission");
@@ -350,6 +408,8 @@ try {
   await evaluate(`document.querySelector('form[aria-label="Register a project"] input[value=dependencies]').click()`);
   await submit("Register a project");
   await wait(`document.querySelector('h1')?.textContent.includes('Fixture project') && !!document.querySelector('form[aria-label="Project metadata"]')`);
+  await evaluate("document.querySelector('.project-settings > summary').click()");
+  assert.ok(await evaluate("document.querySelector('input[name=editName]').getClientRects().length"), "Metadata edits are hidden from the user");
   assert.deepEqual(await evaluate("window.fixture.projects['fixture-project'].modules"), ["dependencies"]);
   pass("empty project inventory allows administrator registration with explicit modules");
 
@@ -388,7 +448,7 @@ try {
   pass("a failed GitHub poll invalidates previously healthy observations");
   await evaluate("window.fixture.githubFail = false; window.fixture.githubViews['fixture-project'] = window.fixture.retainedView('fixture-owner/fixture-repo')");
   await wait(`document.body.innerText.includes('Retained observation') && document.body.innerText.includes('Workflow runs could not be read') && document.body.innerText.includes('Truncated') && document.body.innerText.includes('not a package-version inventory') && !document.body.innerText.includes('Polling failed') && ${goodChips} === 0`);
-  assert.equal(await evaluate("[...document.querySelectorAll('.github .metric')].find(m => m.innerText.includes('Open Dependabot alerts')).innerText.includes('1+')"), true, "Truncated alerts rendered as a complete count");
+  assert.equal(await evaluate("[...document.querySelectorAll('.github .metric')].find(m => m.innerText.includes('Dependabot alerts')).innerText.includes('1+')"), true, "Truncated alerts rendered as a complete count");
   await capture("08-github-retained");
   await click("Request refresh");
   await wait("document.body.innerText.includes('Refresh is cooling down')");
@@ -464,6 +524,8 @@ try {
   await click("Projects");
   await wait("document.body.innerText.includes('Fixture project renamed') && !document.body.innerText.includes('ALPHA-ONLY') && !document.body.innerText.includes('Register a project')");
   await click("Fixture project renamed");
+  await wait("!!document.querySelector('.project-settings > summary')");
+  await evaluate("document.querySelector('.project-settings > summary').click()");
   await wait("document.body.innerText.includes('GitHub read permission required') && document.body.innerText.includes('Read only') && !document.querySelector('form[aria-label=\"Project metadata\"]')");
   assert.equal(await evaluate("window.fixture.requests.some(r => r.role === 'viewer' && r.path.endsWith('/github'))"), false, "GitHub data requested without github.read");
   assert.equal(await evaluate("document.body.innerText.includes('fixture-owner/fixture-repo')"), false, "Previous account's GitHub data visible to viewer");

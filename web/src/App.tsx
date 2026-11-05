@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api, csrf, ApiError } from "./api";
 import type { Audit, Canary, Host, Job, Reading, User, Monitor } from "./types";
-import { Empty, Form, Metric, Tone, field, stamp } from "./ui";
+import { Dialog, Empty, Form, Metric, Time, Tone, field, stamp } from "./ui";
 import { Projects } from "./projects";
 import { GrantEditor } from "./grants";
 
@@ -252,6 +252,8 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
       null,
     ),
     [error, setError] = useState(""),
+    [pollError, setPollError] = useState(""),
+    [modalError, setModalError] = useState(""),
     [notice, setNotice] = useState(""),
     [search, setSearch] = useState(""),
     [result, setResult] = useState<Job | null>(null),
@@ -264,6 +266,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
       expiresAt: number;
     } | null>(null),
     [busy, setBusy] = useState(false);
+  useEffect(() => setModalError(""), [modal]);
   async function refresh() {
     const [h, c, j, a] = await Promise.all([
       api<{ hosts: Host[] }>("/api/hosts"),
@@ -282,10 +285,10 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
     async function poll() {
       try {
         await refresh();
-        if (alive) setError("");
+        if (alive) setPollError("");
       } catch (e) {
         if (alive) {
-          setError((e as Error).message);
+          setPollError((e as Error).message);
           setHosts((previous) => previous.map(unavailableHost));
           setDetail(
             (previous) =>
@@ -323,7 +326,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
         if (alive) setDetail(d);
       } catch (e) {
         if (alive) {
-          setError((e as Error).message);
+          setPollError((e as Error).message);
           setDetail(
             (previous) =>
               previous && { ...previous, host: unavailableHost(previous.host) },
@@ -344,14 +347,21 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
     };
   }, [selected, user]);
   async function act(fn: () => Promise<void>) {
+    const inDialog = modal !== null;
     setBusy(true);
-    setError("");
+    if (inDialog) setModalError("");
+    else setError("");
     setNotice("");
     try {
       await fn();
-      await refresh();
+      try {
+        await refresh();
+      } catch (e) {
+        setPollError((e as Error).message);
+      }
     } catch (e) {
-      setError((e as Error).message);
+      if (inDialog) setModalError((e as Error).message);
+      else setError((e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -383,6 +393,45 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
       localStorage.setItem("phoenix-theme", next);
     } catch {}
   }
+  function signOut() {
+    void act(async () => {
+      try {
+        await api("/api/auth/logout", "POST", {});
+      } catch (error) {
+        if (!(error instanceof ApiError) || error.status !== 401) throw error;
+      }
+      csrf("");
+      onLogout();
+    });
+  }
+  const destinations = [
+    ["fleet", "Fleet overview"],
+    ["projects", "Projects"],
+    ["jobs", "Remote jobs"],
+    ["canary", "Uptime Canary"],
+    ["activity", "Activity & audit"],
+    ...(user.role === "admin" ? [["access", "Access & accounts"]] : []),
+  ];
+  const sectionName =
+    destinations.find(([key]) => key === view)?.[1] || "Host details";
+  const navigation = (mobile = false) => (
+    <nav aria-label={mobile ? "Mobile navigation" : "Main navigation"}>
+      {destinations.map(([key, label]) => (
+        <button
+          key={key}
+          className={view === key ? "active" : ""}
+          aria-current={view === key ? "page" : undefined}
+          onClick={(event) => {
+            setView(key);
+            event.currentTarget.closest("details")?.removeAttribute("open");
+          }}
+        >
+          {label}
+          {key === "fleet" && <small>{hosts.length}</small>}
+        </button>
+      ))}
+    </nav>
+  );
   const current = detail?.host || hosts.find((h) => h.id === selected),
     reading = current?.latest;
   const filtered = hosts.filter((h) =>
@@ -438,25 +487,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
           </span>
         </a>
         <span className="nav-label">WORKSPACE</span>
-        <nav>
-          {[
-            ["fleet", "Fleet overview"],
-            ["jobs", "Remote jobs"],
-            ["activity", "Activity & audit"],
-            ["canary", "Uptime Canary"],
-            ["projects", "Projects"],
-            ...(user.role === "admin" ? [["access", "Access & accounts"]] : []),
-          ].map(([key, label]) => (
-            <button
-              key={key}
-              className={view === key ? "active" : ""}
-              onClick={() => setView(key)}
-            >
-              {label}
-              {key === "fleet" && <small>{hosts.length}</small>}
-            </button>
-          ))}
-        </nav>
+        {navigation()}
         <div className="sidebar-bottom">
           <div className="companion">
             <span className="status-dot" /> Independent monitoring
@@ -473,30 +504,13 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
               {user.name}
               <small>{user.role} · MFA enabled</small>
             </span>
-            <button
-              onClick={() =>
-                void act(async () => {
-                  try {
-                    await api("/api/auth/logout", "POST", {});
-                  } catch (error) {
-                    // An expired/revoked server session is already signed out.
-                    // Other failures must stay visible: remote logout is unknown.
-                    if (!(error instanceof ApiError) || error.status !== 401)
-                      throw error;
-                  }
-                  csrf("");
-                  onLogout();
-                })
-              }
-            >
-              Sign out
-            </button>
+            <button onClick={signOut}>Sign out</button>
           </div>
         </div>
       </aside>
       <div className="workspace">
         <header className="topbar">
-          <span>
+          <span className="desktop-context">
             Workspace{" "}
             <span className="muted">
               /{" "}
@@ -506,18 +520,41 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                   ? "Fleet overview"
                   : view === "projects"
                     ? "Projects"
-                    : view}
+                    : sectionName}
             </span>
           </span>
+          <details className="mobile-navigation">
+            <summary>
+              <span>Menu</span>
+              <strong>{sectionName}</strong>
+            </summary>
+            <div className="mobile-menu-body">
+              {navigation(true)}
+              <div className="mobile-account">
+                <b>{user.name}</b>
+                <small>{user.role} · MFA enabled</small>
+                <div className="button-row">
+                  <button onClick={theme}>Switch appearance</button>
+                  <button onClick={signOut}>Sign out</button>
+                </div>
+              </div>
+            </div>
+          </details>
           <button onClick={() => setModal("auth")}>Verify identity</button>
           <span className="muted">TLS protected · {user.role}</span>
         </header>
         <main id="content">
           <div aria-live="polite">
-            {error && (
+            {(error || pollError) && (
               <div className="notice error" role="alert">
-                {error}
-                <button onClick={() => setError("")} aria-label="Dismiss error">
+                {error || pollError}
+                <button
+                  onClick={() => {
+                    if (error) setError("");
+                    else setPollError("");
+                  }}
+                  aria-label="Dismiss error"
+                >
                   ×
                 </button>
               </div>
@@ -531,8 +568,8 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                   <p className="eyebrow">YOUR INFRASTRUCTURE, AT A GLANCE</p>
                   <h1>Fleet overview</h1>
                   <p className="muted">
-                    Uptime, management connectivity and resource health — each
-                    with its own evidence.
+                    Your hosts, their connections and the latest resource
+                    readings.
                   </p>
                 </div>
                 {user.role === "admin" && (
@@ -551,7 +588,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                 <Metric
                   label="Managed hosts"
                   value={hosts.length}
-                  detail="Independently enrolled identities"
+                  detail="Enrolled in this workspace"
                 />
                 <Metric
                   label="Agent connected"
@@ -604,26 +641,32 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                       </button>
                     )}
                   </Empty>
+                ) : !filtered.length ? (
+                  <Empty>
+                    <h3>No matching hosts</h3>
+                    <p>Try another name, address, tag or group.</p>
+                    <button onClick={() => setSearch("")}>Clear search</button>
+                  </Empty>
                 ) : (
                   <div className="table-scroll">
-                    <table>
+                    <table className="fleet-table responsive-table">
+                      <caption className="sr-only">
+                        Host inventory. Canary uptime, agent connection and
+                        reading freshness are independent.
+                      </caption>
                       <thead>
                         <tr>
                           <th>Host</th>
                           <th>Canary uptime</th>
-                          <th>Management</th>
-                          <th>Telemetry</th>
-                          <th>CPU</th>
-                          <th>Memory</th>
-                          <th>Disk /</th>
-                          <th>Network activity</th>
-                          <th>Machine uptime</th>
+                          <th>Agent</th>
+                          <th>Readings</th>
+                          <th>Resources</th>
                         </tr>
                       </thead>
                       <tbody>
                         {filtered.map((h) => (
                           <tr key={h.id}>
-                            <td>
+                            <td data-label="Host">
                               <button
                                 className="text-link"
                                 onClick={() => openHost(h.id)}
@@ -642,68 +685,75 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                                 ))}
                               </div>
                             </td>
-                            <td>
+                            <td data-label="Canary uptime">
                               <Tone value={uptimeStatus(h)} />
                               <small>
                                 {mappings(h).length} mapped monitors
                               </small>
                             </td>
-                            <td>
+                            <td data-label="Agent">
                               <Tone value={h.connectivity} />
-                              <small>{stamp(h.lastContact)}</small>
+                              <small>
+                                Contact <Time value={h.lastContact} />
+                              </small>
                             </td>
-                            <td>
+                            <td data-label="Readings">
                               <Tone value={h.freshness} />
                               <small>
-                                Measured {stamp(h.latest?.measuredAt || 0)}
+                                <Time value={h.latest?.measuredAt || 0} />
                               </small>
                             </td>
-                            <td>
-                              <Usage
-                                value={h.latest?.cpuPercent ?? null}
-                                stale={h.freshness !== "fresh"}
-                              />
-                            </td>
-                            <td>
-                              <Usage
-                                value={
-                                  h.latest?.memoryTotal
-                                    ? (100 * h.latest.memoryUsed) /
-                                      h.latest.memoryTotal
-                                    : null
-                                }
-                                stale={h.freshness !== "fresh"}
-                              />
-                            </td>
-                            <td>
-                              <Usage
-                                value={
-                                  h.latest?.diskTotal
-                                    ? (100 * h.latest.diskUsed) /
-                                      h.latest.diskTotal
-                                    : null
-                                }
-                                stale={h.freshness !== "fresh"}
-                              />
-                            </td>
-                            <td>
-                              {h.latest?.networkRxBps != null
-                                ? bytes(h.latest.networkRxBps) + "/s"
-                                : "Unknown"}
-                              <small>
-                                Received per second
-                                {h.freshness !== "fresh" ? " · last known" : ""}
-                              </small>
-                            </td>
-                            <td>
-                              {h.latest
-                                ? uptime(h.latest.uptimeSeconds)
-                                : "Unknown"}
-                              <small>
-                                {h.freshness === "stale"
-                                  ? "Last known reading"
-                                  : ""}
-                              </small>
+                            <td data-label="Resources">
+                              <div className="resource-summary">
+                                <div>
+                                  <small>CPU</small>
+                                  <Usage
+                                    label="CPU"
+                                    value={h.latest?.cpuPercent ?? null}
+                                    stale={h.freshness !== "fresh"}
+                                  />
+                                </div>
+                                <div>
+                                  <small>Memory</small>
+                                  <Usage
+                                    label="Memory"
+                                    value={
+                                      h.latest?.memoryTotal
+                                        ? (100 * h.latest.memoryUsed) /
+                                          h.latest.memoryTotal
+                                        : null
+                                    }
+                                    stale={h.freshness !== "fresh"}
+                                  />
+                                </div>
+                                <div>
+                                  <small>Disk /</small>
+                                  <Usage
+                                    label="Disk"
+                                    value={
+                                      h.latest?.diskTotal
+                                        ? (100 * h.latest.diskUsed) /
+                                          h.latest.diskTotal
+                                        : null
+                                    }
+                                    stale={h.freshness !== "fresh"}
+                                  />
+                                </div>
+                              </div>
+                              <details className="measurement-details">
+                                <summary>Network & uptime</summary>
+                                <div>
+                                  {h.latest?.networkRxBps != null
+                                    ? bytes(h.latest.networkRxBps) + "/s"
+                                    : "Unknown"}
+                                  {" received · "}
+                                  {h.latest
+                                    ? uptime(h.latest.uptimeSeconds)
+                                    : "Unknown"}
+                                  {" since boot"}
+                                  {h.freshness !== "fresh" && " · last known"}
+                                </div>
+                              </details>
                             </td>
                           </tr>
                         ))}
@@ -1229,50 +1279,178 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
         </footer>
       </div>
       {modal && (
-        <div className="modal-backdrop">
-          <section
-            className="modal panel"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="modal-title"
-          >
-            <button
-              className="close"
-              aria-label="Close"
-              onClick={() => {
-                setModal(null);
-                setInvitation(null);
+        <Dialog
+          busy={busy}
+          onClose={() => {
+            setModal(null);
+            setInvitation(null);
+          }}
+          title={
+            modal === "enroll"
+              ? "Enroll a host"
+              : modal === "auth"
+                ? "Verify your identity"
+                : modal === "reboot"
+                  ? "Confirm host reboot"
+                  : "Revoke agent identity"
+          }
+        >
+          {modalError && (
+            <p className="notice error" role="alert">
+              {modalError}
+            </p>
+          )}
+          {modal === "auth" ? (
+            <Form
+              submit="Verify password and MFA"
+              busy={busy}
+              onSubmit={(e) => {
+                const f = field(e);
+                void act(async () => {
+                  await api("/api/auth/recent", "POST", {
+                    password: f.get("password"),
+                    code: f.get("code"),
+                  });
+                  setModal(null);
+                  setNotice(
+                    "Identity verified for five minutes. Use a new authenticator code for subsequent verification.",
+                  );
+                });
               }}
             >
-              ×
-            </button>
-            <h2 id="modal-title">
-              {modal === "enroll"
-                ? "Enroll a host"
-                : modal === "auth"
-                  ? "Verify your identity"
-                  : modal === "reboot"
-                    ? "Confirm host reboot"
-                    : "Revoke agent identity"}
-            </h2>
-            {modal === "auth" ? (
+              <label>
+                Your password
+                <input
+                  name="password"
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                />
+              </label>
+              <label>
+                New authenticator code
+                <input
+                  name="code"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  required
+                  pattern="[0-9]{6}"
+                />
+              </label>
+            </Form>
+          ) : modal === "enroll" ? (
+            invitation ? (
+              <>
+                <p>
+                  Save this invitation in a private file on the target machine.
+                  It is single use and expires at {stamp(invitation.expiresAt)}.
+                </p>
+                <label>
+                  Invitation
+                  <textarea
+                    className="secret"
+                    readOnly
+                    value={invitation.invitation}
+                  />
+                </label>
+                <p>Expected host identity</p>
+                <code className="wrap">{invitation.hostId}</code>
+                <p>
+                  Install the agent and trusted CA using the installation guide,
+                  then run:
+                </p>
+                <pre>
+                  phoenix-agent enroll -config /etc/phoenix/agent.json
+                  -invitation-file /run/phoenix-enrollment
+                </pre>
+                <p className="muted">
+                  Verify the expected identity after enrollment. Grant operators
+                  access using Access & accounts.
+                </p>
+              </>
+            ) : (
               <Form
-                submit="Verify password and MFA"
+                submit="Create invitation"
                 busy={busy}
                 onSubmit={(e) => {
                   const f = field(e);
                   void act(async () => {
+                    const v = await api<{
+                      hostId: string;
+                      invitation: string;
+                      expiresAt: number;
+                    }>("/api/invitations", "POST", {
+                      name: f.get("name"),
+                      groups: list(String(f.get("groups"))),
+                      reenrollHost: f.get("reenrollHost"),
+                      confirm: f.get("reenrollHost"),
+                    });
+                    setInvitation(v);
+                  });
+                }}
+              >
+                <label>
+                  Host display name
+                  <input name="name" required maxLength={80} />
+                </label>
+                <label>
+                  Groups (comma separated)
+                  <input name="groups" />
+                </label>
+                <label>
+                  Revoked host ID for deliberate re-enrollment (optional)
+                  <input name="reenrollHost" autoComplete="off" />
+                </label>
+              </Form>
+            )
+          ) : (
+            <>
+              <p>
+                {modal === "reboot"
+                  ? `Request a reboot of ${current?.name}. Acknowledgement is not proof of a completed reboot. A new boot ID is required.`
+                  : `Terminate ${current?.name}'s management connections and block further jobs. Any action already executed cannot be undone.`}
+              </p>
+              <p>Type this host ID to confirm:</p>
+              <code className="wrap">{selected}</code>
+              <Form
+                submit={
+                  modal === "reboot"
+                    ? "Authenticate and request reboot"
+                    : "Authenticate and revoke"
+                }
+                busy={busy}
+                onSubmit={(e) => {
+                  const f = field(e);
+                  const operation = modal;
+                  void act(async () => {
+                    if (String(f.get("confirm")) !== selected)
+                      throw new Error("Host ID does not match.");
                     await api("/api/auth/recent", "POST", {
                       password: f.get("password"),
                       code: f.get("code"),
                     });
+                    if (operation === "reboot") {
+                      await api(`/api/hosts/${selected}/jobs`, "POST", {
+                        action: "host.reboot",
+                        args: {},
+                        confirm: selected,
+                      });
+                      setView("jobs");
+                      setNotice(
+                        "Reboot queued. Check acceptance and boot observation separately.",
+                      );
+                    } else
+                      await api(`/api/hosts/${selected}/revoke`, "POST", {
+                        confirm: selected,
+                      });
                     setModal(null);
-                    setNotice(
-                      "Identity verified for five minutes. Use a new authenticator code for subsequent verification.",
-                    );
                   });
                 }}
               >
+                <label>
+                  Host ID
+                  <input name="confirm" required autoComplete="off" />
+                </label>
                 <label>
                   Your password
                   <input
@@ -1291,210 +1469,74 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                     required
                     pattern="[0-9]{6}"
                   />
+                  <small>
+                    A code already used to sign in cannot be reused.
+                  </small>
                 </label>
               </Form>
-            ) : modal === "enroll" ? (
-              invitation ? (
-                <>
-                  <p>
-                    Save this invitation in a private file on the target
-                    machine. It is single use and expires at{" "}
-                    {stamp(invitation.expiresAt)}.
-                  </p>
-                  <label>
-                    Invitation
-                    <textarea
-                      className="secret"
-                      readOnly
-                      value={invitation.invitation}
-                    />
-                  </label>
-                  <p>Expected host identity</p>
-                  <code className="wrap">{invitation.hostId}</code>
-                  <p>
-                    Install the agent and trusted CA using the installation
-                    guide, then run:
-                  </p>
-                  <pre>
-                    phoenix-agent enroll -config /etc/phoenix/agent.json
-                    -invitation-file /run/phoenix-enrollment
-                  </pre>
-                  <p className="muted">
-                    Verify the expected identity after enrollment. Grant
-                    operators access using Access & accounts.
-                  </p>
-                </>
-              ) : (
-                <Form
-                  submit="Create invitation"
-                  busy={busy}
-                  onSubmit={(e) => {
-                    const f = field(e);
-                    void act(async () => {
-                      const v = await api<{
-                        hostId: string;
-                        invitation: string;
-                        expiresAt: number;
-                      }>("/api/invitations", "POST", {
-                        name: f.get("name"),
-                        groups: list(String(f.get("groups"))),
-                        reenrollHost: f.get("reenrollHost"),
-                        confirm: f.get("reenrollHost"),
-                      });
-                      setInvitation(v);
-                    });
-                  }}
-                >
-                  <label>
-                    Host display name
-                    <input name="name" required maxLength={80} />
-                  </label>
-                  <label>
-                    Groups (comma separated)
-                    <input name="groups" />
-                  </label>
-                  <label>
-                    Revoked host ID for deliberate re-enrollment (optional)
-                    <input name="reenrollHost" autoComplete="off" />
-                  </label>
-                </Form>
-              )
-            ) : (
-              <>
-                <p>
-                  {modal === "reboot"
-                    ? `Request a reboot of ${current?.name}. Acknowledgement is not proof of a completed reboot. A new boot ID is required.`
-                    : `Terminate ${current?.name}'s management connections and block further jobs. Any action already executed cannot be undone.`}
-                </p>
-                <p>Type this host ID to confirm:</p>
-                <code className="wrap">{selected}</code>
-                <Form
-                  submit={
-                    modal === "reboot"
-                      ? "Authenticate and request reboot"
-                      : "Authenticate and revoke"
-                  }
-                  busy={busy}
-                  onSubmit={(e) => {
-                    const f = field(e);
-                    const operation = modal;
-                    void act(async () => {
-                      if (String(f.get("confirm")) !== selected)
-                        throw new Error("Host ID does not match.");
-                      await api("/api/auth/recent", "POST", {
-                        password: f.get("password"),
-                        code: f.get("code"),
-                      });
-                      if (operation === "reboot") {
-                        await api(`/api/hosts/${selected}/jobs`, "POST", {
-                          action: "host.reboot",
-                          args: {},
-                          confirm: selected,
-                        });
-                        setView("jobs");
-                        setNotice(
-                          "Reboot queued. Check acceptance and boot observation separately.",
-                        );
-                      } else
-                        await api(`/api/hosts/${selected}/revoke`, "POST", {
-                          confirm: selected,
-                        });
-                      setModal(null);
-                    });
-                  }}
-                >
-                  <label>
-                    Host ID
-                    <input name="confirm" required autoComplete="off" />
-                  </label>
-                  <label>
-                    Your password
-                    <input
-                      name="password"
-                      type="password"
-                      autoComplete="current-password"
-                      required
-                    />
-                  </label>
-                  <label>
-                    New authenticator code
-                    <input
-                      name="code"
-                      inputMode="numeric"
-                      autoComplete="one-time-code"
-                      required
-                      pattern="[0-9]{6}"
-                    />
-                    <small>
-                      A code already used to sign in cannot be reused.
-                    </small>
-                  </label>
-                </Form>
-              </>
-            )}
-          </section>
-        </div>
+            </>
+          )}
+        </Dialog>
       )}
       {result && (
-        <div className="modal-backdrop">
-          <section
-            className="modal panel wide"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="result-title"
-          >
-            <button
-              className="close"
-              aria-label="Close"
-              onClick={() => setResult(null)}
-            >
-              ×
-            </button>
-            <h2 id="result-title">
+        <Dialog
+          wide
+          onClose={() => setResult(null)}
+          title={
+            <>
               {result.action} <Tone value={result.state} />
-            </h2>
+            </>
+          }
+        >
+          <p>
+            Job <code>{result.id}</code>
+          </p>
+          <p>
+            Created {stamp(result.createdAt)} · dispatched{" "}
+            {stamp(result.dispatchedAt)} · finished {stamp(result.finishedAt)}
+          </p>
+          {result.action === "host.reboot" && (
             <p>
-              Job <code>{result.id}</code>
+              New boot observed:{" "}
+              <b>{result.rebootObserved ? "Yes" : "Not observed"}</b>
             </p>
+          )}
+          {result.result ? (
+            <>
+              <p>
+                Exit status {result.result.exitCode}{" "}
+                {result.result.truncated && "· output truncated"}
+              </p>
+              <h3>stdout</h3>
+              <pre>{result.result.stdout || "(empty)"}</pre>
+              <h3>stderr</h3>
+              <pre>{result.result.stderr || "(empty)"}</pre>
+            </>
+          ) : (
             <p>
-              Created {stamp(result.createdAt)} · dispatched{" "}
-              {stamp(result.dispatchedAt)} · finished {stamp(result.finishedAt)}
+              Output is pending or your account does not have the output
+              permission.
             </p>
-            {result.action === "host.reboot" && (
-              <p>
-                New boot observed:{" "}
-                <b>{result.rebootObserved ? "Yes" : "Not observed"}</b>
-              </p>
-            )}
-            {result.result ? (
-              <>
-                <p>
-                  Exit status {result.result.exitCode}{" "}
-                  {result.result.truncated && "· output truncated"}
-                </p>
-                <h3>stdout</h3>
-                <pre>{result.result.stdout || "(empty)"}</pre>
-                <h3>stderr</h3>
-                <pre>{result.result.stderr || "(empty)"}</pre>
-              </>
-            ) : (
-              <p>
-                Output is pending or your account does not have the output
-                permission.
-              </p>
-            )}
-            <p className="muted">
-              Command output may contain secrets. It is accessible only with an
-              explicit output grant.
-            </p>
-          </section>
-        </div>
+          )}
+          <p className="muted">
+            Command output may contain secrets. It is accessible only with an
+            explicit output grant.
+          </p>
+        </Dialog>
       )}
     </div>
   );
 }
 
-function Usage({ value, stale }: { value: number | null; stale: boolean }) {
+function Usage({
+  value,
+  stale,
+  label,
+}: {
+  value: number | null;
+  stale: boolean;
+  label: string;
+}) {
   return value === null ? (
     <span className="muted">Unknown</span>
   ) : (
@@ -1504,7 +1546,7 @@ function Usage({ value, stale }: { value: number | null; stale: boolean }) {
         min={0}
         max={100}
         value={value}
-        aria-label={`${value.toFixed(1)} percent`}
+        aria-label={`${label}: ${value.toFixed(1)} percent${stale ? ", last known" : ""}`}
       />
       {stale && <small>Last known</small>}
     </div>

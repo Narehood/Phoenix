@@ -14,7 +14,15 @@ import type {
   PullRequest,
   WorkflowRun,
 } from "./types";
-import { Empty, ErrorNotice, Metric, Tone, stamp, type ToneName } from "./ui";
+import {
+  Empty,
+  ErrorNotice,
+  Metric,
+  Time,
+  Tone,
+  stamp,
+  type ToneName,
+} from "./ui";
 
 const repositoryPattern =
   /^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9_.-]{1,100}$/;
@@ -146,7 +154,7 @@ function Pulls({
         <p className="muted">{empty}</p>
       ) : (
         <div className="table-scroll">
-          <table>
+          <table className="responsive-table pull-table">
             <thead>
               <tr>
                 <th>Pull request</th>
@@ -159,7 +167,7 @@ function Pulls({
             <tbody>
               {items.map((p) => (
                 <tr key={p.number}>
-                  <td className="wrap-cell">
+                  <td data-label="Pull request" className="wrap-cell">
                     <Link url={p.url}>
                       #{p.number} {p.title}
                     </Link>
@@ -170,17 +178,23 @@ function Pulls({
                         ` · ${p.updateKind === "security_or_version_unclassified" ? "update kind not classified" : p.updateKind.replaceAll("_", " ")}`}
                     </small>
                   </td>
-                  <td>{iso(p.updatedAt)}</td>
-                  <td>
+                  <td data-label="Updated">
+                    {Number.isFinite(Date.parse(p.updatedAt)) ? (
+                      <Time value={Date.parse(p.updatedAt)} />
+                    ) : (
+                      "Unknown"
+                    )}
+                  </td>
+                  <td data-label="Checks">
                     <Tone value={p.checks} tone={tone(p.checks, current)} />
                   </td>
-                  <td>
+                  <td data-label="Reviews">
                     <Tone
                       value={p.reviewState}
                       tone={tone(p.reviewState, current)}
                     />
                   </td>
-                  <td>
+                  <td data-label="Mergeability">
                     <Tone
                       value={p.mergeable}
                       tone={tone(p.mergeable, current)}
@@ -304,7 +318,7 @@ export function GitHubPanel({
       if (!alive.current) return;
       if (e instanceof ApiError && e.status === 429)
         setNotice(
-          `Refresh is cooling down (15-minute minimum per source). Next attempt ${view?.nextAttemptAt ? stamp(view.nextAttemptAt) : "is pending"}.`,
+          "Refresh is cooling down (15-minute minimum per source). Collection details will show the latest refresh eligibility.",
         );
       else setError(e);
       void load();
@@ -359,65 +373,70 @@ export function GitHubPanel({
             last response and is not current.
           </div>
         ) : null}
-        <div className="metrics">
-          <Metric
-            label="Source state"
-            value={
-              <Tone
-                value={failed ? "unknown" : view.state}
-                tone={failed ? "neutral" : sourceTone(view.state, current)}
-              />
-            }
-            detail={
-              failed
-                ? "Phoenix could not be reached"
-                : stateText[view.state] || "Collection reported an error."
-            }
-          />
-          <Metric
-            label="Freshness"
-            value={
-              <Tone
-                value={
-                  failed
-                    ? view.collectedAt
-                      ? "stale"
-                      : "unknown"
-                    : view.freshness
-                }
-                tone={current ? "good" : view.collectedAt ? "warn" : "neutral"}
-              />
-            }
-            detail={`Collected ${stamp(view.collectedAt)}`}
-          />
-          <Metric
-            label="Last attempt"
-            value={
-              view.lastAttemptAt
-                ? new Date(view.lastAttemptAt).toLocaleTimeString()
-                : "None"
-            }
-            detail={
-              view.lastAttemptAt
-                ? stamp(view.lastAttemptAt)
-                : "No collection attempted"
-            }
-          />
-          <Metric
-            label="Next attempt"
-            value={
-              view.nextAttemptAt
-                ? new Date(view.nextAttemptAt).toLocaleTimeString()
-                : "Not scheduled"
-            }
-            detail={
-              view.nextAttemptAt
-                ? `${stamp(view.nextAttemptAt)} · 15-minute minimum interval`
-                : view.state === "disabled"
-                  ? "Disabled sources are not polled"
-                  : "Awaiting the collector"
-            }
-          />
+        <div className="repository-identity">
+          <h3>
+            {snapshot ? (
+              <Link url={snapshot.repository.url}>
+                {snapshot.repository.fullName}
+              </Link>
+            ) : (
+              view.repository || "Connect a GitHub repository"
+            )}
+          </h3>
+          <p className="muted">
+            {snapshot
+              ? `${snapshot.repository.private ? "Private" : "Public"} repository · ${snapshot.repository.defaultBranch || "Unknown"} branch${snapshot.repository.archived ? " · archived on GitHub" : ""}`
+              : "Read-only repository checks, pull requests and security alerts."}
+          </p>
+        </div>
+        <div className="collection-summary">
+          <div className="collection-current">
+            <span className="muted">Data</span>
+            <Tone
+              value={
+                failed
+                  ? view.collectedAt
+                    ? "stale"
+                    : "unknown"
+                  : view.freshness
+              }
+              tone={current ? "good" : view.collectedAt ? "warn" : "neutral"}
+            />
+            <span className="muted">
+              Collected <Time value={view.collectedAt} />
+            </span>
+          </div>
+          <details>
+            <summary>Collection details</summary>
+            <dl className="facts">
+              <dt>Source state</dt>
+              <dd>
+                {failed
+                  ? "Phoenix could not be reached"
+                  : stateText[view.state] || "Collection reported an error."}
+              </dd>
+              <dt>Last attempt</dt>
+              <dd>{stamp(view.lastAttemptAt)}</dd>
+              <dt>Refresh eligibility</dt>
+              <dd>
+                {!view.configured
+                  ? "Not connected"
+                  : !view.enabled ||
+                      view.state === "disabled" ||
+                      project.archived ||
+                      !moduleOn
+                    ? "Collection paused"
+                    : cooling
+                      ? stamp(view.nextAttemptAt)
+                      : "Eligible for refresh"}
+              </dd>
+              <dt>Polling limit</dt>
+              <dd>
+                At least 15 minutes between attempts. Eligibility is not a
+                promised collection time.
+              </dd>
+            </dl>
+          </details>
         </div>
         {view.error && (
           <p className="notice error" role="status">
@@ -443,39 +462,39 @@ export function GitHubPanel({
                 . Values below are last known, not current health.
               </p>
             )}
-            <div className="metrics">
+            <div className="metrics health-metrics">
               <Metric
-                label="Repository"
-                value={
-                  <Link url={snapshot.repository.url}>
-                    {snapshot.repository.fullName}
-                  </Link>
-                }
-                detail={`${snapshot.repository.private ? "Private" : "Public"}${snapshot.repository.archived ? " · archived on GitHub" : ""} · default branch ${snapshot.repository.defaultBranch || "unknown"}`}
-              />
-              <Metric
-                label="Open PRs observed"
+                label="Observed PRs"
                 value={count(snapshot.pulls)}
                 detail={`Ten most recently updated${current ? "" : " · last known"}`}
               />
               <Metric
-                label="Dependency update PRs"
+                label="Update PRs"
                 value={count(snapshot.pulls, (p) => p.dependencyUpdate)}
                 detail="Dependabot/Renovate authors only"
               />
               <Metric
-                label="Open Dependabot alerts"
+                label="Dependabot alerts"
                 value={count(snapshot.alerts)}
                 detail={`Up to 50${current ? "" : " · last known"}`}
               />
             </div>
-            <p className="muted coverage-note">
-              Last push {iso(snapshot.repository.pushedAt)} · Code scanning:{" "}
-              {snapshot.codeScanning} · Secret scanning:{" "}
-              {snapshot.secretScanning} · Dependency coverage: update PRs and
-              Dependabot alerts only. This is not a package-version inventory;
-              an empty list does not mean dependencies are current.
-            </p>
+            <div className="coverage-note">
+              <p>
+                Read-only observations, not a package-version inventory. Empty
+                results do not prove dependencies are current.
+              </p>
+              <details>
+                <summary>Scope & coverage</summary>
+                <p>
+                  Last push {iso(snapshot.repository.pushedAt)}. Code scanning:{" "}
+                  {snapshot.codeScanning}. Secret scanning:{" "}
+                  {snapshot.secretScanning}. Dependency coverage is limited to
+                  recognized update PRs and Dependabot alerts. Checks and
+                  reviews do not evaluate required-review rules.
+                </p>
+              </details>
+            </div>
             <div className="panel-body section">
               <h3>Open pull requests</h3>
               <Coverage
@@ -521,7 +540,7 @@ export function GitHubPanel({
                   </p>
                 ) : (
                   <div className="table-scroll">
-                    <table>
+                    <table className="responsive-table">
                       <thead>
                         <tr>
                           <th>Workflow</th>
@@ -534,12 +553,12 @@ export function GitHubPanel({
                           const result = r.conclusion || r.status || "unknown";
                           return (
                             <tr key={`${r.url}-${i}`}>
-                              <td className="wrap-cell">
+                              <td data-label="Workflow" className="wrap-cell">
                                 <Link url={r.url}>
                                   {r.name || "Unnamed workflow"}
                                 </Link>
                               </td>
-                              <td>
+                              <td data-label="Result">
                                 <Tone
                                   value={result}
                                   tone={tone(result, current)}
@@ -548,7 +567,7 @@ export function GitHubPanel({
                                   <small>{r.status}</small>
                                 )}
                               </td>
-                              <td>
+                              <td data-label="Commit">
                                 <code>{r.sha.slice(0, 12) || "unknown"}</code>
                               </td>
                             </tr>
@@ -574,7 +593,7 @@ export function GitHubPanel({
                   </p>
                 ) : (
                   <div className="table-scroll">
-                    <table>
+                    <table className="responsive-table">
                       <thead>
                         <tr>
                           <th>Alert</th>
@@ -586,21 +605,23 @@ export function GitHubPanel({
                       <tbody>
                         {alerts.map((a: DependabotAlert) => (
                           <tr key={a.number}>
-                            <td className="wrap-cell">
+                            <td data-label="Alert" className="wrap-cell">
                               <Link url={a.url}>#{a.number}</Link>
                               <small>{a.summary}</small>
                             </td>
-                            <td>
+                            <td data-label="Package">
                               {a.package}
                               <small>{a.ecosystem}</small>
                             </td>
-                            <td>
+                            <td data-label="Severity">
                               <Tone
                                 value={a.severity || "unknown"}
                                 tone={tone(a.severity, current)}
                               />
                             </td>
-                            <td>{a.fixedIn || "Not supplied"}</td>
+                            <td data-label="Fixed in">
+                              {a.fixedIn || "Not supplied"}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -659,9 +680,8 @@ export function GitHubPanel({
         {notice && <div className="notice">{notice}</div>}
         {!moduleOn && (
           <p className="notice">
-            The dependencies module is not selected for this project. Select it
-            in metadata before connecting a repository; until then nothing is
-            collected.
+            Repository health is not enabled. Open Project settings below and
+            select Repository health before connecting a repository.
           </p>
         )}
         {project.archived && (
@@ -724,7 +744,8 @@ function GitHubSettings({
     [touched, setTouched] = useState(false),
     [error, setError] = useState<unknown>(null),
     [notice, setNotice] = useState(""),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [expanded, setExpanded] = useState(!view?.configured);
   const token = useRef<HTMLInputElement>(null),
     alive = useRef(true);
   useEffect(() => {
@@ -834,133 +855,142 @@ function GitHubSettings({
   }
 
   return (
-    <div className="panel-body section settings">
-      <h3>Source settings</h3>
-      <p className="muted">
-        Administrator only; saving requires recent password and MFA
-        verification. Use a fine-grained token limited to this repository with
-        read access to metadata, pull requests, checks, commit statuses, Actions
-        and Dependabot alerts. Phoenix only reads.
-      </p>
-      <ErrorNotice
-        error={error}
-        onDismiss={() => setError(null)}
-        onVerify={onVerify}
-      />
-      {notice && <div className="notice">{notice}</div>}
-      {!view ? (
+    <details
+      className="disclosure settings"
+      open={expanded}
+      onToggle={(event) => setExpanded(event.currentTarget.open)}
+    >
+      <summary>
+        <strong>Repository settings</strong>
+        <span>Connection and read-only credentials</span>
+      </summary>
+      <div className="panel-body">
         <p className="muted">
-          Settings are available once the source state has loaded.
+          Administrator only; saving requires recent password and MFA
+          verification. Use a fine-grained token limited to this repository with
+          read access to metadata, pull requests, checks, commit statuses,
+          Actions and Dependabot alerts. Phoenix only reads.
         </p>
-      ) : !usable ? (
-        <p className="muted">
-          Select the dependencies module on an active project to configure a
-          repository.
-        </p>
-      ) : null}
-      {conflict && view && (
-        <div className="notice conflict" role="alert">
-          <b>
-            Source revision {view.revision} replaced revision {base}.
-          </b>
-          <p>
-            Current: {view.configured ? view.repository : "not configured"}
-            {view.configured && ` · ${view.enabled ? "enabled" : "disabled"}`}.
-            Your input: {repository || "(empty)"} ·{" "}
-            {enabled ? "enabled" : "disabled"}.
+        <ErrorNotice
+          error={error}
+          onDismiss={() => setError(null)}
+          onVerify={onVerify}
+        />
+        {notice && <div className="notice">{notice}</div>}
+        {!view ? (
+          <p className="muted">
+            Settings are available once the source state has loaded.
           </p>
-          <div className="button-row">
-            <button type="button" onClick={() => setBase(view.revision)}>
-              Keep my input on revision {view.revision}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                if (token.current) token.current.value = "";
-                setTouched(false);
-              }}
-            >
-              Discard my input
-            </button>
+        ) : !usable ? (
+          <p className="muted">
+          Enable Repository health in Project settings on an active project
+          before connecting a repository.
+          </p>
+        ) : null}
+        {conflict && view && (
+          <div className="notice conflict" role="alert">
+            <b>
+              Source revision {view.revision} replaced revision {base}.
+            </b>
+            <p>
+              Current: {view.configured ? view.repository : "not configured"}
+              {view.configured && ` · ${view.enabled ? "enabled" : "disabled"}`}
+              . Your input: {repository || "(empty)"} ·{" "}
+              {enabled ? "enabled" : "disabled"}.
+            </p>
+            <div className="button-row">
+              <button type="button" onClick={() => setBase(view.revision)}>
+                Keep my input on revision {view.revision}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (token.current) token.current.value = "";
+                  setTouched(false);
+                }}
+              >
+                Discard my input
+              </button>
+            </div>
           </div>
-        </div>
-      )}
-      <form
-        className="form"
-        onSubmit={submit}
-        aria-label="GitHub source settings"
-      >
-        <fieldset disabled={!ready || busy}>
-          <legend>
-            {view?.configured
-              ? `Connected · revision ${view.revision}`
-              : "Connect a repository"}
-          </legend>
-          <label>
-            Repository (owner/name)
-            <input
-              name="repository"
-              value={repository}
-              autoComplete="off"
-              spellCheck={false}
-              maxLength={140}
-              onChange={(e) => {
-                setRepository(e.target.value.trim());
-                setTouched(true);
-              }}
-            />
-          </label>
-          <label>
-            {view?.configured
-              ? "Replacement token (optional)"
-              : "Read-only token"}
-            <input
-              ref={token}
-              type="password"
-              autoComplete="off"
-              spellCheck={false}
-              maxLength={255}
-              data-secret="github-token"
-              onChange={() => setTouched(true)}
-            />
-            <small>
+        )}
+        <form
+          className="form"
+          onSubmit={submit}
+          aria-label="GitHub source settings"
+        >
+          <fieldset disabled={!ready || busy}>
+            <legend>
               {view?.configured
-                ? "Leave blank to keep the stored token for the same repository. A different repository requires a token."
-                : "Stored encrypted on the server and never shown again."}
-            </small>
-          </label>
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={enabled}
-              onChange={(e) => {
-                setEnabled(e.target.checked);
-                setTouched(true);
-              }}
-            />
-            Collect automatically
-          </label>
-        </fieldset>
-        <div className="button-row">
-          <button className="primary" disabled={!ready || busy || conflict}>
-            {busy
-              ? "Working…"
-              : view?.configured
-                ? "Save source"
-                : "Connect repository"}
-          </button>
-          {view?.configured && (
-            <button
-              type="button"
-              className="danger"
-              disabled={busy}
-              onClick={() => void disconnect()}
-            >
-              Disconnect
+                ? `Connected · revision ${view.revision}`
+                : "Connect a repository"}
+            </legend>
+            <label>
+              Repository (owner/name)
+              <input
+                name="repository"
+                value={repository}
+                autoComplete="off"
+                spellCheck={false}
+                maxLength={140}
+                onChange={(e) => {
+                  setRepository(e.target.value.trim());
+                  setTouched(true);
+                }}
+              />
+            </label>
+            <label>
+              {view?.configured
+                ? "Replacement token (optional)"
+                : "Read-only token"}
+              <input
+                ref={token}
+                type="password"
+                autoComplete="off"
+                spellCheck={false}
+                maxLength={255}
+                data-secret="github-token"
+                onChange={() => setTouched(true)}
+              />
+              <small>
+                {view?.configured
+                  ? "Leave blank to keep the stored token for the same repository. A different repository requires a token."
+                  : "Stored encrypted on the server and never shown again."}
+              </small>
+            </label>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={enabled}
+                onChange={(e) => {
+                  setEnabled(e.target.checked);
+                  setTouched(true);
+                }}
+              />
+              Collect automatically
+            </label>
+          </fieldset>
+          <div className="button-row">
+            <button className="primary" disabled={!ready || busy || conflict}>
+              {busy
+                ? "Working…"
+                : view?.configured
+                  ? "Save source"
+                  : "Connect repository"}
             </button>
-          )}
-        </div>
-      </form>
-    </div>
+            {view?.configured && (
+              <button
+                type="button"
+                className="danger"
+                disabled={busy}
+                onClick={() => void disconnect()}
+              >
+                Disconnect
+              </button>
+            )}
+          </div>
+        </form>
+      </div>
+    </details>
   );
 }

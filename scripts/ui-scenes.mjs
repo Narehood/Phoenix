@@ -4,7 +4,12 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   const settle = () => evaluate("new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)))");
   const shot = async (name) => {
     await settle();
+    if (!await evaluate("document.documentElement.scrollWidth <= innerWidth")) throw Error(`Horizontal document overflow in ${name}`);
     await capture(name);
+  };
+  const navigate = async (name) => {
+    await evaluate("if (innerWidth <= 720) document.querySelector('.mobile-navigation').open = true");
+    await click(name);
   };
   const top = () => evaluate("window.scrollTo(0, 0)");
   const section = async (selector) => {
@@ -17,7 +22,7 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await click("edge-01");
   await wait("document.body.innerText.includes('systemd-journald')");
   await shot("host-desktop");
-  await click("Projects");
+  await navigate("Projects");
   await wait("document.body.innerText.includes('Website')");
   await top();
   await shot("projects-desktop");
@@ -26,17 +31,25 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await shot("repository-desktop");
   await section(".github .section");
   await shot("repository-checks-desktop");
-  await section("form[aria-label='Project metadata']");
+  await evaluate("document.querySelector('.project-settings > summary').click()");
+  await section(".project-settings");
   await shot("project-settings-desktop");
-  await click("Access & accounts");
+  await navigate("Access & accounts");
   await wait("document.querySelector('select[name=user] option[value=operator-fixture]')");
   await top();
   await shot("access-desktop");
-  await click("Fleet overview");
+  await navigate("Fleet overview");
   await top();
   await viewport(390, 844);
   await shot("fleet-mobile");
-  await click("Projects");
+  await evaluate("document.querySelector('.mobile-navigation').open = true");
+  await shot("navigation-mobile");
+  await evaluate("document.querySelector('.mobile-navigation').open = false");
+  await click("edge-01");
+  await wait("document.querySelector('h1')?.textContent === 'edge-01'");
+  await top();
+  await shot("host-mobile");
+  await navigate("Projects");
   await wait("document.body.innerText.includes('Website')");
   await top();
   await shot("projects-mobile");
@@ -47,14 +60,21 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await top();
   await evaluate("document.documentElement.dataset.mode = 'dark'");
   await shot("repository-dark");
-  await click("Fleet overview");
+  await navigate("Fleet overview");
   await top();
   await shot("fleet-dark");
   await evaluate("document.documentElement.dataset.mode = 'light'; window.fixture.projects = {}");
-  await click("Projects");
+  await navigate("Projects");
   await wait("document.body.innerText.includes('No projects yet')");
   await top();
   await shot("empty-projects-desktop");
+  await click("Verify identity");
+  await wait("document.querySelector('dialog[open]')");
+  await shot("verification-dialog");
+  await evaluate("window.fixture.authFailure = 503; document.querySelector('dialog input[name=password]').value = 'temporary fixture password'; document.querySelector('dialog input[name=code]').value = '123456'; document.querySelector('dialog form').requestSubmit()");
+  await wait("document.querySelector('dialog [role=alert]')?.textContent.includes('Fixture verification unavailable')");
+  await shot("verification-error");
+  await click("×");
   await click("Sign out");
   await wait("document.querySelector('input[name=code]')");
   await shot("sign-in-desktop");

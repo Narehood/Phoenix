@@ -1,10 +1,99 @@
-import type { FormEvent, ReactNode } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import { ApiError } from "./api";
 
 export type ToneName = "good" | "bad" | "warn" | "neutral";
 
 export const stamp = (n: number) =>
   n ? new Date(n).toLocaleString() : "Never";
+
+export function Time({ value }: { value: number }) {
+  if (!value) return <span>Never</span>;
+  const elapsed = Math.max(0, Math.floor((Date.now() - value) / 1000));
+  const label =
+    elapsed < 60
+      ? "Just now"
+      : elapsed < 3600
+        ? `${Math.floor(elapsed / 60)}m ago`
+        : elapsed < 86400
+          ? `${Math.floor(elapsed / 3600)}h ago`
+          : new Date(value).toLocaleDateString();
+  return (
+    <time
+      dateTime={new Date(value).toISOString()}
+      title={stamp(value)}
+      tabIndex={0}
+    >
+      {label}
+      <span className="time-exact">{stamp(value)}</span>
+    </time>
+  );
+}
+
+/** Native modal semantics provide focus containment and an inert background. */
+export function Dialog({
+  title,
+  children,
+  onClose,
+  busy = false,
+  wide = false,
+}: {
+  title: ReactNode;
+  children: ReactNode;
+  onClose: () => void;
+  busy?: boolean;
+  wide?: boolean;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
+  useEffect(() => {
+    const dialog = ref.current!;
+    const opener =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    dialog.showModal();
+    (
+      dialog.querySelector<HTMLElement>("input:not([disabled]), textarea") ||
+      dialog.querySelector<HTMLElement>("h2") ||
+      dialog
+    ).focus();
+    return () => {
+      dialog.close();
+      if (opener?.isConnected) opener.focus();
+    };
+  }, []);
+  return (
+    <dialog
+      ref={ref}
+      className={`modal panel${wide ? " wide" : ""}`}
+      aria-labelledby={titleId}
+      onCancel={(event) => {
+        event.preventDefault();
+        if (!busy) onClose();
+      }}
+    >
+      <button
+        type="button"
+        className="close"
+        aria-label="Close dialog"
+        onClick={onClose}
+        disabled={busy}
+      >
+        ×
+      </button>
+      <h2 id={titleId} tabIndex={-1}>
+        {title}
+      </h2>
+      {children}
+    </dialog>
+  );
+}
 
 export function toneOf(value: string): ToneName {
   return [

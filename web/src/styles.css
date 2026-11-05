@@ -63,6 +63,12 @@ select:focus {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+textarea:focus-visible,
+summary:focus-visible,
+time:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
 h1,
 h2,
 h3,
@@ -82,7 +88,7 @@ h3 {
   font-size: 15px;
 }
 small {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-3);
 }
 code,
@@ -291,7 +297,7 @@ main#content {
   border-radius: 10px;
   background: var(--surface);
   padding: 18px 20px;
-  min-height: 117px;
+  min-height: 100px;
   display: flex;
   flex-direction: column;
   gap: 7px;
@@ -313,7 +319,7 @@ main#content {
   letter-spacing: 0;
 }
 .metric small {
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.4;
 }
 .panel {
@@ -365,7 +371,7 @@ table {
   white-space: nowrap;
 }
 th {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-3);
   font-weight: 600;
   background: var(--surface-2);
@@ -377,7 +383,7 @@ th {
 td {
   padding: 15px 16px;
   border-bottom: 1px solid var(--border);
-  font-size: 12px;
+  font-size: 13px;
   vertical-align: middle;
 }
 tr:last-child td {
@@ -386,7 +392,7 @@ tr:last-child td {
 td small {
   display: block;
   margin-top: 4px;
-  font-size: 10px;
+  font-size: 12px;
 }
 tbody tr:hover {
   background: var(--surface-2);
@@ -410,10 +416,12 @@ td > .text-link {
 }
 .tag {
   display: inline-block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 4px;
-  font-size: 9px;
+  font-size: 11px;
   padding: 0 5px;
   margin: 5px 4px 0 0;
   color: var(--text-2);
@@ -423,7 +431,7 @@ td > .text-link {
   gap: 5px;
   align-items: center;
   border-radius: 30px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 550;
   padding: 3px 8px;
   white-space: nowrap;
@@ -433,7 +441,7 @@ td > .text-link {
   font-size: 8px;
 }
 .good {
-  color: var(--good);
+  color: var(--good-text);
   background: var(--good-wash);
 }
 .bad {
@@ -441,7 +449,7 @@ td > .text-link {
   background: var(--critical-wash);
 }
 .warn {
-  color: var(--warn-edge);
+  color: var(--warning-text);
   background: var(--warning-wash);
 }
 .neutral {
@@ -463,10 +471,13 @@ td > .text-link {
   accent-color: var(--accent);
 }
 .usage.stale {
+  color: var(--text-3);
+}
+.usage.stale meter {
   opacity: 0.6;
 }
 .footnote {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-3);
   padding: 0 3px;
 }
@@ -645,33 +656,32 @@ footer {
   display: flex;
   justify-content: space-between;
 }
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: #0009;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  z-index: 50;
+.modal::backdrop {
+  background: #17141299;
   backdrop-filter: blur(3px);
 }
 .modal {
   padding: 28px;
-  position: relative;
+  position: fixed;
+  inset: 0;
+  height: fit-content;
   width: 540px;
   max-width: 100%;
   max-height: 90vh;
   overflow: auto;
-  margin: 0;
+  margin: auto;
   box-shadow: var(--shadow);
 }
 .modal.wide {
   width: 800px;
 }
+body:has(dialog[open]) {
+  overflow: hidden;
+}
 .modal h2 {
   margin-bottom: 16px;
   font-size: 20px;
+  padding-right: 28px;
 }
 .modal > p {
   font-size: 13px;
@@ -827,7 +837,7 @@ td.wrap-cell {
   display: none;
 }
 .coverage-note {
-  font-size: 11px;
+  font-size: 12px;
   margin-top: 0;
 }
 .section {
@@ -849,6 +859,204 @@ td.wrap-cell {
 }
 .grant-editor {
   max-width: none;
+}
+.mobile-navigation {
+  display: none;
+}
+summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 550;
+}
+summary:hover {
+  color: var(--accent-text);
+}
+.disclosure {
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--surface);
+  margin-bottom: 22px;
+  overflow: clip;
+}
+.disclosure > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 20px;
+  padding: 18px 20px;
+  list-style: none;
+}
+.disclosure > summary::before {
+  content: "+";
+  font-size: 20px;
+  font-weight: 400;
+  color: var(--text-3);
+}
+.disclosure[open] > summary::before {
+  content: "−";
+}
+.disclosure > summary > span {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-3);
+  margin-left: auto;
+}
+.disclosure[open] > summary {
+  border-bottom: 1px solid var(--border);
+}
+.disclosure-body {
+  padding: 20px;
+}
+.planned-features {
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.planned-features p {
+  font-size: 12px;
+  margin-top: 10px;
+}
+.planned-features label {
+  margin-top: 10px;
+}
+.project-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  color: var(--text-3);
+  font-size: 12px;
+  margin: -12px 0 24px;
+}
+.project-table {
+  white-space: normal;
+}
+.project-table td:first-child {
+  width: 40%;
+}
+.project-table td small {
+  max-width: 420px;
+}
+.fleet-table {
+  white-space: normal;
+}
+.fleet-table td {
+  padding: 18px 16px;
+}
+.fleet-table td:first-child {
+  min-width: 155px;
+}
+.fleet-table .chip {
+  text-transform: capitalize;
+}
+.resource-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(50px, 1fr));
+  gap: 14px;
+}
+.resource-summary small {
+  margin: 0 0 5px;
+}
+.resource-summary .usage,
+.resource-summary meter {
+  width: 100%;
+  min-width: 50px;
+  max-width: 76px;
+}
+.measurement-details {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.measurement-details summary {
+  font-size: 12px;
+  font-weight: 400;
+}
+.measurement-details > div {
+  margin-top: 8px;
+  max-width: 240px;
+}
+time {
+  position: relative;
+  white-space: nowrap;
+}
+.time-exact {
+  display: none;
+  position: absolute;
+  inset: auto auto calc(100% + 6px) 0;
+  background: var(--tip-bg);
+  color: var(--tip-fg);
+  border: 1px solid var(--border-2);
+  padding: 6px 9px;
+  border-radius: 5px;
+  z-index: 20;
+  box-shadow: var(--shadow);
+}
+time:hover .time-exact,
+time:focus .time-exact {
+  display: block;
+}
+.repository-identity {
+  padding: 0 20px 14px;
+}
+.repository-identity h3 {
+  font-size: 22px;
+  letter-spacing: -0.4px;
+  margin-bottom: 5px;
+  overflow-wrap: anywhere;
+}
+.repository-identity h3 a {
+  color: var(--text-1);
+  text-decoration: none;
+}
+.repository-identity h3 a:hover {
+  color: var(--accent-text);
+  text-decoration: underline;
+}
+.repository-identity p {
+  font-size: 12px;
+  margin: 0;
+}
+.collection-summary {
+  padding: 0 20px 18px;
+  font-size: 12px;
+}
+.collection-current {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.collection-summary details {
+  margin-top: 10px;
+}
+.collection-summary .facts {
+  margin-top: 12px;
+  max-width: 650px;
+}
+.health-metrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.github > .panel-body:has(> .notice:only-child) {
+  padding-bottom: 0;
+}
+.github .coverage-note p {
+  margin-bottom: 6px;
+}
+.github .coverage-note {
+  padding-bottom: 12px;
+  color: var(--text-2);
+}
+.github > .settings {
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+}
+.notice.error {
+  gap: 12px;
+}
+.button-row button,
+.topbar button {
+  min-height: 36px;
 }
 @media (min-width: 1650px) {
   td {
@@ -896,8 +1104,80 @@ td.wrap-cell {
     width: 100%;
     padding: 12px;
   }
+  .sidebar > nav {
+    display: none;
+  }
+  .mobile-navigation {
+    display: block;
+    min-width: 0;
+    position: relative;
+    flex: 1;
+  }
+  .mobile-navigation > summary {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 44px;
+    list-style: none;
+  }
+  .mobile-navigation > summary::before {
+    content: "☰";
+    color: var(--text-2);
+  }
+  .mobile-navigation > summary > span {
+    color: var(--text-3);
+  }
+  .mobile-navigation > summary strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+  }
+  .mobile-menu-body {
+    position: absolute;
+    left: 0;
+    top: calc(100% + 7px);
+    width: min(340px, calc(100vw - 28px));
+    padding: 12px;
+    background: var(--surface);
+    border: 1px solid var(--border-2);
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+    z-index: 30;
+  }
+  .mobile-menu-body nav {
+    display: grid;
+    overflow: visible;
+  }
+  .mobile-menu-body nav button {
+    color: var(--text-2);
+    min-height: 44px;
+    font-size: 14px;
+  }
+  .mobile-menu-body nav button.active {
+    background: var(--accent-wash);
+    color: var(--accent-text);
+    border: 1px solid var(--border);
+    padding-left: 8px;
+  }
+  .mobile-account {
+    padding: 16px 8px 4px;
+    border-top: 1px solid var(--border);
+    margin-top: 10px;
+  }
+  .mobile-account small {
+    display: block;
+    margin-bottom: 12px;
+  }
+  .mobile-account button {
+    min-height: 44px;
+    font-size: 13px;
+  }
+  .desktop-context {
+    display: none;
+  }
   .brand {
-    padding: 0 5px 12px;
+    padding: 0 5px;
   }
   .brand span {
     font-size: 22px;
@@ -934,7 +1214,12 @@ td.wrap-cell {
     width: 100%;
   }
   .topbar {
-    height: 45px;
+    height: 56px;
+    padding: 0 14px;
+    gap: 12px;
+    position: sticky;
+    top: 0;
+    z-index: 20;
   }
   main#content {
     padding: 22px 14px;
@@ -955,8 +1240,8 @@ td.wrap-cell {
     gap: 10px;
   }
   .metric {
-    padding: 14px;
-    min-height: 106px;
+    padding: 12px;
+    min-height: 84px;
   }
   .metric strong {
     font-size: 20px;
@@ -975,8 +1260,148 @@ td.wrap-cell {
   .modal {
     padding: 24px 18px;
   }
-  .modal-backdrop {
-    padding: 10px;
+  .modal {
+    width: calc(100vw - 24px);
+    max-height: calc(100dvh - 32px);
+  }
+  .modal.wide {
+    width: calc(100vw - 24px);
+  }
+  .responsive-table,
+  .responsive-table tbody {
+    display: block;
+    width: 100%;
+    white-space: normal;
+  }
+  .responsive-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .responsive-table tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px 16px;
+    padding: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .responsive-table tr:last-child {
+    border-bottom: 0;
+  }
+  .responsive-table td {
+    display: flex;
+    flex-direction: column;
+    align-items: start;
+    gap: 4px;
+    padding: 0;
+    border: 0;
+    width: auto !important;
+    min-width: 0 !important;
+    overflow-wrap: anywhere;
+  }
+  .responsive-table td::before {
+    content: attr(data-label);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-3);
+  }
+  .responsive-table td:first-child {
+    grid-column: 1 / -1;
+  }
+  .responsive-table td:first-child::before {
+    display: none;
+  }
+  .responsive-table td:first-child > .text-link {
+    font-size: 16px;
+    min-height: 32px;
+  }
+  .responsive-table td small {
+    margin: 0;
+  }
+  .fleet-table td[data-label="Readings"],
+  .fleet-table td[data-label="Resources"] {
+    grid-column: 1 / -1;
+  }
+  .fleet-table td[data-label="Readings"] {
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .fleet-table .resource-summary {
+    width: 100%;
+    gap: 20px;
+  }
+  .fleet-table .usage,
+  .fleet-table .usage meter {
+    max-width: none;
+  }
+  .measurement-details {
+    margin-top: 6px;
+  }
+  .measurement-details summary {
+    min-height: 32px;
+    padding-top: 7px;
+  }
+  .health-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .health-metrics .metric {
+    padding: 12px 10px;
+    gap: 5px;
+  }
+  .health-metrics .metric > span {
+    font-size: 12px;
+  }
+  .health-metrics .metric small {
+    font-size: 11px;
+  }
+  .disclosure > summary {
+    padding: 16px;
+  }
+  .disclosure > summary > span {
+    margin-left: 24px;
+    flex-basis: 100%;
+  }
+  .disclosure-body,
+  .panel-body {
+    padding: 16px;
+  }
+  .repository-identity,
+  .collection-summary {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .repository-identity h3 {
+    font-size: 21px;
+  }
+  .github > .metrics,
+  .github > .notice,
+  .github > .coverage-note {
+    margin-left: 16px;
+    margin-right: 16px;
+  }
+  .facts {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+  .facts dd {
+    margin-bottom: 10px;
+  }
+  .form input:not([type="checkbox"]),
+  .form select,
+  .form textarea {
+    min-height: 44px;
+    font-size: 16px;
+  }
+  button {
+    min-height: 40px;
+  }
+  .button-row button {
+    min-height: 40px;
+    font-size: 12px;
   }
   .history-labels small:nth-child(2) {
     display: none;
