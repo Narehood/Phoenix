@@ -682,6 +682,7 @@ try {
   assert.ok(await evaluate("document.querySelector('.job-target').innerText.includes('system.summary') && document.querySelector('.job-target').innerText.includes('ADMIN-ONLY-HOST')"), "Diagnostic receipt lost its exact job or target");
   await click("ADMIN-ONLY-HOST");
   await wait("document.querySelector('.host-actions button')?.disabled === false && !document.querySelector('dialog[open]')");
+  const rebootAuthBefore = await evaluate("window.fixture.requests.filter(r => r.method === 'POST' && r.path === '/api/auth/recent').length");
   await evaluate("document.querySelector('.host-actions').open = true");
   await click("Reboot host");
   await wait("!!document.querySelector('dialog input[name=confirm]')");
@@ -691,10 +692,13 @@ try {
   await evaluate("document.querySelector('dialog form').requestSubmit()");
   await wait("document.querySelector('dialog [role=alert]')?.innerText.includes('Host ID does not match')");
   assert.equal(await evaluate("window.fixture.jobs.length"), 3, "Incorrect host confirmation queued a reboot");
+  assert.equal(await evaluate("window.fixture.requests.filter(r => r.method === 'POST' && r.path === '/api/auth/recent').length"), rebootAuthBefore, "Incorrect host confirmation reached authentication");
   await setValue("dialog input[name=confirm]", "private-host");
   await evaluate("document.querySelector('dialog form').requestSubmit()");
   await wait("location.hash === '#/jobs/fixture-job-4' && document.querySelector('dialog h2')?.innerText.includes('Host reboot')");
-  assert.ok(await evaluate("window.fixture.requests.filter(r => r.method === 'POST' && r.path === '/api/auth/recent').length >= 2 && document.querySelector('.job-target').innerText.includes('ADMIN-ONLY-HOST') && document.querySelector('dialog').innerText.includes('New boot observed')"), "Reboot continuation lost verification or independent boot-observation context");
+  assert.equal(await evaluate("window.fixture.requests.filter(r => r.method === 'POST' && r.path === '/api/auth/recent').length"), rebootAuthBefore + 1, "Reboot submission skipped a fresh identity verification");
+  assert.deepEqual(await evaluate("window.fixture.requests.filter(r => r.method === 'POST' && ['/api/auth/recent','/api/hosts/private-host/jobs'].includes(r.path)).slice(-2).map(r => r.path)"), ["/api/auth/recent", "/api/hosts/private-host/jobs"], "Reboot job was submitted before identity verification");
+  assert.ok(await evaluate("document.querySelector('.job-target').innerText.includes('ADMIN-ONLY-HOST') && document.querySelector('dialog').innerText.includes('New boot observed')"), "Reboot continuation lost target or independent boot-observation context");
   await click("ADMIN-ONLY-HOST");
   await wait("!!document.querySelector('.service-requests') && !document.querySelector('dialog[open]')");
   await click("← All hosts");
