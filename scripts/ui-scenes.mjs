@@ -62,16 +62,18 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await click("View outcome");
   await wait("location.hash === '#/jobs/fixture-job-1' && document.querySelector('dialog[open] .status-notice')?.innerText.includes('queued')");
   await shot("job-outcome-queued-desktop");
-  await evaluate("window.fixture.jobs[0].state = 'succeeded'; window.fixture.jobs[0].result = {exitCode:0, stdout:'Fixture service log output. No real host was queried.', stderr:'', truncated:false}");
+  await evaluate("Object.assign(window.fixture.jobs[0], {state:'succeeded', dispatchedAt:window.fixture.jobs[0].createdAt + 1, finishedAt:Date.now(), result:{exitCode:0, stdout:'Fixture service log output. No real host was queried.', stderr:'', truncated:false}})");
   await click("Refresh status");
   await wait("document.querySelector('dialog[open] .status-notice')?.innerText.includes('succeeded')");
+  if (!await evaluate("!document.querySelector('dialog[open]').innerText.includes('Never') && window.fixture.jobs[0].createdAt <= window.fixture.jobs[0].dispatchedAt && window.fixture.jobs[0].dispatchedAt <= window.fixture.jobs[0].finishedAt")) throw Error("Completed job fixture has an inconsistent lifecycle");
   await shot("job-outcome-completed-desktop");
-  await evaluate("window.fixture.hostPermissions = ['host.read','logs.read']; window.fixture.jobs[0].state = 'queued'; window.fixture.jobs[0].result = null");
+  await evaluate("window.fixture.hostPermissions = ['host.read','logs.read']; Object.assign(window.fixture.jobs[0], {state:'queued',dispatchedAt:0,finishedAt:0,result:null})");
   await click("×");
   await wait("location.hash === '#/jobs' && document.querySelector('#content').innerText.includes('Cancellation not permitted')");
   await shot("jobs-permissions-limited-desktop");
   await evaluate("window.fixture.hostPermissions = null; history.back()");
   await wait("location.hash === '#/hosts/private-host' && !!document.querySelector('.host-configuration')");
+  await wait("document.querySelector('#host-jobs button')?.disabled === false");
   await section(".host-inventory-form");
   await evaluate(`(() => {
     const input = document.querySelector('.host-inventory-form input[name=name]');

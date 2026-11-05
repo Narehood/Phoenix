@@ -592,11 +592,12 @@ try {
   await click("View outcome");
   await wait("location.hash === '#/jobs/fixture-job-2' && document.querySelector('dialog[open] .status-notice')?.innerText.includes('queued')");
   assert.ok(await evaluate("!!document.activeElement.closest('dialog[open]')"), "Navigating to a job outcome moved focus outside its modal");
-  await evaluate("window.fixture.jobs[1].state = 'succeeded'; window.fixture.jobs[1].result = {exitCode:0, stdout:'Bounded completed fixture output', stderr:'', truncated:false}; window.fixture.hold.add('GET /api/jobs/fixture-job-2')");
+  await evaluate("Object.assign(window.fixture.jobs[1], {state:'succeeded', dispatchedAt:window.fixture.jobs[1].createdAt + 1, finishedAt:Date.now(), result:{exitCode:0, stdout:'Bounded completed fixture output', stderr:'', truncated:false}}); window.fixture.hold.add('GET /api/jobs/fixture-job-2')");
   await click("Refresh status");
   await wait("typeof window.fixture.holds['GET /api/jobs/fixture-job-2'] === 'function' && document.querySelector('.job-status-tools button').disabled");
   await evaluate("window.fixture.holds['GET /api/jobs/fixture-job-2']()");
   await wait("document.querySelector('dialog[open]')?.innerText.includes('Bounded completed fixture output') && document.querySelector('dialog[open] .status-notice').innerText.includes('succeeded')");
+  assert.ok(await evaluate("!document.querySelector('dialog[open]').innerText.includes('Never')"), "Completed job fixture omitted its dispatch or finish time");
   pass("service receipt opens the exact URL-addressable job and refreshes its queued status to the completed outcome");
   await evaluate("window.fixture.failSources.add('/api/jobs/fixture-job-2')");
   await click("Refresh status");
