@@ -1865,7 +1865,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                   </div>
                 </details>
                 <Jobs
-                  key={current.id}
+                  key={`jobs:${current.id}`}
                   memory={jobFilterMemory.current}
                   memoryKey={`host:${current.id}`}
                   loaded={!!sourceLoaded.Jobs}
@@ -1876,7 +1876,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                   id="host-jobs"
                 />
                 <Activity
-                  key={current.id}
+                  key={`activity:${current.id}`}
                   memory={activityFilterMemory.current}
                   memoryKey={`host:${current.id}`}
                   hosts={hosts}

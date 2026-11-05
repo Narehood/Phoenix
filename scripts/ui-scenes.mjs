@@ -108,13 +108,15 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await click("edge-01");
   await wait("!!document.querySelector('.host-inventory-form') && !document.querySelector('dialog[open]')");
   await section(".host-inventory-form");
+  await wait("document.querySelector('.host-inventory-form input[name=name]')?.value === 'edge-01' && !document.querySelector('.host-inventory-form input[name=name]').matches(':disabled')");
   await evaluate(`(() => {
     const input = document.querySelector('.host-inventory-form input[name=name]');
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'edge-01 renamed');
     input.dispatchEvent(new Event('input', {bubbles:true}));
     window.fixture.failWrites.add('PATCH /api/hosts/private-host');
   })()`);
-  await evaluate("document.querySelector('.host-inventory-form').requestSubmit()");
+  await wait("document.querySelector('.host-inventory-form input[name=name]')?.value === 'edge-01 renamed' && !document.querySelector('.host-inventory-form button.primary').disabled");
+  await click("Save inventory");
   await wait("document.querySelector('.host-inventory-form [role=alert]')?.textContent.includes('Fixture save unavailable')");
   await section(".host-inventory-form");
   await shot("host-inventory-feedback-desktop");
