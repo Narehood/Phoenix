@@ -3091,6 +3091,9 @@ textarea:disabled {
   .project-actor summary {
     min-height: 44px;
   }
+  .fleet-panel {
+    container: fleet / inline-size;
+  }
   .fleet-view-control {
     display: flex;
     flex-wrap: wrap;
@@ -3186,5 +3189,52 @@ textarea:disabled {
     display: block;
     margin-bottom: 0;
     color: var(--warning-text);
+  }
+  @container fleet (max-width: 24em) {
+    .fleet-compare .fleet-table thead {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+    }
+    .fleet-compare .fleet-table tbody tr {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 4px;
+    }
+    .fleet-compare
+      .fleet-table
+      td:is(
+        [data-label="Canary uptime"],
+        [data-label="Agent connection"],
+        [data-label="Reading freshness"]
+      ) {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(max-content, 1fr);
+      align-items: start;
+      gap: 8px;
+      grid-column: 1 / -1;
+      grid-row: auto;
+    }
+    .fleet-compare
+      .fleet-table
+      td:is(
+        [data-label="Canary uptime"],
+        [data-label="Agent connection"],
+        [data-label="Reading freshness"]
+      )::before {
+      display: block;
+      font-size: inherit;
+      font-weight: 400;
+    }
+    .fleet-compare .fleet-table .chip {
+      white-space: nowrap;
+    }
+    .fleet-compare
+      .fleet-table
+      tr:has(.mobile-resource-warning)
+      td[data-label="Resources"] {
+      grid-row: auto;
+    }
   }
 }
