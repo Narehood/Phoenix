@@ -44,6 +44,15 @@ type testAgent struct {
 	identity        core.Identity
 }
 
+func (f *fixture) replaceGrants(user string, grants []core.Grant) {
+	f.t.Helper()
+	var saved struct {
+		Grants []core.Grant `json:"grants"`
+	}
+	f.call("GET", "/api/users/"+user+"/grants", nil, 200, &saved)
+	f.call("PUT", "/api/users/"+user+"/grants", map[string]any{"grants": grants, "expectedGrants": saved.Grants}, 200, nil)
+}
+
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	dir := t.TempDir()
@@ -367,7 +376,7 @@ func TestAuthorizationCSRFRecentAuthAndOutput(t *testing.T) {
 		Secret string    `json:"secret"`
 	}
 	f.call("POST", "/api/users", map[string]string{"name": "operator", "role": "operator", "password": "another fixture password"}, 201, &account)
-	f.call("PUT", "/api/users/"+account.User.ID+"/grants", map[string]any{"grants": []core.Grant{{ScopeType: "host", Scope: a.id, Action: "host.read"}, {ScopeType: "host", Scope: a.id, Action: "diagnostic"}}}, 200, nil)
+	f.replaceGrants(account.User.ID, []core.Grant{{ScopeType: "host", Scope: a.id, Action: "host.read"}, {ScopeType: "host", Scope: a.id, Action: "diagnostic"}})
 	jar, _ := cookiejar.New(nil)
 	operator := &http.Client{Transport: f.browser.Transport, Jar: jar, Timeout: 5 * time.Second}
 	code, _ := totp.GenerateCode(account.Secret, f.now)

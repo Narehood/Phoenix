@@ -177,6 +177,12 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await wait("document.querySelector('.grant-change-review')?.innerText.includes('Removing (1)')");
   await section(".grant-change-review");
   await shot("access-grant-review-desktop");
+  await evaluate("window.confirm = () => true; window.fixture.grantStore['operator-fixture'] = [{scopeType:'host',scope:'private-host',action:'logs.read'}]");
+  await click("Replace grants");
+  await wait("document.querySelector('.grant-conflict')?.innerText.includes('Reapply my changes for review')");
+  await evaluate("document.querySelector('.grant-conflict details').open = true");
+  await section(".grant-conflict");
+  await shot("access-grant-conflict-desktop");
   await evaluate(`(() => { window.confirm = () => true; const select = document.querySelector('select[name=user]'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(select, ''); select.dispatchEvent(new Event('change', {bubbles:true})); })()`);
   await click("Create account");
   await wait("document.querySelector('.account-create').open");
@@ -300,8 +306,14 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await shot("activity-filtered-desktop");
   await viewport(390,844);
   await evaluate("document.querySelector('.activity-identifiers').open = false");
+  await wait("!document.querySelector('.activity-filter-disclosure').open");
   await top();
   await shot("activity-filtered-mobile");
+  await evaluate("document.querySelector('.activity-filter-disclosure > summary').click()");
+  await wait("document.querySelector('input[name=activitySearch]').checkVisibility()");
+  await top();
+  await shot("activity-filters-open-mobile");
+  await evaluate("document.querySelector('.activity-filter-disclosure > summary').click()");
   await click("Clear activity filters");
   await wait("document.querySelectorAll('.activity-event').length === 2");
   await viewport(390, 844);

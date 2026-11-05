@@ -2493,6 +2493,19 @@ textarea:disabled {
   color: var(--text-2);
   font-size: 14px;
   padding: 6px 0;
+  list-style: none;
+  gap: 6px;
+}
+.activity-identifiers > summary::-webkit-details-marker {
+  display: none;
+}
+.activity-identifiers > summary::before {
+  content: "▸" / "";
+  display: inline-block;
+  margin-right: 6px;
+}
+.activity-identifiers[open] > summary::before {
+  content: "▾" / "";
 }
 .activity-identifiers code {
   overflow-wrap: anywhere;
@@ -3053,7 +3066,34 @@ textarea:disabled {
   flex-wrap: wrap;
   gap: 12px;
   padding: 12px 20px;
+}
+.activity-filter-tools {
   border-bottom: 1px solid var(--border);
+}
+.activity-applied {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 0 20px 12px;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.grant-conflict {
+  display: block;
+  margin-bottom: 16px;
+}
+.grant-conflict p {
+  margin: 0 0 12px;
+}
+.grant-conflict .button-row {
+  flex-wrap: wrap;
+}
+.grant-latest-list {
+  max-height: 240px;
+  overflow: auto;
+  overflow-wrap: anywhere;
 }
 .activity-filters label {
   display: grid;
@@ -3165,6 +3205,17 @@ textarea:disabled {
   }
   .activity-filters {
     padding: 12px 14px;
+  }
+  .activity-filter-disclosure > summary {
+    display: list-item;
+    min-height: 44px;
+    padding: 12px 14px;
+    cursor: pointer;
+    color: var(--text-2);
+    font-size: 14px;
+  }
+  .activity-applied {
+    padding: 0 14px 12px;
   }
   .activity-filters :is(input, select, button) {
     min-height: 44px;

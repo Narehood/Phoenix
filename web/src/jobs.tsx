@@ -80,7 +80,7 @@ export function JobCancellation({
             : unavailable || job.canCancel === undefined
               ? "Cancellation unavailable"
               : job.canCancel
-                ? "Manage request"
+                ? "Cancellation options"
                 : "Cancellation restricted"
       }
     >

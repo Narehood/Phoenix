@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { api } from "./api";
+import { api, ApiError } from "./api";
 import type { Grant, Host, Project, User } from "./types";
 import { Empty, ErrorNotice, StatusNotice } from "./ui";
 import { useUnsavedChanges } from "./navigation";
@@ -84,6 +84,9 @@ export function GrantEditor({
     [manualTarget, setManualTarget] = useState(false),
     [actions, setActions] = useState<string[]>([]),
     [error, setError] = useState<unknown>(null),
+    [conflict, setConflict] = useState(false),
+    [latest, setLatest] = useState<Grant[] | null>(null),
+    [latestError, setLatestError] = useState<unknown>(null),
     [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false);
   const current = useRef(""),
@@ -131,6 +134,9 @@ export function GrantEditor({
     setUserId(id);
     setError(null);
     setNotice("");
+    setConflict(false);
+    setLatest(null);
+    setLatestError(null);
     setActions([]);
     if (!id) {
       current.current = "";
@@ -154,14 +160,15 @@ export function GrantEditor({
   const added = additions.length,
     removed = removals.length;
   const changed = added + removed > 0;
-  useUnsavedChanges(changed, "account permissions");
+  useUnsavedChanges(changed || busy, "account permissions");
+  const editingBlocked = busy || conflict;
   const groups = [...new Set(hosts.flatMap((host) => host.groups))].sort();
   const available = scopeType === "project" ? projectActions : hostActions;
   const actionGroups =
     scopeType === "project" ? projectActionGroups : hostActionGroups;
 
   function addGrants() {
-    if (!loaded || busy) return;
+    if (!loaded || editingBlocked) return;
     setError(null);
     setNotice("");
     const target = scopeType === "all" ? "*" : scope.trim();
@@ -183,10 +190,53 @@ export function GrantEditor({
     setActions([]);
   }
 
+  async function readLatest(id = userId) {
+    setBusy(true);
+    setLatestError(null);
+    try {
+      const response = await api<{ grants: Grant[] | null }>(
+        `/api/users/${encodeURIComponent(id)}/grants`,
+      );
+      if (alive.current && current.current === id)
+        setLatest(response.grants || []);
+    } catch (err) {
+      if (alive.current && current.current === id) setLatestError(err);
+    } finally {
+      if (alive.current && current.current === id) setBusy(false);
+    }
+  }
+  function resolveConflict(reapply: boolean) {
+    if (!latest || busy) return;
+    const removedKeys = new Set(removals.map(key));
+    const next = reapply
+      ? latest.filter((g) => !removedKeys.has(key(g)))
+      : [...latest];
+    const nextKeys = new Set(next.map(key));
+    if (reapply) next.push(...additions.filter((g) => !nextKeys.has(key(g))));
+    if (next.length > grantLimit) {
+      setLatestError(
+        new Error(
+          "The combined set exceeds 100 grants. Load the latest set, then edit it again.",
+        ),
+      );
+      return;
+    }
+    setLoad({ state: "loaded", grants: latest });
+    setWorking(next);
+    setLatest(null);
+    setConflict(false);
+    setLatestError(null);
+    setError(null);
+    setNotice(
+      reapply
+        ? "Your additions and removals were reapplied to the latest saved grants. Review changes before saving."
+        : "Latest saved grants loaded. Your previous draft was discarded.",
+    );
+  }
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const id = userId;
-    if (!id || !account || !loaded || !changed || busy) return;
+    if (!id || !account || !loaded || !changed || editingBlocked) return;
     if (
       !window.confirm(
         `Replace ALL grants for ${account.name}? The account will hold exactly ${working.length} grant(s): ${added} added, ${removed} removed.`,
@@ -199,12 +249,18 @@ export function GrantEditor({
     try {
       await api(`/api/users/${encodeURIComponent(id)}/grants`, "PUT", {
         grants: working,
+        expectedGrants: loaded,
       });
       if (!alive.current || current.current !== id) return;
       setNotice(`Grants replaced for ${account.name}.`);
       await fetchGrants(id);
     } catch (err) {
-      if (alive.current && current.current === id) setError(err);
+      if (alive.current && current.current === id) {
+        if (err instanceof ApiError && err.status === 409) {
+          setConflict(true);
+          await readLatest(id);
+        } else setError(err);
+      }
     } finally {
       if (alive.current) setBusy(false);
     }
@@ -333,7 +389,7 @@ export function GrantEditor({
                           <td>
                             <button
                               type="button"
-                              disabled={busy}
+                              disabled={editingBlocked}
                               aria-label={`Remove ${g.action} on ${g.scopeType} ${g.scope}`}
                               onClick={() =>
                                 setWorking((w) =>
@@ -364,7 +420,7 @@ export function GrantEditor({
         )}
         <fieldset
           className="grant-add"
-          disabled={!loaded || busy}
+          disabled={!loaded || editingBlocked}
           hidden={!loaded}
         >
           <legend>Add grants to the working set</legend>
@@ -536,6 +592,67 @@ export function GrantEditor({
         </fieldset>
       </div>
       <div className="grant-save" hidden={!loaded && !error && !notice}>
+        {conflict && (
+          <section
+            className="notice retained grant-conflict"
+            aria-label="Grant conflict"
+          >
+            <p role="status">
+              Saved grants changed while you were editing. Your draft is kept.
+              Review the latest set before replacing it.
+            </p>
+            {busy && <p role="status">Loading latest grants…</p>}
+            {latest && (
+              <>
+                <details>
+                  <summary>Latest saved grants ({latest.length})</summary>
+                  {latest.length ? (
+                    <ul className="grant-latest-list">
+                      {latest.map((grant) => (
+                        <li key={key(grant)}>
+                          {actionLabels[grant.action] || grant.action} ·{" "}
+                          {grant.scopeType}: <code>{grant.scope}</code>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p>No grants in the latest saved set.</p>
+                  )}
+                </details>
+                <p>
+                  Reapply only your {added} additions and {removed} removals.
+                  Other saved changes stay intact; review the resulting set
+                  before saving.
+                </p>
+                <div className="button-row">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => resolveConflict(true)}
+                  >
+                    Reapply my changes for review
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => resolveConflict(false)}
+                  >
+                    Discard my draft and load latest
+                  </button>
+                </div>
+              </>
+            )}
+            <ErrorNotice
+              error={latestError}
+              onDismiss={() => setLatestError(null)}
+            />
+            {!latest && !busy && (
+              <button type="button" onClick={() => void readLatest()}>
+                Retry latest grants
+              </button>
+            )}
+          </section>
+        )}
         {changed && (
           <details className="grant-change-review" open>
             <summary>
@@ -614,7 +731,10 @@ export function GrantEditor({
                 : `${added} added, ${removed} removed. Ready to replace the account’s complete grant set.`}
           </small>
         </div>
-        <button className="primary" disabled={!loaded || !changed || busy}>
+        <button
+          className="primary"
+          disabled={!loaded || !changed || editingBlocked}
+        >
           {busy ? "Working…" : "Replace grants"}
         </button>
       </div>

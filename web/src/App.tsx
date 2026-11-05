@@ -2741,49 +2741,71 @@ function Activity({
           Within latest 500 · retained 90 days
         </span>
       </div>
-      <form
-        className="activity-filters"
-        role="search"
-        aria-label="Filter activity"
-        aria-describedby={boundsId}
-        onSubmit={(event) => event.preventDefault()}
-      >
-        <label>
-          Search activity
-          <input
-            type="search"
-            name="activitySearch"
-            placeholder="Action, actor, host or job ID…"
-            value={query}
-            disabled={!loaded || !audit.length}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </label>
-        <label>
-          Action
-          <select
-            name="activityAction"
-            value={action}
-            disabled={!loaded || !audit.length}
-            onChange={(event) => setAction(event.target.value)}
+      <div className="activity-filter-tools">
+        <ResponsiveDetails
+          className="activity-filter-disclosure"
+          label={`Filter activity${query || action ? " · filters applied" : ""}`}
+        >
+          <form
+            className="activity-filters"
+            role="search"
+            aria-label="Filter activity"
+            aria-describedby={boundsId}
+            onSubmit={(event) => event.preventDefault()}
           >
-            <option value="">All actions</option>
-            {[...new Set([action, ...audit.map((event) => event.action)])]
-              .filter(Boolean)
-              .sort()
-              .map((value) => (
-                <option key={value} value={value}>
-                  {activityAction(value)}
-                </option>
-              ))}
-          </select>
-        </label>
+            <label>
+              Search activity
+              <input
+                type="search"
+                name="activitySearch"
+                placeholder="Action, actor, host or job ID…"
+                value={query}
+                disabled={!loaded || !audit.length}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+            </label>
+            <label>
+              Action
+              <select
+                name="activityAction"
+                value={action}
+                disabled={!loaded || !audit.length}
+                onChange={(event) => setAction(event.target.value)}
+              >
+                <option value="">All actions</option>
+                {[...new Set([action, ...audit.map((event) => event.action)])]
+                  .filter(Boolean)
+                  .sort()
+                  .map((value) => (
+                    <option key={value} value={value}>
+                      {activityAction(value)}
+                    </option>
+                  ))}
+              </select>
+            </label>
+          </form>
+        </ResponsiveDetails>
         {(query || action) && (
-          <button type="button" onClick={clearFilters}>
-            Clear activity filters
-          </button>
+          <div className="activity-applied">
+            <span>
+              {query && (
+                <>
+                  Search: <strong>{query}</strong>
+                  {action && " · "}
+                </>
+              )}
+              {action && (
+                <>
+                  Action: <strong>{activityAction(action)}</strong>
+                </>
+              )}
+            </span>
+            <button type="button" onClick={clearFilters}>
+              Clear activity filters
+            </button>
+          </div>
         )}
-      </form>
+      </div>
       {!audit.length ? (
         <Empty>
           {unavailable

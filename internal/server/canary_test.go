@@ -117,7 +117,7 @@ func TestCanaryMappingRequiresAdministrator(t *testing.T) {
 		Secret string    `json:"secret"`
 	}
 	f.call("POST", "/api/users", map[string]string{"name": "mapping-operator", "role": "operator", "password": "mapping fixture password"}, 201, &account)
-	f.call("PUT", "/api/users/"+account.User.ID+"/grants", map[string]any{"grants": []core.Grant{{ScopeType: "host", Scope: a.id, Action: "host.read"}, {ScopeType: "host", Scope: a.id, Action: "host.manage"}}}, 200, nil)
+	f.replaceGrants(account.User.ID, []core.Grant{{ScopeType: "host", Scope: a.id, Action: "host.read"}, {ScopeType: "host", Scope: a.id, Action: "host.manage"}})
 	jar, _ := cookiejar.New(nil)
 	operator := &http.Client{Transport: f.browser.Transport, Jar: jar, Timeout: 5 * time.Second}
 	code, e := totp.GenerateCode(account.Secret, f.now)

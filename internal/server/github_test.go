@@ -140,7 +140,7 @@ func TestGitHubScopesAndGrantReadPreservation(t *testing.T) {
 	f.request(operator, f.web.URL, "POST", "/api/auth/login", map[string]string{"name": account.User.Name, "password": password, "code": code}, 200, &auth, "")
 	grants := []core.Grant{{ScopeType: "all", Scope: "*", Action: "*"}, {ScopeType: "project", Scope: "scoped", Action: "project.read"}, {ScopeType: "project", Scope: "scoped", Action: "project.manage"}}
 	set := func() {
-		f.call("PUT", "/api/users/"+account.User.ID+"/grants", map[string]any{"grants": grants}, 200, nil)
+		f.replaceGrants(account.User.ID, grants)
 	}
 	set()
 	f.request(operator, f.web.URL, "GET", path, nil, 403, nil, "")

@@ -29,7 +29,7 @@ Implemented routes (v1):
 | POST `/api/hosts/{host}/approve` | Admin + recent; `{confirm:<host ID>,certificateFingerprint}`; trusted-channel comparison required |
 | POST `/api/hosts/{host}/revoke` | Admin + recent; `{confirm:<host ID>}` |
 | GET/POST `/api/users` | Admin; create requires recent and `{name,role,password}`; returns one-time MFA secret, no grants |
-| PUT `/api/users/{user}/grants` | Admin + recent; `{grants:[{scopeType,scope,action}]}` where `scopeType` is `host`, `group`, `all` or `project`; replace all grants; project scopes require registered IDs and project actions; cannot change own/admin grants |
+| PUT `/api/users/{user}/grants` | Admin + recent; `{grants:[{scopeType,scope,action}],expectedGrants:[...]}` where `expectedGrants` is the complete set most recently read (including `[]`); missing precondition returns 428 and a changed saved set returns 409 without replacing anything. `scopeType` is `host`, `group`, `all` or `project`; project scopes require registered IDs and project actions; cannot change own/admin grants |
 | GET `/api/users/{user}/grants` | Admin; complete current `{grants:[...]}` for safe mixed-scope editing |
 | POST `/api/users/{user}/disable` | Admin + recent; non-admin account only; revokes all sessions |
 | POST `/api/hosts/{host}/jobs` | `host.read` plus action, verified non-revoked identity; `{action,args,timeoutSeconds?,expiresSeconds?,confirm?}` |
