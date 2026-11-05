@@ -568,8 +568,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                   <p className="eyebrow">YOUR INFRASTRUCTURE, AT A GLANCE</p>
                   <h1>Fleet overview</h1>
                   <p className="muted">
-                    Your hosts, their connections and the latest resource
-                    readings.
+                    Connections and resource readings across your hosts.
                   </p>
                 </div>
                 {user.role === "admin" && (

@@ -466,12 +466,12 @@ export function GitHubPanel({
               <Metric
                 label="Observed PRs"
                 value={count(snapshot.pulls)}
-                detail={`Ten most recently updated${current ? "" : " · last known"}`}
+                detail={`10 most recent${current ? "" : " · last known"}`}
               />
               <Metric
                 label="Update PRs"
                 value={count(snapshot.pulls, (p) => p.dependencyUpdate)}
-                detail="Dependabot/Renovate authors only"
+                detail="Recognized bot authors"
               />
               <Metric
                 label="Dependabot alerts"
@@ -883,8 +883,8 @@ function GitHubSettings({
           </p>
         ) : !usable ? (
           <p className="muted">
-          Enable Repository health in Project settings on an active project
-          before connecting a repository.
+            Enable Repository health in Project settings on an active project
+            before connecting a repository.
           </p>
         ) : null}
         {conflict && view && (

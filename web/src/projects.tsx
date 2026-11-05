@@ -15,6 +15,12 @@ const projectID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const projectName = /^[A-Za-z0-9][A-Za-z0-9 _.-]{0,79}$/;
 const forbiddenControl = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/;
 const pollMs = 30000;
+const eventLabels: Record<string, string> = {
+  "project.create": "Project registered",
+  "project.update": "Project updated",
+  "github.configure": "Repository configured",
+  "github.disconnect": "Repository disconnected",
+};
 
 /** Mirrors the server's metadata rules so mistakes are caught before sending. */
 function metadataProblem(name: string, description: string) {
@@ -453,8 +459,12 @@ function ProjectDetail({
     [busy, setBusy] = useState(false);
   const alive = useRef(true),
     seq = useRef(0),
-    editRef = useRef<Edit | null>(null);
+    editRef = useRef<Edit | null>(null),
+    settingsRef = useRef<HTMLDetailsElement>(null);
   editRef.current = edit;
+  useEffect(() => {
+    if (conflict && settingsRef.current) settingsRef.current.open = true;
+  }, [conflict]);
   const path = `/api/projects/${encodeURIComponent(id)}`;
 
   function adopt(p: Project) {
@@ -677,23 +687,6 @@ function ProjectDetail({
             {project.description || "No description."}
           </p>
         </div>
-        {canManage && (
-          <div className="button-row">
-            {project.archived ? (
-              <button onClick={() => void setArchived(false)} disabled={busy}>
-                Restore project
-              </button>
-            ) : (
-              <button
-                className="danger"
-                onClick={() => void setArchived(true)}
-                disabled={busy}
-              >
-                Archive project
-              </button>
-            )}
-          </div>
-        )}
       </div>
       <div aria-live="polite">
         <ErrorNotice
@@ -726,10 +719,14 @@ function ProjectDetail({
         onVerify={onVerify}
         onChanged={() => void load()}
       />
-      <details className="disclosure project-settings">
+      <details ref={settingsRef} className="disclosure project-settings">
         <summary>
           <strong>Project settings</strong>
-          <span>Name, features, access and history</span>
+          <span>
+            {canManage
+              ? "Details, access, history and archive"
+              : "Details, access and history"}
+          </span>
         </summary>
         <div className="disclosure-body">
           <div className="two-columns">
@@ -895,14 +892,39 @@ function ProjectDetail({
                     </small>
                   </form>
                 )}
+                {canManage && (
+                  <div className="project-lifecycle">
+                    <h3>Project lifecycle</h3>
+                    <p className="muted">
+                      Archiving keeps this project and its history, and pauses
+                      repository collection.
+                    </p>
+                    <div className="button-row">
+                      {project.archived ? (
+                        <button
+                          onClick={() => void setArchived(false)}
+                          disabled={busy}
+                        >
+                          Restore project
+                        </button>
+                      ) : (
+                        <button
+                          className="danger"
+                          onClick={() => void setArchived(true)}
+                          disabled={busy}
+                        >
+                          Archive project
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </section>
             <section className="panel">
               <div className="panel-heading">
                 <h2>Features & access</h2>
-                <span className="muted">
-                  {caps ? `Contract v${caps.contractVersion}` : "Unavailable"}
-                </span>
+                {!caps && <span className="muted">Unavailable</span>}
               </div>
               {!caps ? (
                 <Empty>Capabilities unavailable.</Empty>
@@ -911,9 +933,8 @@ function ProjectDetail({
                   <table>
                     <thead>
                       <tr>
-                        <th>Module</th>
+                        <th>Feature</th>
                         <th>Availability</th>
-                        <th>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -935,16 +956,11 @@ function ProjectDetail({
                                 tone={capabilityTone(m.state, capsCurrent)}
                               />
                               <small>
-                                {m.reason.replaceAll("_", " ")}
+                                {m.reason === "github_read_only"
+                                  ? "Read-only GitHub collection"
+                                  : m.reason.replaceAll("_", " ")}
                                 {!capsCurrent && " · last known, not current"}
                               </small>
-                            </td>
-                            <td>
-                              {m.actions?.length ? (
-                                m.actions.join(", ")
-                              ) : (
-                                <span className="muted">None available</span>
-                              )}
                             </td>
                           </tr>
                         ))}
@@ -987,7 +1003,9 @@ function ProjectDetail({
                   <li key={`${a.at}-${a.action}-${i}`}>
                     <span className="timeline-dot" />
                     <div>
-                      <strong>{a.action}</strong>{" "}
+                      <strong title={a.action}>
+                        {eventLabels[a.action] || a.action}
+                      </strong>{" "}
                       <span className="tag">revision {a.revision}</span>
                       <small>
                         {stamp(a.at)} · actor {a.actor.slice(0, 12)}

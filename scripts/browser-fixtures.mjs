@@ -291,7 +291,11 @@ try {
     }
     throw new Error(`Browser assertion timed out: ${expression}`);
   };
-  const click = (text) => evaluate(`(() => { const button = [...document.querySelectorAll('button')].find(b => b.getClientRects().length && b.textContent.trim().startsWith(${JSON.stringify(text)})); if (!button) throw Error('Missing fixture button: ' + ${JSON.stringify(text)}); button.focus(); button.click(); })()`);
+  const click = async (text) => {
+    const point = await evaluate(`(() => { const button = [...document.querySelectorAll('button')].find(b => b.getClientRects().length && b.textContent.trim().startsWith(${JSON.stringify(text)})); if (!button) throw Error('Missing fixture button: ' + ${JSON.stringify(text)}); button.scrollIntoView({block:'nearest'}); const r = button.getBoundingClientRect(); return {x:r.x+r.width/2,y:r.y+r.height/2}; })()`);
+    await send("Input.dispatchMouseEvent", { type: "mousePressed", ...point, button: "left", clickCount: 1 }, sessionId);
+    await send("Input.dispatchMouseEvent", { type: "mouseReleased", ...point, button: "left", clickCount: 1 }, sessionId);
+  };
   const screenshots = [];
   let cases = 0;
   const pass = (name) => { cases++; console.log(`PASS ${name}`); };
@@ -352,6 +356,16 @@ try {
   await click("Fleet overview");
   await wait("!!document.querySelector('.fleet-table')");
   assert.ok(await evaluate("document.documentElement.scrollWidth <= innerWidth && document.querySelector('.fleet-table').scrollWidth <= innerWidth"), "Host statuses require horizontal document/table scrolling on mobile");
+  await click("ADMIN-ONLY-HOST");
+  await wait("document.querySelector('h1')?.textContent === 'ADMIN-ONLY-HOST'");
+  assert.ok(await evaluate(`(() => {
+    const heading = document.querySelector('.page-heading h1'), identity = document.querySelector('.page-heading code');
+    const name = heading.textContent, id = identity.textContent;
+    try { heading.textContent = 'h'.repeat(80); identity.textContent = 'a'.repeat(64); return document.documentElement.scrollWidth <= innerWidth; }
+    finally { heading.textContent = name; identity.textContent = id; }
+  })()`), "Long host names or identity IDs overflow the mobile document");
+  await click("Fleet overview");
+  await wait("!!document.querySelector('.fleet-table')");
   await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false }, sessionId);
   pass("mobile navigation exposes the current section, account/sign-out and appearance; host statuses fit without sideways scrolling");
 
@@ -426,7 +440,7 @@ try {
   pass("stale metadata saves reload as a conflict, keep unsaved input and save only after explicit resolution");
 
   // GitHub source: a recent-authentication failure keeps input; success clears the token everywhere.
-  await wait(`document.body.innerText.includes('No repository is connected') && !!document.querySelector('form[aria-label="GitHub source settings"] fieldset:not([disabled])')`);
+  await wait(`document.querySelector('.repository-identity h3')?.innerText.includes('Connect a GitHub repository') && !!document.querySelector('form[aria-label="GitHub source settings"] fieldset:not([disabled])') && document.querySelector('input[name=repository]').getClientRects().length > 0`);
   await evaluate("window.fixture.recent = false");
   await setValue("input[name=repository]", "fixture-owner/fixture-repo");
   await setValue("input[data-secret=github-token]", token);

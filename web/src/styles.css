@@ -87,6 +87,15 @@ h2 {
 h3 {
   font-size: 15px;
 }
+h1,
+h2,
+h3,
+.page-heading code {
+  overflow-wrap: anywhere;
+}
+.page-heading > div {
+  min-width: 0;
+}
 small {
   font-size: 12px;
   color: var(--text-3);
@@ -926,6 +935,19 @@ summary:hover {
   font-size: 12px;
   margin: -12px 0 24px;
 }
+.project-meta code {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.project-lifecycle {
+  border-top: 1px solid var(--border);
+  padding-top: 20px;
+  margin-top: 24px;
+}
+.project-lifecycle p {
+  font-size: 12px;
+}
 .project-table {
   white-space: normal;
 }
@@ -1240,8 +1262,13 @@ time:focus .time-exact {
     gap: 10px;
   }
   .metric {
-    padding: 12px;
+    padding: 10px 12px;
     min-height: 84px;
+    gap: 4px;
+  }
+  .metric small {
+    font-size: 11px;
+    line-height: 1.35;
   }
   .metric strong {
     font-size: 20px;
