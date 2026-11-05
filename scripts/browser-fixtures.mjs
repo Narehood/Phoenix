@@ -441,8 +441,8 @@ try {
   assert.equal(await evaluate("[...document.querySelector('.fleet-table tbody tr').querySelectorAll('.chip')].filter(c => c.checkVisibility() && /fresh/i.test(c.textContent)).length"), 1, "Mobile host repeats its reading freshness status");
   const accessibleFleet = (await send("Accessibility.getFullAXTree", {}, sessionId)).nodes.filter(n => !n.ignored);
   assert.ok(accessibleFleet.some(n => n.role?.value === "table"), "Responsive fleet lost its accessible table role");
-  const columnNames = accessibleFleet.filter(n => n.role?.value === "columnheader").map(n => n.name?.value);
-  for (const column of ["Host", "Canary uptime", "Agent connection", "Reading freshness", "Resources"]) assert.ok(columnNames.includes(column), "Responsive fleet lost header: " + column);
+  const columnNames = accessibleFleet.filter(n => n.role?.value === "columnheader").map(n => String(n.name?.value || "").trim().replace(/\s+/g, " ").toLowerCase());
+  for (const column of ["Host", "Canary uptime", "Agent connection", "Reading freshness", "Resources"]) assert.ok(columnNames.includes(column.toLowerCase()), `Responsive fleet lost header: ${column}; accessible headers: ${JSON.stringify(columnNames)}`);
   assert.equal(await evaluate("document.querySelector('.fleet-table td[data-label=Resources]').getAttribute('aria-colindex')"), "5", "Hidden mobile freshness cell shifted the resource column association");
   pass("Chrome accessibility tree retains mobile table and column headers with explicit column positions");
   await evaluate("window.fixture.hosts[0].resourceHealth = 'warning'; window.fixture.hosts[0].latest.cpuPercent = 96");

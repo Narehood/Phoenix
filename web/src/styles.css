@@ -1312,6 +1312,8 @@ time {
   }
   .panel-heading .search {
     width: 100%;
+    min-height: 44px;
+    font-size: 16px;
   }
   td,
   th {
@@ -1966,6 +1968,18 @@ textarea:disabled {
   }
   .cpu-history .empty {
     padding: 12px 14px;
+  }
+  .history-data table {
+    table-layout: fixed;
+    white-space: normal;
+  }
+  .history-data :is(th, td) {
+    padding: 10px 8px;
+    overflow-wrap: anywhere;
+  }
+  .service-table code {
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
   summary,
   .host-actions > summary {

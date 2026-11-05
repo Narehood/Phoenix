@@ -947,7 +947,8 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                     onClick={() => setAttentionOnly(!attentionOnly)}
                     title="Offline agents, stale readings and resource warnings. Canary uptime is separate."
                   >
-                    Agent / readings issues ({attentionCount})
+                    Agent / readings issues (
+                    {sourceLoaded.Hosts ? attentionCount : "…"})
                   </button>
                   <input
                     className="search"
@@ -1434,27 +1435,69 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                       <Empty>No service readings available.</Empty>
                     ) : (
                       <div className="table-scroll bounded">
-                        <table>
-                          <thead>
-                            <tr>
-                              <th>Service</th>
-                              <th>
+                        <table
+                          role="table"
+                          aria-colcount={3}
+                          className="service-table responsive-table"
+                        >
+                          <caption className="sr-only">
+                            Observed systemd service states and guarded agent
+                            requests
+                          </caption>
+                          <thead role="rowgroup">
+                            <tr role="row">
+                              <th
+                                role="columnheader"
+                                aria-colindex={1}
+                                scope="col"
+                              >
+                                Service
+                              </th>
+                              <th
+                                role="columnheader"
+                                aria-colindex={2}
+                                scope="col"
+                              >
                                 {retainedReading ? "Last known state" : "State"}
                               </th>
-                              <th>Agent requests</th>
+                              <th
+                                role="columnheader"
+                                aria-colindex={3}
+                                scope="col"
+                              >
+                                Agent requests
+                              </th>
                             </tr>
                           </thead>
-                          <tbody>
+                          <tbody role="rowgroup">
                             {reading.services.map((s) => (
-                              <tr key={s.name}>
-                                <td>
+                              <tr role="row" key={s.name}>
+                                <td
+                                  role="cell"
+                                  aria-colindex={1}
+                                  data-label="Service"
+                                >
                                   <code>{s.name}</code>
                                   <small>
                                     {s.load} / {s.sub}
                                   </small>
                                 </td>
-                                <td>{s.active}</td>
-                                <td>
+                                <td
+                                  role="cell"
+                                  aria-colindex={2}
+                                  data-label={
+                                    retainedReading
+                                      ? "Last known state"
+                                      : "State"
+                                  }
+                                >
+                                  {s.active}
+                                </td>
+                                <td
+                                  role="cell"
+                                  aria-colindex={3}
+                                  data-label="Agent requests"
+                                >
                                   {current.connectivity !== "connected" &&
                                     user.role !== "viewer" && (
                                       <small className="agent-request-context">
@@ -1463,8 +1506,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                                           "_",
                                           " ",
                                         )}
-                                        . Requests need a connected agent;
-                                        completion is not assured.
+                                        . Connection required.
                                       </small>
                                     )}
                                   <div className="button-row">
