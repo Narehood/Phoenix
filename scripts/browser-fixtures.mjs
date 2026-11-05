@@ -281,7 +281,7 @@ try {
   const wait = async (expression) => {
     const deadline = Date.now() + 10000;
     while (Date.now() < deadline) {
-      if (await evaluate(expression)) return;
+      if (await evaluate(`Boolean(${expression})`)) return;
       await new Promise((done) => setTimeout(done, 100));
     }
     throw new Error(`Browser assertion timed out: ${expression}`);
