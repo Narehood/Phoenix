@@ -2157,9 +2157,7 @@ function History({ samples }: { samples: Reading[] }) {
   if (!ordered.length)
     return (
       <div className="history-empty">
-        <Empty>
-          No CPU readings yet. History appears after two measurements.
-        </Empty>
+        <Empty>No CPU history samples available.</Empty>
       </div>
     );
   const lo = ordered[0].measuredAt,
@@ -2182,21 +2180,32 @@ function History({ samples }: { samples: Reading[] }) {
       <p className="history-summary">
         {valid.length ? (
           <>
-            Latest measured {valid.at(-1)!.cpuPercent!.toFixed(1)}% · range{" "}
-            {Math.min(...valid.map((s) => s.cpuPercent!)).toFixed(1)}–
-            {Math.max(...valid.map((s) => s.cpuPercent!)).toFixed(1)}% ·{" "}
-            {valid.length} measured of {ordered.length} readings.
+            Latest measured {valid.at(-1)!.cpuPercent!.toFixed(1)}%
+            {valid.length > 1 && (
+              <>
+                {" "}
+                · range{" "}
+                {Math.min(...valid.map((s) => s.cpuPercent!)).toFixed(1)}–
+                {Math.max(...valid.map((s) => s.cpuPercent!)).toFixed(1)}%
+              </>
+            )}
+            {" · "}
+            {ordered.length === 1
+              ? "1 reading"
+              : `${valid.length} measured of ${ordered.length} readings`}
+            .
           </>
         ) : (
           "No measured CPU values in this window."
         )}
-        {valid.length < 2 && " Two measurements are needed to draw history."}{" "}
-        Gaps remain unknown.
+        {valid.length < 2 && " Two measurements are needed to draw history."}
+        {ordered.length > 1 && " Gaps remain unknown."}
       </p>
       {valid.length >= 2 && (
         <>
           <svg
             viewBox="0 0 1000 180"
+            preserveAspectRatio="none"
             role="img"
             aria-label="CPU usage history, percent from 0 to 100. Gaps have no line."
           >
@@ -2217,6 +2226,7 @@ function History({ samples }: { samples: Reading[] }) {
                 }
                 cy={160 - sample.cpuPercent! * 1.4}
                 r={3}
+                vectorEffect="non-scaling-stroke"
                 className="history-dot"
               />
             ))}
@@ -2240,7 +2250,7 @@ function History({ samples }: { samples: Reading[] }) {
               <tr>
                 <th scope="col">Measured at</th>
                 <th scope="col">CPU</th>
-                <th scope="col">Observation</th>
+                <th scope="col">Notes</th>
               </tr>
             </thead>
             <tbody>

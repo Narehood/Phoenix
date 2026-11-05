@@ -1857,6 +1857,8 @@ textarea:disabled {
 }
 .history-dot {
   fill: var(--accent-text);
+  stroke: var(--accent-text);
+  stroke-width: 2px;
 }
 .history-data {
   margin-top: 12px;
@@ -1968,6 +1970,28 @@ textarea:disabled {
   }
   .cpu-history .empty {
     padding: 12px 14px;
+  }
+  .cpu-history {
+    scroll-margin-top: 76px;
+  }
+  .history svg {
+    height: 132px;
+  }
+  .history-labels {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px 10px;
+  }
+  .history-labels small {
+    font-size: 12px;
+  }
+  .history-labels small:nth-child(2) {
+    display: block;
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+  .history-labels small:last-child {
+    text-align: right;
   }
   .history-data table {
     table-layout: fixed;

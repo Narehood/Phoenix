@@ -34,7 +34,7 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await evaluate("window.fixture.samples = []");
   await wait("!document.querySelector('.history svg')");
   await top();
-  await evaluate("(() => { const h = window.fixture.hosts[0]; window.fixture.freshHost = structuredClone(h); h.freshness = 'stale'; h.connectivity = 'offline'; h.resourceHealth = 'unknown'; h.latest.measuredAt -= 900000; h.latest.collectedAt -= 900000; })()");
+  await evaluate("(() => { const h = window.fixture.hosts[0]; window.fixture.freshHost = structuredClone(h); h.freshness = 'stale'; h.connectivity = 'offline'; h.resourceHealth = 'unknown'; h.lastContact -= 900000; h.latest.measuredAt -= 900000; h.latest.collectedAt -= 900000; })()");
   await wait("!!document.querySelector('.reading-snapshot') && document.querySelectorAll('.retained-label').length === 4");
   await top();
   await shot("host-retained-desktop");
