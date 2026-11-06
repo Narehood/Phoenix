@@ -176,8 +176,8 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await shot("project-conflict-desktop");
   await click("Discard my edits");
   await wait("!document.querySelector('.project-settings .notice.conflict') && document.querySelector('input[name=editName]').value === 'Website'");
+  // Restore the fixture for later routes; the next project mount reads it afresh.
   await evaluate(`window.fixture.projects.website.description = ${JSON.stringify(websiteDescription)}; window.fixture.projects.website.revision++`);
-  await wait(`document.querySelector('textarea[name=editDescription]').value === ${JSON.stringify(websiteDescription)}`);
   await navigate("Access & accounts");
   await wait("document.querySelector('select[name=user] option[value=operator-fixture]')");
   await top();
