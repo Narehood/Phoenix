@@ -22,7 +22,7 @@ COPY internal/ internal/
 FROM go-base AS validate
 RUN --network=none python3 scripts/validate.py --timeout 300 -- python3 scripts/check.py tests
 RUN --network=none python3 scripts/validate.py --timeout 180 -- python3 scripts/check.py vet
-RUN --network=none CGO_ENABLED=1 python3 scripts/validate.py --timeout 300 -- go test -race -count=1 -timeout=120s ./internal/agent ./internal/canary ./internal/github ./internal/security
+RUN --network=none CGO_ENABLED=1 python3 scripts/validate.py --timeout 300 -- go test -race -count=1 -timeout=120s ./internal/agent ./internal/canary ./internal/github ./internal/security ./cmd/phoenix-helper
 # Keep the bcrypt-heavy server fixtures in complementary sequential batches;
 # each retains the original per-package deadline and guarded storage budgets.
 RUN --network=none CGO_ENABLED=1 python3 scripts/validate.py --timeout 300 -- go test -race -count=1 -timeout=120s -run '^Test(GitHub|Project)' ./internal/server
@@ -31,16 +31,29 @@ RUN --network=none CGO_ENABLED=1 python3 scripts/validate.py --timeout 300 -- go
 FROM validate AS binaries
 RUN python3 scripts/validate.py --timeout 300 -- python3 scripts/check.py binaries
 
+FROM binaries AS smoke
+ENV HOME=/tmp
+RUN chown -R 10001:10001 /src/.validation
+USER 10001:10001
+RUN --network=none python3 scripts/validate.py --timeout 120 -- python3 scripts/smoke.py
+
 FROM scratch AS agent-artifacts
-COPY --from=binaries /src/bin/phoenix-agent /phoenix-agent
-COPY --from=binaries /src/bin/phoenix-helper /phoenix-helper
+COPY --from=smoke /src/bin/phoenix-agent /phoenix-agent
+COPY --from=smoke /src/bin/phoenix-helper /phoenix-helper
+
+FROM scratch AS test-kit
+COPY --from=smoke /src/bin/ /bin/
+COPY --from=smoke /src/web-dist/ /web/
+COPY deploy/server.example.json deploy/agent.example.json deploy/helper.example.json deploy/phoenix-agent.service deploy/phoenix-agent.sudoers /deploy/
+COPY docs/architecture.md docs/canary.md docs/github.md docs/milestone.md docs/operations.md docs/project-maintenance.md docs/protocol.md docs/testing.md docs/threat-model.md docs/validation.md /docs/
+COPY README.md /README.md
 
 FROM debian:13-slim AS server
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /var/lib/phoenix /var/lib/phoenix-identity /etc/phoenix \
     && chown 10001:10001 /var/lib/phoenix /var/lib/phoenix-identity
-COPY --from=binaries /src/bin/phoenix /usr/local/bin/phoenix
-COPY --from=binaries /src/web-dist/ /usr/share/phoenix/web/
+COPY --from=smoke /src/bin/phoenix /usr/local/bin/phoenix
+COPY --from=smoke /src/web-dist/ /usr/share/phoenix/web/
 USER 10001:10001
 EXPOSE 8443 9443
 ENTRYPOINT ["/usr/local/bin/phoenix"]

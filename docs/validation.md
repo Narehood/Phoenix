@@ -4,6 +4,49 @@ Evidence is separated into compilation, fixture execution, actual Debian/systemd
 
 ## Recorded results
 
+**Validated Debian test-readiness checkpoint:** [Linux run 41947774424](https://github.com/Narehood/Phoenix/actions/runs/41947774424)
+passed on 2026-11-05 UTC for PR head `88d2893324aa0894d96231cc14f023a6f5e81342`
+(tested merge checkout `bda4d650beec61e8c50a86f6cb3e51f1681dc3de`). All Debian
+CGO fixtures, Linux vet, race batches (including the helper), binaries, server
+image, React bundle and 13 Chrome browser cases passed. Packaging fixtures also
+verified archive checksums, executable modes and repeated packaging.
+
+The new Docker `smoke` stage passed in 34.28 seconds as UID 10001 with fresh
+temporary state and loopback-only TLS. It executed the built server/agent through
+MFA/session setup, project registration, CLI enrollment and fingerprint approval,
+two real container procfs samples, a fixed diagnostic receipt, and a stopped
+backup/isolated restore with offline session recovery. Helper policy fixtures
+passed file-trust, bounded-read and action/deadline checks without calling
+systemctl. Invalid-configuration fixtures include an empty hostname and verify
+that a corrected initialization can retry without retained partial identity.
+
+The run exported a 27-file checksummed development test kit (21,470,090-byte
+tarball), retained alongside nine browser screenshots for seven days. Download
+`phoenix-linux-amd64-test-kit` from the run; [testing](testing.md) gives verification,
+installation and manual acceptance instructions. The largest sampled scratch was
+185,997,070 bytes, idle compiler cache remained below 256 MiB, module downloads
+were 33,807,244 bytes and the external compiler cache stayed empty. Sol-loop
+approved in one round with GPT-6.1 Sol on xhigh; its empty-hostname nit was fixed
+as suggested and passed CI. Reviewer token usage was not exposed.
+
+The downloaded kit's archive hash and all 26 internal file checksums were
+verified locally, along with its merge-checkout identity and executable modes/
+ELF headers for all three Linux binaries. No downloaded binary was executed.
+
+This establishes container/runtime and artifact evidence. Actual Debian/systemd
+host installation, installed-helper execution, live GitHub/Canary integration
+and complete manual browser acceptance remain **not run**. The PR stays draft
+until the operator manually approves it for review; no production readiness is
+claimed.
+
+Local guarded Linux amd64 test-package cross-compilation and Linux-targeted
+`go vet ./...` passed for this follow-up on 2026-11-04 (62.78 and 22.25 seconds).
+The largest sampled compile scratch was 31,505,106 bytes, the idle compiler cache
+remained below 256 MiB, and the external compiler cache stayed at 14,702 bytes.
+Python syntax checks passed. No Windows application/test executable ran; Docker
+is unavailable locally; runtime/smoke/browser/packaging evidence comes from the
+Linux run above.
+
 **Validated project/GitHub source checkpoint:** on
 `095b2a844800ab3ec9844bce0ab5e35c2adf1cc6`, [Linux run 41699709962](https://github.com/Narehood/Phoenix/actions/runs/41699709962)
 passed all Debian CGO fixtures, Linux vet, all race packages (including both

@@ -6,7 +6,7 @@ Phoenix owns host inventory, resource telemetry and remote jobs. Canary independ
 
 The first milestone targets **Debian/Linux with systemd**: one Go server, SQLite, an outbound Go agent, and a React/TypeScript dashboard. Windows and SSH are future platform/transport implementations, not completed support. This is a development build: compilation, fixture results, actual Debian acceptance and production readiness are reported separately in [validation](docs/validation.md).
 
-**Validated development checkpoint:** [Linux CI on `095b2a8`](https://github.com/Narehood/Phoenix/actions/runs/41699709962) passed the host/project/GitHub security fixtures, Linux vet/race checks, CGO binaries, React bundle, server image and 13 browser regression cases. Actual Debian/systemd host acceptance, installed-helper execution, full manual browser acceptance and live GitHub/Canary interoperability have not run. [Exact evidence and limits](docs/validation.md#recorded-results).
+**Ready for operator testing:** [Linux CI on `88d2893`](https://github.com/Narehood/Phoenix/actions/runs/41947774424) passed host/project/GitHub and helper-policy fixtures, Linux vet/race checks, CGO binaries, React bundle, server image, an unprivileged server/agent smoke and isolated restore, and 13 browser cases. The run supplies a checksummed Linux test kit; follow the [tester handoff](docs/testing.md). Actual Debian/systemd host acceptance, installed-helper execution, full manual browser acceptance and live GitHub/Canary interoperability have not run. [Exact evidence and limits](docs/validation.md#recorded-results).
 
 The implemented slice includes administrator setup with mandatory TOTP, revocable browser sessions, single-use agent invitations, verified host-bound mTLS identities, telemetry and bounded history, systemd/process/log inspection, approved diagnostics, allowlisted service restarts, confirmed reboot jobs, durable job/audit records and read-only Canary mappings. Agents open outbound connections only. They run without root and use a separate restricted helper for administrative actions. Reboot development tests use fixtures.
 
@@ -20,6 +20,7 @@ The Projects dashboard provides an empty-by-default registry for operator-suppli
 - [Installation, backup and recovery](docs/operations.md)
 - [Canary contract evidence](docs/canary.md)
 - [Validation and Debian acceptance](docs/validation.md)
+- [Test builds and manual tester handoff](docs/testing.md)
 
 For a first installation, follow [operations](docs/operations.md): build the Linux container, configure the exact HTTPS origin, initialize the retained identity, trust the public CA through a trusted channel, then complete password/MFA setup. Enroll agents with private invitation files and verify their certificate fingerprints before approving management access.
 
