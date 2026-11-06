@@ -809,11 +809,8 @@ try {
   assert.ok(await evaluate("document.documentElement.scrollWidth <= innerWidth && [...document.querySelectorAll('.canary-table')].every(t => t.parentElement.scrollWidth <= t.parentElement.clientWidth)"), "Read-only mobile Canary observations require sideways scrolling");
   const canaryHeaders = (await send("Accessibility.getFullAXTree", {}, sessionId)).nodes.filter(n => !n.ignored && n.role?.value === "columnheader").map(n => String(n.name?.value || "").trim().toLowerCase());
   for (const label of ["monitor","source state","observing node","measurement","maintenance"]) assert.ok(canaryHeaders.includes(label),`Mobile Canary observations lost the accessible ${label} header`);
-  await evaluate("document.querySelector('.mobile-navigation').open = true");
-  await click("Fleet overview");
-  await wait("!!document.querySelector('.fleet-table')");
-  await click("ADMIN-ONLY-HOST");
-  await wait("!!document.querySelector('.service-requests')");
+  await evaluate("history.back()");
+  await wait("location.hash === '#/hosts/private-host' && !!document.querySelector('.service-requests')");
   pass("read-only Canary observations retain source, node, time and maintenance headers on mobile without sideways scrolling");
   pass("host and global job lists withhold cancellation when the effective host grant is missing");
   await evaluate("window.fixture.hostPermissions = null");
