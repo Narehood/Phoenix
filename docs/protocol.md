@@ -24,7 +24,7 @@ Implemented routes (v1):
 | POST `/api/auth/revoke-sessions` | Admin + recent + CSRF; revokes all browser sessions |
 | GET `/api/hosts` | Filters by `host.read`; separate connectivity, freshness and resource health |
 | GET `/api/hosts/{host}` | `host.read`; host and newest 240 samples |
-| PATCH `/api/hosts/{host}` | Admin and `host.manage`; `{name,tags,groups}`; group changes affect scopes |
+| PATCH `/api/hosts/{host}` | Admin and `host.manage`; `{name,tags,groups,inventoryRevision}` using the opaque revision from the host read; missing precondition returns 428, changed inventory returns 409 without saving; group changes affect scopes |
 | POST `/api/invitations` | Admin + recent; `{name,groups,reenrollHost?,confirm?}`; one-time invitation and target ID |
 | POST `/api/hosts/{host}/approve` | Admin + recent; `{confirm:<host ID>,certificateFingerprint}`; trusted-channel comparison required |
 | POST `/api/hosts/{host}/revoke` | Admin + recent; `{confirm:<host ID>}` |
@@ -52,6 +52,12 @@ Implemented routes (v1):
 | POST `/agent/renew` | Current non-revoked agent mTLS; `{csr}`; old serial retires immediately |
 
 Every cookie-authenticated mutation also requires exact Origin and `X-CSRF-Token`. Bodies are 256 KiB except exchange (1 MiB to allow JSON-escaped 64 KiB outputs plus telemetry). Request/response strings are plain untrusted content. Agents send one durable receipt at a time; acknowledgements retire transmission, while a bounded local tombstone remains.
+
+Host reads include `inventoryRevision`, derived only from display name, tags and
+permission-bearing groups. Telemetry does not change it. Inventory replacement
+compares that revision inside the write transaction before changing fields or
+recording success. On conflict, reload and review the saved values before a new
+explicit save; a stale draft must not restore groups removed by another editor.
 
 Project registration/update bodies have a tighter 8 KiB cap. Project scopes are
 independent of host/group/all grants. See [project maintenance](project-maintenance.md)

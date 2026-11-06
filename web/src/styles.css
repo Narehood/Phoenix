@@ -1024,7 +1024,7 @@ summary:hover {
   padding: 5px 0;
   max-width: 100%;
   color: var(--text-2);
-  font-size: 13px;
+  font-size: 14px;
   white-space: normal;
 }
 time {
@@ -2477,6 +2477,9 @@ textarea:disabled {
 .fleet-view-control {
   display: none;
 }
+.comparison-resource-summary {
+  display: none;
+}
 .activity-event {
   min-width: 0;
   flex: 1;
@@ -2837,6 +2840,16 @@ textarea:disabled {
     min-height: 44px;
     display: inline-flex;
     align-items: center;
+  }
+  .timeline > li {
+    padding-block: 12px;
+  }
+  .activity-context {
+    gap: 0 10px;
+    margin: 0;
+  }
+  .activity-context .timestamp {
+    flex: 1 1 105px;
   }
   .grant-change-columns {
     grid-template-columns: 1fr;
@@ -3244,6 +3257,12 @@ textarea:disabled {
   .fleet-panel {
     container: fleet / inline-size;
   }
+  .fleet-panel.fleet-compare {
+    overflow: clip;
+  }
+  .fleet-compare > .table-scroll {
+    overflow: visible;
+  }
   .fleet-view-control {
     display: flex;
     flex-wrap: wrap;
@@ -3259,7 +3278,9 @@ textarea:disabled {
     font-size: 12px;
   }
   .fleet-compare .fleet-table thead {
-    position: static;
+    position: sticky;
+    top: 56px;
+    z-index: 2;
     width: auto;
     height: auto;
     overflow: visible;
@@ -3274,7 +3295,7 @@ textarea:disabled {
   }
   .fleet-compare .fleet-table th {
     padding: 0;
-    font-size: 13px;
+    font-size: 14px;
     white-space: normal;
     overflow-wrap: anywhere;
     text-transform: none;
@@ -3317,20 +3338,16 @@ textarea:disabled {
   .fleet-compare .fleet-table .chip {
     padding: 0;
     background: transparent;
-    font-size: 13px;
+    font-size: 14px;
   }
   .fleet-compare .fleet-table .chip > span:first-child {
     display: none;
   }
-  .fleet-compare .fleet-table td[data-label="Resources"],
   .fleet-compare .fleet-table td[data-label="Reading freshness"]::before,
   .fleet-compare .fleet-table td[data-label="Reading freshness"] > small {
     display: none;
   }
-  .fleet-compare
-    .fleet-table
-    tr:has(.mobile-resource-warning)
-    td[data-label="Resources"] {
+  .fleet-compare .fleet-table td[data-label="Resources"] {
     display: flex;
     grid-column: 1 / -1;
     grid-row: 3;
@@ -3339,6 +3356,16 @@ textarea:disabled {
     display: block;
     margin-bottom: 0;
     color: var(--warning-text);
+  }
+  .fleet-compare .resource-details {
+    display: none;
+  }
+  .fleet-compare .comparison-resource-summary {
+    display: block;
+    font-size: 14px;
+    color: var(--text-2);
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
   @container fleet (max-width: 24em) {
     .fleet-compare .fleet-table thead {
@@ -3380,10 +3407,7 @@ textarea:disabled {
     .fleet-compare .fleet-table .chip {
       white-space: nowrap;
     }
-    .fleet-compare
-      .fleet-table
-      tr:has(.mobile-resource-warning)
-      td[data-label="Resources"] {
+    .fleet-compare .fleet-table td[data-label="Resources"] {
       grid-row: auto;
     }
   }

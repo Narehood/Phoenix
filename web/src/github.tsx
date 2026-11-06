@@ -59,7 +59,7 @@ const safeLink = (url: string) =>
 function iso(value: string) {
   if (!value) return "Unknown";
   const t = Date.parse(value);
-  return Number.isNaN(t) ? value : new Date(t).toLocaleString();
+  return Number.isNaN(t) ? value : stamp(t);
 }
 function Link({ url, children }: { url: string; children: ReactNode }) {
   const href = safeLink(url);

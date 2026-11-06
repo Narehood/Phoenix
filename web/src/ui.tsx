@@ -11,7 +11,9 @@ import { ApiError } from "./api";
 export type ToneName = "good" | "bad" | "warn" | "neutral";
 
 export const stamp = (n: number) =>
-  n ? new Date(n).toLocaleString() : "Never";
+  n
+    ? new Date(n).toLocaleString(undefined, { timeZoneName: "short" })
+    : "Never";
 
 /** Evidence can age while a network request is pending or a tab is suspended. */
 export function useNow() {
@@ -61,7 +63,7 @@ export function Time({ value }: { value: number }) {
         <span aria-hidden="true">{expanded ? "▴" : "▾"}</span>
       </button>
       <span id={id} className="time-exact" hidden={!expanded}>
-        {new Date(value).toLocaleString(undefined, { timeZoneName: "short" })}
+        {stamp(value)}
       </span>
     </span>
   );

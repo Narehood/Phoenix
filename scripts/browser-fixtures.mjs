@@ -51,6 +51,7 @@ function installFixture(visualCapture = false) {
   const privateHost = host("private-host", "ADMIN-ONLY-HOST");
   const viewerHost = host("viewer-host", "Viewer fixture host");
   const fixtureHosts = [privateHost, viewerHost];
+  const inventoryRevision = h => JSON.stringify([h.name, h.tags, h.groups]);
   const emptyCanary = { sources: [], mappings: [], now };
   const canary = {
     now, mappings: [{ hostId: privateHost.id, sourceId: "fixture-source", monitorId: "unobserved" }],
@@ -69,6 +70,7 @@ function installFixture(visualCapture = false) {
     lastGrantPut: null, shared: ["fixture-project"], requests: [], hold: new Set(new URLSearchParams(location.search).has("hold") ? ["/api/hosts", "/api/canary", "/api/jobs", "/api/audit"] : []), holds: {}, samples: [reading] };
   const refreshEvidence = () => {
     for (const h of fixtureHosts) {
+      h.inventoryRevision = inventoryRevision(h);
       if (h.connectivity === "connected") h.lastContact = Date.now();
       if (h.freshness === "fresh" && h.latest) {
         h.latest.measuredAt = Date.now(); h.latest.collectedAt = Date.now();
@@ -269,8 +271,11 @@ function installFixture(visualCapture = false) {
       const h = fixtureHosts.find(h => h.id === hostWrite[1]);
       if (!admin || !h) return json({error: "action forbidden"}, 403);
       if (!hostWrite[2] && method === "PATCH") {
+        if (!body.inventoryRevision) return json({error:"Read saved inventory before updating"},428);
+        if (body.inventoryRevision !== inventoryRevision(h)) return json({error:"Saved inventory changed; reload saved values"},409);
         Object.assign(h, {name: body.name, tags: body.tags, groups: body.groups});
-        return json({updated: true});
+        h.inventoryRevision = inventoryRevision(h);
+        return json(h);
       }
       if (hostWrite[2] === "/mappings" && method === "PUT") {
         if (body.mappings.length > 20) return json({error: "mapping limit exceeded"}, 400);
@@ -555,14 +560,20 @@ try {
   await evaluate("document.querySelector('.fleet-summary > summary').click()");
   pass("compact mobile rows expose independent statuses and resource summaries while fitting two complete hosts");
   pass("Chrome accessibility tree retains mobile table and column headers with explicit column positions");
+  await evaluate("window.fixture.longFleet()");
+  await wait("document.querySelectorAll('.fleet-table tbody tr').length === 12");
   await evaluate("document.querySelector('.fleet-view-control input').click()");
   await wait("!!document.querySelector('.fleet-compare')");
   assert.ok(await evaluate("document.querySelector('.fleet-table thead').checkVisibility() && [...document.querySelectorAll('.fleet-table tbody tr')].every(r => r.querySelector('[data-label=\"Reading freshness\"]').checkVisibility()) && document.documentElement.scrollWidth <= innerWidth"), "Comparison mode hides independent status evidence or overflows");
   const compareRowHeight = await evaluate("document.querySelector('.fleet-table tbody tr').getBoundingClientRect().height");
+  assert.ok(await evaluate("document.querySelector('.fleet-table .comparison-resource-summary').checkVisibility() && document.querySelector('.fleet-table .comparison-resource-summary').textContent.includes('CPU 12.0%')"), "Comparison requires opening a host to see ordinary resource readings");
+  await evaluate("document.querySelector('.fleet-table tbody tr:nth-child(7)').scrollIntoView({block:'start'})");
+  await wait("(() => { const head = document.querySelector('.fleet-table thead').getBoundingClientRect(); const bar = document.querySelector('.topbar').getBoundingClientRect(); return scrollY > 0 && head.top >= bar.bottom - 1 && head.top <= bar.bottom + 2 && head.bottom < innerHeight; })()");
+  await evaluate("window.scrollTo(0,0); window.fixture.hosts.splice(2)");
   await evaluate("document.querySelector('.fleet-view-control input').click()");
   await wait("!document.querySelector('.fleet-compare')");
   assert.ok(compareRowHeight < await evaluate("document.querySelector('.fleet-table tbody tr').getBoundingClientRect().height"), "Optional comparison mode does not reduce row height");
-  pass("optional mobile comparison retains independently headed statuses and reduces routine row height");
+  pass("optional mobile comparison retains resource readings and visible independent headings during long scrolling while reducing row height");
   await evaluate("window.fixture.hosts[0].resourceHealth = 'warning'; window.fixture.hosts[0].latest.cpuPercent = 96");
   await wait("document.querySelector('.attention-filter')?.textContent.includes('(1)') && [...document.querySelectorAll('.mobile-resource-warning .chip')].some(c => c.checkVisibility() && c.textContent.includes('Resource warning'))");
   assert.equal(await evaluate("document.querySelector('.resource-details').open"), false, "Resource-warning proof needs a collapsed card");
@@ -572,7 +583,7 @@ try {
   assert.ok(await evaluate("document.querySelector('.resource-details > summary').innerText.includes('CPU 96.0%') && !document.querySelector('.mobile-resource-warning').innerText.includes('CPU')"), "Resource warning hides or duplicates its current measurement");
   await evaluate("document.querySelector('.fleet-view-control input').click()");
   await wait("!!document.querySelector('.fleet-compare')");
-  assert.ok(await evaluate("document.querySelector('.fleet-compare .desktop-resource-warning').checkVisibility() && document.querySelector('.fleet-compare .resource-disclosure-label').checkVisibility() && document.querySelector('.fleet-compare .resource-disclosure-label').textContent.includes('CPU 96.0%')"), "Comparison mode conceals resource-warning evidence");
+  assert.ok(await evaluate("document.querySelector('.fleet-compare .desktop-resource-warning').checkVisibility() && document.querySelector('.fleet-compare .comparison-resource-summary').checkVisibility() && document.querySelector('.fleet-compare .comparison-resource-summary').textContent.includes('CPU 96.0%')"), "Comparison mode conceals resource-warning evidence");
   await evaluate("document.querySelector('.fleet-view-control input').click()");
   await wait("!document.querySelector('.fleet-compare')");
   await evaluate("window.fixture.hosts[0].resourceHealth = 'normal'; window.fixture.hosts[0].latest.cpuPercent = 12; window.fixture.hosts[1].connectivity = 'unknown'; window.fixture.hosts[1].freshness = 'unknown'");
@@ -637,6 +648,23 @@ try {
   assert.equal(await evaluate("window.fixture.requests.filter(r => r.method === 'PATCH').length"), inventoryWrites, "Pending inventory was submitted twice");
   await evaluate("window.fixture.holds['PATCH /api/hosts/private-host']()");
   await wait("document.querySelector('.host-inventory-form .status-notice').innerText.includes('Host inventory saved') && !document.querySelector('.host-inventory-form fieldset').disabled");
+  await setValue('.host-inventory-form input[name=name]', 'Concurrent local draft');
+  await evaluate("window.fixture.hold.add('PATCH /api/hosts/private-host')");
+  await submit("Host inventory");
+  await wait("typeof window.fixture.holds['PATCH /api/hosts/private-host'] === 'function'");
+  await evaluate("window.fixture.hosts[0].name = 'Concurrent saved name'; window.fixture.hosts[0].groups = ['Operations']; window.fixture.hold.add('GET /api/hosts/private-host'); window.fixture.holds['PATCH /api/hosts/private-host']()");
+  await wait("typeof window.fixture.holds['GET /api/hosts/private-host'] === 'function' && document.querySelector('.host-inventory-form').innerText.includes('Reload saved inventory')");
+  assert.ok(await evaluate("document.querySelector('.host-inventory-form input[name=name]').value === 'Concurrent local draft' && document.querySelector('.host-inventory-form button.primary').disabled && window.fixture.hosts[0].name === 'Concurrent saved name'"), "Inventory conflict discarded the draft or overwrote saved fields before a fresh read");
+  await evaluate("window.fixture.holds['GET /api/hosts/private-host']()");
+  await wait("document.querySelector('.host-inventory-form .host-form-feedback .retained')?.innerText.includes('Keep my draft')");
+  const conflictWrites = await evaluate("window.fixture.requests.filter(r => r.method === 'PATCH').length");
+  await evaluate("[...document.querySelectorAll('.host-inventory-form button')].find(b => b.textContent === 'Keep my draft').click()");
+  assert.ok(await evaluate("document.querySelector('.host-inventory-form input[name=name]').value === 'Concurrent local draft' && document.querySelector('.host-inventory-form input[name=groups]').value === 'Operations'"), "Reapplying a name edit restored old permission-bearing groups");
+  assert.equal(await evaluate("window.fixture.requests.filter(r => r.method === 'PATCH').length"), conflictWrites, "Review choice saved inventory without explicit submission");
+  await submit("Host inventory");
+  await wait("window.fixture.hosts[0].name === 'Concurrent local draft' && document.querySelector('.host-inventory-form .status-notice').innerText.includes('Host inventory saved')");
+  assert.deepEqual(await evaluate("window.fixture.hosts[0].groups"), ["Operations"]);
+  pass("inventory revision conflicts retain the draft, wait for saved values and reapply only edited fields without restoring newer groups");
   await evaluate("window.fixture.hold.add('PUT /api/hosts/private-host/mappings')");
   await submit("Host monitor mappings");
   await wait("typeof window.fixture.holds['PUT /api/hosts/private-host/mappings'] === 'function' && document.querySelector('.host-mapping-form fieldset').disabled");

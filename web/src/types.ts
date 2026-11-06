@@ -37,6 +37,7 @@ export type Host = {
   addresses: string[];
   tags: string[];
   groups: string[];
+  inventoryRevision: string;
   connectionMethod: string;
   agentVersion: string;
   lastContact: number;

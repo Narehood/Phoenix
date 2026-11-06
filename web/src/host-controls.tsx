@@ -13,10 +13,16 @@ const split = (value: string) =>
     .filter(Boolean);
 
 /** Polls update clean forms. A changed server value never replaces a draft. */
-function useDraft<T>(value: T, label: string, onSaved: () => void) {
+function useDraft<T>(
+  value: T,
+  label: string,
+  onSaved: () => void,
+  checkConflict = false,
+) {
   const [baseline, setBaseline] = useState(value),
     [draft, setDraft] = useState(value),
     [incoming, setIncoming] = useState<T | null>(null),
+    [awaitingLatest, setAwaitingLatest] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState<unknown>(null),
     [notice, setNotice] = useState("");
@@ -43,47 +49,58 @@ function useDraft<T>(value: T, label: string, onSaved: () => void) {
       setDraft(value);
       setIncoming(null);
     }
+    setAwaitingLatest(false);
   }, [signature]);
   useUnsavedChanges(
     dirty || busy,
     busy ? `${label} save in progress (it can complete after leaving)` : label,
   );
-  async function save(
-    submitted: T,
-    request: () => Promise<unknown>,
-    message: string,
-  ) {
-    if (pending.current || !dirty || incoming) return;
+  async function save(request: () => Promise<T>, message: string) {
+    if (pending.current || !dirty || incoming || awaitingLatest) return;
     pending.current = true;
     setBusy(true);
     setError(null);
     setNotice("");
     try {
-      await request();
+      const saved = await request();
       if (!alive.current) return;
-      setBaseline(submitted);
-      setDraft(submitted);
+      setBaseline(saved);
+      setDraft(saved);
       setIncoming(null);
       setNotice(message);
       onSaved();
     } catch (error) {
-      if (alive.current) setError(error);
+      if (alive.current) {
+        setError(error);
+        if (
+          checkConflict &&
+          error instanceof ApiError &&
+          error.status === 409
+        ) {
+          setAwaitingLatest(true);
+          onSaved();
+        }
+      }
     } finally {
       pending.current = false;
       if (alive.current) setBusy(false);
     }
   }
   function reset() {
-    setBaseline(value);
-    setDraft(value);
+    const saved = incoming ?? value;
+    setBaseline(saved);
+    setDraft(saved);
     setIncoming(null);
     setError(null);
     setNotice("");
+    setAwaitingLatest(false);
   }
   return {
     draft,
+    baseline,
     setDraft,
     incoming,
+    awaitingLatest,
     busy,
     dirty,
     error,
@@ -95,9 +112,20 @@ function useDraft<T>(value: T, label: string, onSaved: () => void) {
       if (incoming) {
         setBaseline(incoming);
         setIncoming(null);
+        setAwaitingLatest(false);
+        setError(null);
         setNotice("");
       }
     },
+  };
+}
+
+function inventoryValue(host: Host) {
+  return {
+    name: host.name,
+    tags: host.tags.join(", "),
+    groups: host.groups.join(", "),
+    revision: host.inventoryRevision,
   };
 }
 
@@ -160,12 +188,7 @@ export function HostInventoryForm({
   onSaved: () => void;
   onVerify: () => void;
 }) {
-  const value = {
-    name: host.name,
-    tags: host.tags.join(", "),
-    groups: host.groups.join(", "),
-  };
-  const model = useDraft(value, "host inventory", onSaved);
+  const model = useDraft(inventoryValue(host), "host inventory", onSaved, true);
   return (
     <form
       className="form host-inventory-form"
@@ -180,13 +203,13 @@ export function HostInventoryForm({
           groups: split(model.draft.groups).join(", "),
         };
         void model.save(
-          submitted,
           () =>
-            api(`/api/hosts/${encodeURIComponent(host.id)}`, "PATCH", {
+            api<Host>(`/api/hosts/${encodeURIComponent(host.id)}`, "PATCH", {
               name: submitted.name,
               tags: split(submitted.tags),
               groups: split(submitted.groups),
-            }),
+              inventoryRevision: model.baseline.revision,
+            }).then(inventoryValue),
           "Host inventory saved.",
         );
       }}
@@ -197,7 +220,26 @@ export function HostInventoryForm({
         dismiss={() => model.setError(null)}
         notice={model.notice}
         changed={!!model.incoming}
-        keep={model.keepDraft}
+        keep={() => {
+          const latest = model.incoming;
+          if (!latest) return;
+          model.setDraft({
+            ...latest,
+            name:
+              model.draft.name !== model.baseline.name
+                ? model.draft.name
+                : latest.name,
+            tags:
+              model.draft.tags !== model.baseline.tags
+                ? model.draft.tags
+                : latest.tags,
+            groups:
+              model.draft.groups !== model.baseline.groups
+                ? model.draft.groups
+                : latest.groups,
+          });
+          model.keepDraft();
+        }}
         reset={model.reset}
         onVerify={onVerify}
         latest={
@@ -213,6 +255,24 @@ export function HostInventoryForm({
           )
         }
       />
+      {model.incoming && (
+        <p className="muted">
+          Keeping your draft reapplies only the fields you edited. Newer values
+          of untouched fields stay intact. Review permission-bearing groups
+          before saving.
+        </p>
+      )}
+      {model.awaitingLatest && !model.incoming && (
+        <div className="notice retained" role="status">
+          <p>
+            Your draft is kept. Load the latest saved inventory before reviewing
+            and saving it again.
+          </p>
+          <button type="button" disabled={model.busy} onClick={onSaved}>
+            Reload saved inventory
+          </button>
+        </div>
+      )}
       {!canEdit && (
         <p className="muted">
           Editing inventory requires permission to manage this host. Any draft
@@ -256,13 +316,19 @@ export function HostInventoryForm({
       <div className="button-row">
         <button
           className="primary"
-          disabled={model.busy || !canEdit || !model.dirty || !!model.incoming}
+          disabled={
+            model.busy ||
+            !canEdit ||
+            !model.dirty ||
+            !!model.incoming ||
+            model.awaitingLatest
+          }
         >
           {model.busy ? "Saving inventory…" : "Save inventory"}
         </button>
         <button
           type="button"
-          disabled={model.busy || !model.dirty}
+          disabled={model.busy || !model.dirty || model.awaitingLatest}
           onClick={model.reset}
         >
           Reset
@@ -330,11 +396,10 @@ export function MappingForm({
           return { sourceId, monitorId };
         });
         void model.save(
-          model.draft,
           () =>
             api(`/api/hosts/${encodeURIComponent(host.id)}/mappings`, "PUT", {
               mappings,
-            }),
+            }).then(() => model.draft),
           "Monitor mappings saved.",
         );
       }}

@@ -120,6 +120,13 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await wait("document.querySelector('.host-inventory-form [role=alert]')?.textContent.includes('Fixture save unavailable')");
   await section(".host-inventory-form");
   await shot("host-inventory-feedback-desktop");
+  await evaluate("window.fixture.failWrites.clear(); window.fixture.hosts[0].name = 'edge-01 changed elsewhere'; window.fixture.hosts[0].groups = ['Operations']; document.querySelector('.host-inventory-form').requestSubmit()");
+  await wait("!!document.querySelector('.host-inventory-form .host-form-feedback .retained')");
+  await evaluate("document.querySelector('.host-inventory-form .retained details').open = true");
+  await section(".host-inventory-form");
+  await shot("host-inventory-conflict-desktop");
+  await evaluate("[...document.querySelectorAll('.host-inventory-form button')].find(b => b.textContent === 'Load saved values').click(); window.fixture.hosts[0].name = 'edge-01'; window.fixture.hosts[0].groups = ['Production']");
+  await wait("document.querySelector('.host-inventory-form input[name=name]').value === 'edge-01'");
   await evaluate("window.fixture.failWrites.clear(); [...document.querySelectorAll('.host-inventory-form button')].find(b => b.textContent === 'Reset').click(); document.querySelector('.host-mapping-form input[type=checkbox]').click()");
   await evaluate(`(() => {
     const source = window.fixture.canary.sources[0];
@@ -217,6 +224,10 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await evaluate("document.querySelector('.fleet-view-control input').click()");
   await wait("!!document.querySelector('.fleet-compare')");
   await shot("fleet-compare-mobile");
+  await evaluate("document.querySelector('.fleet-table tbody tr:nth-child(7)').scrollIntoView({block:'start'})");
+  await shot("fleet-compare-scrolled-mobile");
+  if (!await evaluate("(() => { const head = document.querySelector('.fleet-table thead').getBoundingClientRect(); return head.top >= document.querySelector('.topbar').getBoundingClientRect().bottom - 1 && head.bottom < innerHeight; })()")) throw Error("Scrolled comparison lost its independent evidence headings");
+  await top();
   await evaluate(`(() => {
     const elements = [...document.querySelectorAll('main, main *')];
     window.fixture.textStyles = elements.map(e => [e, e.getAttribute('style'), parseFloat(getComputedStyle(e).fontSize)]);

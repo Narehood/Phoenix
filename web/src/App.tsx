@@ -1077,7 +1077,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                     onChange={(event) => setCompareFleet(event.target.checked)}
                   />
                   Compare statuses
-                  <span className="muted">Open a host for readings</span>
+                  <span className="muted">Includes resource readings</span>
                 </label>
                 {attentionOnly && (
                   <p className="filter-context" role="status">
@@ -1254,6 +1254,12 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                                   />
                                 </span>
                               )}
+                              <span className="comparison-resource-summary">
+                                {h.latest &&
+                                  h.freshness !== "fresh" &&
+                                  "Last known · "}
+                                {resourceSummary(h.latest)}
+                              </span>
                               <ResponsiveDetails
                                 className="resource-details"
                                 label={
