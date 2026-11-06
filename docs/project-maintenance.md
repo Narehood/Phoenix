@@ -121,7 +121,12 @@ on every request, and update permission is checked inside its transaction.
 requesting bounded background collection. Administrators configure sources with
 recent authentication. The grant editor loads the complete set using admin-only
 GET `/api/users/{user}/grants`, then preserves intended host/project grants while
-editing. A failed load disables replacement.
+editing. A failed load disables replacement. Replacement includes the loaded
+set as `expectedGrants`; the server compares it inside the replacement transaction
+and rejects a stale set with 409. The editor keeps the draft and can reapply only
+its explicit additions/removals to the latest set for review, or discard it and
+load the latest set. Neither choice saves automatically. A concurrent revocation
+is not restored merely because it was present in the earlier loaded set.
 
 Existing host/group/all grants, including fleet-wide wildcards, confer no project
 access. Project grants confer no host access. Cross-category grants are rejected.

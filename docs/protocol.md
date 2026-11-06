@@ -23,13 +23,13 @@ Implemented routes (v1):
 | POST `/api/auth/recent` | Authenticated + CSRF; `{password,code}`; five-minute window; no code replay |
 | POST `/api/auth/revoke-sessions` | Admin + recent + CSRF; revokes all browser sessions |
 | GET `/api/hosts` | Filters by `host.read`; separate connectivity, freshness and resource health |
-| GET `/api/hosts/{host}` | `host.read`; host and newest 240 samples |
-| PATCH `/api/hosts/{host}` | Admin and `host.manage`; `{name,tags,groups}`; group changes affect scopes |
+| GET `/api/hosts/{host}` | `host.read`; host, newest 240 samples, advisory permissions and complete saved `mappings` for this host |
+| PATCH `/api/hosts/{host}` | Admin and `host.manage`; `{name,tags,groups,inventoryRevision}` using the opaque revision from the host read; missing precondition returns 428, changed inventory returns 409 without saving; group changes affect scopes |
 | POST `/api/invitations` | Admin + recent; `{name,groups,reenrollHost?,confirm?}`; one-time invitation and target ID |
 | POST `/api/hosts/{host}/approve` | Admin + recent; `{confirm:<host ID>,certificateFingerprint}`; trusted-channel comparison required |
 | POST `/api/hosts/{host}/revoke` | Admin + recent; `{confirm:<host ID>}` |
 | GET/POST `/api/users` | Admin; create requires recent and `{name,role,password}`; returns one-time MFA secret, no grants |
-| PUT `/api/users/{user}/grants` | Admin + recent; `{grants:[{scopeType,scope,action}]}` where `scopeType` is `host`, `group`, `all` or `project`; replace all grants; project scopes require registered IDs and project actions; cannot change own/admin grants |
+| PUT `/api/users/{user}/grants` | Admin + recent; `{grants:[{scopeType,scope,action}],expectedGrants:[...]}` where `expectedGrants` is the complete set most recently read (including `[]`); missing precondition returns 428 and a changed saved set returns 409 without replacing anything. `scopeType` is `host`, `group`, `all` or `project`; project scopes require registered IDs and project actions; cannot change own/admin grants |
 | GET `/api/users/{user}/grants` | Admin; complete current `{grants:[...]}` for safe mixed-scope editing |
 | POST `/api/users/{user}/disable` | Admin + recent; non-admin account only; revokes all sessions |
 | POST `/api/hosts/{host}/jobs` | `host.read` plus action, verified non-revoked identity; `{action,args,timeoutSeconds?,expiresSeconds?,confirm?}` |
@@ -45,13 +45,25 @@ Implemented routes (v1):
 | PUT/DELETE `/api/projects/{project}/github` | Admin + recent; revision-checked source configuration/disconnection; credentials never returned |
 | POST `/api/projects/{project}/github/sync` | Project read + `github.read` + `github.sync`; schedules collection, cooldown enforced |
 | GET `/api/canary` | Admin inventory or mapped `host.read` views; no tokens or private monitor settings |
-| PUT `/api/hosts/{host}/mappings` | Admin + CSRF; `{mappings:[{sourceId,monitorId}]}`, at most 20 |
+| PUT `/api/hosts/{host}/mappings` | Admin + CSRF; `{mappings:[{sourceId,monitorId}],expectedMappings:[...]}` using the complete set from host detail, including `[]`; at most 20 per set; missing precondition returns 428 and changed saved mappings return 409 without replacement |
 | GET `/api/canary/{source}/monitors/{monitor}/history` | Mapped host read permission; bounded/throttled server-side viewer read |
 | POST `/enroll` | Authenticated server TLS, invitation, signed CSR and Linux metadata; no browser session required |
 | POST `/agent/exchange` | Agent listener, TLS 1.3 mTLS and current serial; one optional receipt, one optional reading, optional runningJob |
 | POST `/agent/renew` | Current non-revoked agent mTLS; `{csr}`; old serial retires immediately |
 
 Every cookie-authenticated mutation also requires exact Origin and `X-CSRF-Token`. Bodies are 256 KiB except exchange (1 MiB to allow JSON-escaped 64 KiB outputs plus telemetry). Request/response strings are plain untrusted content. Agents send one durable receipt at a time; acknowledgements retire transmission, while a bounded local tombstone remains.
+
+Host reads include `inventoryRevision`, derived only from display name, tags and
+permission-bearing groups. Telemetry does not change it. Inventory replacement
+compares that revision inside the write transaction before changing fields or
+recording success. On conflict, reload and review the saved values before a new
+explicit save; a stale draft must not restore groups removed by another editor.
+
+Monitor mapping replacement similarly compares `expectedMappings` within its
+write transaction before changing rows or recording success. Use the complete
+host-detail set, not the bounded fleet-wide Canary list. Conflict recovery
+reapplies only intended additions/removals to the latest saved set for review;
+the operator must then save separately. Mapping changes never write to Canary.
 
 Project registration/update bodies have a tighter 8 KiB cap. Project scopes are
 independent of host/group/all grants. See [project maintenance](project-maintenance.md)

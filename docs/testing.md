@@ -2,7 +2,7 @@
 
 This guide is for testing the implemented Debian/Linux slice, including Projects
 and read-only GitHub health. It is a development build, not a production release.
-Windows/SSH, documentation/content editors, dependency updates and deployment
+Windows/SSH, documentation/content editors, dashboard dependency updates and deployment
 workflows remain planned. Keep the pull request in **draft** until the operator
 manually approves it for review; passing checks do not grant that approval.
 
@@ -12,7 +12,9 @@ Open the draft PR's **Phoenix Linux validation** check. Use a successful run for
 the current head, and download `phoenix-linux-amd64-test-kit` from that run's
 artifacts. Artifacts expire after seven days; rerun validation if needed. The kit
 is uploaded only after fixtures, race checks, built-binary smoke and browser
-regressions pass. No image is published or deployed by CI.
+regressions pass. A passing run also exports `phoenix-linux-amd64-server-image`,
+with a compressed Docker image, checksums, tested revision/tree, base-image
+digests and installed-package inventory. CI does not replace running deployments.
 
 Extract the downloaded artifact ZIP in a new directory on a disposable Linux
 test machine, then verify and unpack its inner archive:
@@ -29,6 +31,20 @@ cat build-info.json
 tests a temporary merge commit: it may differ from the branch head. Keep the run
 URL and both SHAs in your test report. Checksums detect transfer changes; these
 are unsigned development artifacts, not signed releases.
+
+For the server-image artifact, extract its ZIP into a separate directory, run
+`sha256sum -c SHA256SUMS`, inspect `image.json`, then use
+`docker load --input phoenix-linux-amd64-image.tar.gz` on the disposable Linux
+Docker host. It provides `phoenix:development` for the supplied Compose file and
+an exact-revision tag. Loading an image does not migrate data or replace a running
+container; follow the operations guide and preserve the installation's identity.
+
+The Linux workflow's manual `dependency_refresh` input resolves current stable
+development dependencies in a temporary checkout and exports manifests with npm
+audit evidence. It does not commit them or run the application. Review that
+artifact, commit the intended manifest changes, then run the full validation
+again. This maintenance operation is separate from the dashboard's planned
+repository-update feature.
 
 The kit contains CGO-enabled Linux amd64 server/agent/helper binaries, the built
 dashboard, example configuration, agent unit/sudoers file and documentation.
@@ -66,7 +82,26 @@ in isolation, runs offline administrator recovery and verifies old-session
 rejection plus retained hosts/projects/jobs. Logs and state are bounded and
 removed. This is container evidence, not an installed-host restore drill.
 
-The 13 browser regressions use the built dashboard with temporary API fixtures.
+The browser regressions use the built dashboard with temporary API fixtures.
+They cover independently held initial reads, local aging of positive evidence,
+project/grant/host controls during delayed saves, guarded service submissions,
+effective host-action permissions, compact mobile summaries, and populated CPU
+history with gaps and missing values. Chrome accessibility-tree checks retain
+responsive table roles and column headers; these are not a screen-reader
+acceptance test.
+The dedicated read-only Canary list has the same mobile header checks. Repository
+conflict fixtures preserve untouched collection settings during token rotation,
+clear a draft token when its repository target changes, and require a separate save.
+Authenticator-copy checks use a temporary clipboard stub and never touch the
+test machine's clipboard. Actual browser permissions and account-owner handoff
+still require manual acceptance. Account creation foregrounds the one-time key
+and requires an explicit stored/shared acknowledgement before clearing it; this
+acknowledgement does not establish that the owner completed TOTP verification.
+Protected request expiry returns the browser to sign-in and clears authenticated
+views. Authoritative denied/missing resource reads clear their cached data;
+transient failures may retain explicitly unknown snapshots. Fixtures check
+that an old session's late 401 cannot expire a later login, and that a rejected
+recent-authentication challenge keeps a still-valid session.
 The smoke uses real APIs but does not drive a browser. Neither substitutes for
 manual end-to-end browser acceptance. Container systemd service/log inspection
 may be unavailable; the smoke never installs or executes the root helper.
@@ -80,15 +115,15 @@ administrative-action failure.
 | Area | Test and expected result |
 | --- | --- |
 | Installation | Complete the [actual Debian/systemd procedure](validation.md#actual-debiansystemd-acceptance-procedure--not-run) on a dedicated test host; record OS/kernel/systemd/architecture and exact build/run. |
-| Authentication | Complete setup/TOTP, sign out/in, refresh identity, expire/revoke a session; rejected access must not leave another user's data on screen. |
+| Authentication | Complete setup/TOTP, including explicit setup-key copy and denied-clipboard manual fallback; copying must not finish verification. Sign out/in, refresh identity and expire/revoke a session; rejected access must not leave another user's data on screen. |
 | Hosts | Enroll and compare fingerprint through a trusted channel before approval; compare two telemetry samples and process/service/log readings with the test host; disconnect one agent and distinguish offline from stale resources and Canary status. |
-| Jobs | Run the fixed diagnostic; use only the new disposable acceptance service for a confirmed allowlisted restart; verify forbidden services/shell and unauthorized output are refused; verify audit and uncertainty handling. Do not test real reboot. |
-| Accounts | Create an operator and viewer with narrow host/project grants; verify role ceilings, inaccessible resources, failed grant loading and preservation of mixed grants. |
-| Projects | Start empty; register a temporary project, edit metadata, provoke a two-tab revision conflict, archive and restore; verify bounded audit and explicit unsupported modules. |
+| Jobs | Run the fixed diagnostic; use only the new disposable acceptance service for a confirmed allowlisted restart. Open a copied outcome link and confirm its action, host and service/diagnostic target. Distinguish queued, dispatched, permission-restricted and missing output; remove an output grant and confirm old output disappears on the next read. Check both job lists on mobile, including labelled fields and cancellation eligibility. Verify forbidden services/shell and unauthorized output are refused, plus audit and uncertainty handling. Do not test real reboot. |
+| Accounts | Create an operator and viewer with narrow host/project grants; verify role ceilings, inaccessible resources, failed grant loading and preservation of mixed grants. Confirm the operator grant editor explains that host inventory editing requires an administrator. Confirm host request controls reflect effective action grants, update after grant removal, and stay disabled when permissions cannot be loaded; submitted requests must still be authorized by the server. |
+| Projects | Start empty; register a temporary project with a delayed response and confirm fields/features stay locked until completion. Edit metadata, provoke a two-tab revision conflict, archive and restore; verify bounded audit and explicitly planned features. |
 | GitHub | Optionally connect an operator-supplied disposable repository with a dedicated read-only token; verify PR checks/reviews, recent push CI and Dependabot observations, cooldowns and stale/permission states; disable/disconnect and ensure old observations do not reappear. Empty results never prove packages current. |
 | Canary | Only with a reachable operator-supplied node API/viewer account, verify source/build, independent freshness, mappings and unavailable-source behavior. Do not modify Canary or contact notification destinations. |
 | Recovery | Complete a stopped, isolated backup/restore drill with separate identity keys, revoke restored sessions, reconcile agents/jobs, and verify permissions before reconnecting. |
-| Browser | Use the real server in supported desktop and narrow viewports; inspect keyboard navigation, errors/empty/loading states and branding at small sizes. Record browser/version. |
+| Browser | Use the real server in desktop, narrow and short viewports. Check Back/Forward, refresh and copied host/project/job links; decline leaving an unsaved edit or one-time account setup. Reach sign-out in short desktop/mobile windows, dismiss the menu with Escape and verify heading focus. Filter agent/reading issues, inspect warning measurements without expanding a card, and confirm stale values/services say last known. Use every host section shortcut, confirm its heading clears the sticky mobile header, and expand configuration with the keyboard. Follow service and diagnostic receipts to their exact jobs; check automatic/manual status refresh, unavailable reads clearing prior output, and cancellation eligibility for a scoped operator. Fail one dashboard endpoint and verify successful sources keep updating. Reveal exact times by tap or keyboard. Check local project errors, verification expiry and success announcements with a screen reader. Inspect errors/empty/loading states and branding at small sizes. Record browser/version. |
 
 Use this report shape, with sanitized evidence only:
 

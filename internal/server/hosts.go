@@ -1,7 +1,9 @@
 package server
 
 import (
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"net"
@@ -29,6 +31,8 @@ func scanHost(row interface{ Scan(...any) error }) (core.Host, error) {
 		return h, e
 	}
 	e = json.Unmarshal([]byte(groups), &h.Groups)
+	revision := sha256.Sum256([]byte(core.Encode([]any{h.Name, h.Tags, h.Groups})))
+	h.InventoryRevision = hex.EncodeToString(revision[:])
 	h.ConnectionMethod = "outbound-agent"
 	return h, e
 }
@@ -149,14 +153,31 @@ func (s *Server) hostDetail(w http.ResponseWriter, r *http.Request, u core.User)
 	if e != nil {
 		return e
 	}
-	write(w, 200, map[string]any{"host": h, "samples": samples, "now": s.Now().UnixMilli()})
+	// Advisory UI permissions use the same grant checks as job submission.
+	// Every mutation still rechecks authorization when it is submitted.
+	permissions := []string{}
+	for _, action := range []string{"host.read", "host.manage", "diagnostic", "service.restart", "services.inspect", "logs.read", "host.reboot", "jobs.output", "jobs.cancel"} {
+		ok, e := s.allowed(u.ID, h.ID, action)
+		if e != nil {
+			return e
+		}
+		if ok {
+			permissions = append(permissions, action)
+		}
+	}
+	savedMappings, e := hostMappings(s.DB, h.ID)
+	if e != nil {
+		return e
+	}
+	write(w, 200, map[string]any{"host": h, "samples": samples, "permissions": permissions, "mappings": savedMappings, "now": s.Now().UnixMilli()})
 	return nil
 }
 func (s *Server) updateHost(w http.ResponseWriter, r *http.Request, u core.User) error {
 	var b struct {
-		Name   string   `json:"name"`
-		Tags   []string `json:"tags"`
-		Groups []string `json:"groups"`
+		Name              string   `json:"name"`
+		Tags              []string `json:"tags"`
+		Groups            []string `json:"groups"`
+		InventoryRevision string   `json:"inventoryRevision"`
 	}
 	if e := decode(r, &b); e != nil {
 		return e
@@ -167,11 +188,24 @@ func (s *Server) updateHost(w http.ResponseWriter, r *http.Request, u core.User)
 	if u.Role != "admin" {
 		return fail(403, "inventory and permission scopes require administrator")
 	}
+	if b.InventoryRevision == "" {
+		return fail(428, "read the saved inventory before updating it")
+	}
 	tx, e := s.DB.Begin()
 	if e != nil {
 		return e
 	}
 	defer tx.Rollback()
+	current, e := scanHost(tx.QueryRow(`SELECT `+hostColumns+` FROM hosts WHERE id=?`, r.PathValue("host")))
+	if e == sql.ErrNoRows {
+		return fail(404, "host not found")
+	}
+	if e != nil {
+		return e
+	}
+	if current.InventoryRevision != b.InventoryRevision {
+		return fail(409, "saved inventory changed; reload and review saved values before updating")
+	}
 	res, e := tx.Exec(`UPDATE hosts SET name=?,tags=?,groups_json=? WHERE id=?`, b.Name, core.Encode(b.Tags), core.Encode(b.Groups), r.PathValue("host"))
 	if e != nil {
 		return e

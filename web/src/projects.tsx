@@ -2,19 +2,44 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, ApiError } from "./api";
 import { GitHubPanel } from "./github";
 import type { Project, ProjectCapabilities, ProjectEvent, User } from "./types";
-import { Empty, ErrorNotice, Metric, Tone, stamp, type ToneName } from "./ui";
+import {
+  ChangeComparison,
+  Empty,
+  ErrorNotice,
+  StatusNotice,
+  Time,
+  Tone,
+  stamp,
+  type ToneName,
+} from "./ui";
+import { RouteLink, useNavigation, useUnsavedChanges } from "./navigation";
 
 export const moduleInfo: [string, string][] = [
-  ["documentation", "Documentation · connector not implemented"],
-  ["dependencies", "Dependencies · read-only GitHub health and update PRs"],
-  ["content", "Content · connector not implemented"],
-  ["releases", "Releases · connector not implemented"],
-  ["operations", "Operations · connector not implemented"],
+  [
+    "dependencies",
+    "Repository observations · read-only GitHub checks and alerts",
+  ],
+  ["documentation", "Documentation · planned"],
+  ["content", "Content · planned"],
+  ["releases", "Releases · planned"],
+  ["operations", "Operations · planned"],
 ];
 const projectID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const projectName = /^[A-Za-z0-9][A-Za-z0-9 _.-]{0,79}$/;
 const forbiddenControl = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/;
 const pollMs = 30000;
+const permissionLabels: Record<string, string> = {
+  "project.read": "View project",
+  "project.manage": "Edit project details",
+  "github.read": "View repository observations",
+  "github.sync": "Refresh repository observations",
+};
+const eventLabels: Record<string, string> = {
+  "project.create": "Project registered",
+  "project.update": "Project updated",
+  "github.configure": "Repository configured",
+  "github.disconnect": "Repository disconnected",
+};
 
 /** Mirrors the server's metadata rules so mistakes are caught before sending. */
 function metadataProblem(name: string, description: string) {
@@ -31,37 +56,50 @@ function ModulePicker({
   modules,
   onChange,
   disabled,
+  registered = false,
 }: {
   modules: string[];
-  onChange: (m: string[]) => void;
+  onChange: (modules: string[]) => void;
   disabled?: boolean;
+  registered?: boolean;
 }) {
-  return (
-    <fieldset disabled={disabled}>
-      <legend>Modules</legend>
-      {moduleInfo.map(([id, label]) => (
+  const choices = (planned: boolean) =>
+    moduleInfo
+      .filter(([id]) => (id !== "dependencies") === planned)
+      .map(([id, label]) => (
         <label className="check" key={id}>
           <input
             type="checkbox"
             value={id}
             checked={modules.includes(id)}
-            onChange={(e) =>
+            onChange={(event) =>
               onChange(
-                e.target.checked
-                  ? moduleInfo
-                      .map(([m]) => m)
-                      .filter((m) => m === id || modules.includes(m))
+                event.target.checked
+                  ? [...modules, id]
                   : modules.filter((m) => m !== id),
               )
             }
           />
           {label}
         </label>
-      ))}
+      ));
+  return (
+    <fieldset disabled={disabled}>
+      <legend>Project features</legend>
+      {choices(false)}
       <small>
-        Selected modules control availability. GitHub collection also requires
-        an enabled repository connection.
+        {registered
+          ? "Use Repository settings to manage the connection and read-only collection."
+          : "After registration, use Repository settings to connect GitHub."}
       </small>
+      <details className="planned-features">
+        <summary>Planned features</summary>
+        <p className="muted">
+          These connectors are not implemented. Selections record future intent
+          only.
+        </p>
+        {choices(true)}
+      </details>
     </fieldset>
   );
 }
@@ -73,7 +111,8 @@ export function Projects({
   user: User;
   onVerify: () => void;
 }) {
-  const [selected, setSelected] = useState("");
+  const { route, navigate } = useNavigation();
+  const selected = route.id || "";
   // Each project detail mount owns its data; a late response for one project
   // cannot populate another project's view.
   if (selected)
@@ -83,10 +122,17 @@ export function Projects({
         id={selected}
         user={user}
         onVerify={onVerify}
-        onBack={() => setSelected("")}
       />
     );
-  return <Inventory user={user} onVerify={onVerify} onOpen={setSelected} />;
+  return (
+    <Inventory
+      user={user}
+      onVerify={onVerify}
+      onOpen={(id) => {
+        navigate({ view: "projects", id });
+      }}
+    />
+  );
 }
 
 function Inventory({
@@ -101,7 +147,8 @@ function Inventory({
   const [projects, setProjects] = useState<Project[] | null>(null),
     [loadError, setLoadError] = useState<unknown>(null),
     [registering, setRegistering] = useState(false),
-    [showArchived, setShowArchived] = useState(true);
+    [showArchived, setShowArchived] = useState(false),
+    [query, setQuery] = useState("");
   useEffect(() => {
     let alive = true;
     let timer: ReturnType<typeof setTimeout>;
@@ -113,7 +160,11 @@ function Inventory({
           setLoadError(null);
         }
       } catch (e) {
-        if (alive) setLoadError(e);
+        if (alive) {
+          setLoadError(e);
+          if (e instanceof ApiError && [401, 403, 404].includes(e.status))
+            setProjects(null);
+        }
       }
       if (alive) timer = setTimeout(poll, pollMs);
     }
@@ -124,7 +175,13 @@ function Inventory({
     };
   }, []);
   const admin = user.role === "admin";
-  const visible = (projects || []).filter((p) => showArchived || !p.archived);
+  const visible = (projects || []).filter(
+    (p) =>
+      (showArchived || !p.archived) &&
+      `${p.name} ${p.description} ${p.id}`
+        .toLowerCase()
+        .includes(query.trim().toLowerCase()),
+  );
   return (
     <>
       <div className="page-heading">
@@ -132,8 +189,7 @@ function Inventory({
           <p className="eyebrow">MAINTENANCE WORKSPACE</p>
           <h1>Projects</h1>
           <p className="muted">
-            Operator-registered projects. A project is not a host: registering
-            one does not enroll an agent or grant access to application data.
+            Organize project details, access and read-only GitHub observations.
           </p>
         </div>
         {admin && !registering && (
@@ -162,7 +218,7 @@ function Inventory({
         <div className="panel-heading">
           <h2>
             Inventory{" "}
-            <span className="count">{projects ? projects.length : "…"}</span>
+            <span className="count">{projects ? visible.length : "…"}</span>
           </h2>
           <label className="check inline">
             <input
@@ -171,8 +227,38 @@ function Inventory({
               onChange={(e) => setShowArchived(e.target.checked)}
             />
             Show archived
+            {projects?.some((p) => p.archived)
+              ? ` (${projects.filter((p) => p.archived).length})`
+              : ""}
           </label>
         </div>
+        {!!projects?.length && (
+          <form
+            className="project-search"
+            role="search"
+            aria-label="Filter projects"
+            onSubmit={(event) => event.preventDefault()}
+          >
+            <label>
+              Search projects
+              <input
+                type="search"
+                name="projectSearch"
+                value={query}
+                placeholder="Name, description or ID…"
+                onChange={(event) => setQuery(event.target.value)}
+              />
+            </label>
+            <span className="muted" role="status">
+              {visible.length} of {projects.length} · within 100 projects
+            </span>
+            {query && (
+              <button type="button" onClick={() => setQuery("")}>
+                Clear search
+              </button>
+            )}
+          </form>
+        )}
         {!projects ? (
           <Empty>
             {loadError ? "Inventory unavailable." : "Loading projects…"}
@@ -182,7 +268,7 @@ function Inventory({
             <h3>No projects yet</h3>
             <p>
               {admin
-                ? "Register a project you maintain to track its availability, permissions and read-only repository health. Nothing is preconfigured."
+                ? "Register a project to organize its details and access, then connect GitHub for read-only repository observations. Host enrollment and Canary uptime are managed separately. Nothing is preconfigured."
                 : "No projects are shared with your account. An administrator can grant project access."}
             </p>
             {admin && !registering && (
@@ -192,53 +278,72 @@ function Inventory({
             )}
           </Empty>
         ) : !visible.length ? (
-          <Empty>All projects in view are archived.</Empty>
+          <Empty>
+            {query
+              ? "No matching projects in this inventory."
+              : "All projects in view are archived."}
+          </Empty>
         ) : (
           <div className="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Project</th>
-                  <th>Status</th>
-                  <th>Modules</th>
-                  <th>Revision</th>
-                  <th>Updated</th>
+            <table
+              role="table"
+              aria-colcount={4}
+              className="project-table responsive-table"
+            >
+              <caption className="sr-only">
+                Registered projects and selected features
+              </caption>
+              <thead role="rowgroup">
+                <tr role="row">
+                  <th role="columnheader" aria-colindex={1} scope="col">
+                    Project
+                  </th>
+                  <th role="columnheader" aria-colindex={2} scope="col">
+                    Status
+                  </th>
+                  <th role="columnheader" aria-colindex={3} scope="col">
+                    Features
+                  </th>
+                  <th role="columnheader" aria-colindex={4} scope="col">
+                    Updated
+                  </th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody role="rowgroup">
                 {visible.map((p) => (
-                  <tr key={p.id}>
-                    <td>
-                      <button
+                  <tr role="row" key={p.id}>
+                    <td role="cell" aria-colindex={1} data-label="Project">
+                      <RouteLink
+                        to={{ view: "projects", id: p.id }}
                         className="text-link"
-                        onClick={() => onOpen(p.id)}
                       >
                         {p.name}
-                      </button>
-                      <small>
-                        <code>{p.id}</code>
-                      </small>
+                      </RouteLink>
+                      <small>{p.description || p.id}</small>
                     </td>
-                    <td>
-                      {p.archived ? (
-                        <Tone value="archived" tone="neutral" />
-                      ) : (
-                        <Tone value="active" tone="neutral" />
-                      )}
+                    <td role="cell" aria-colindex={2} data-label="Status">
+                      <Tone
+                        value={p.archived ? "archived" : "active"}
+                        tone="neutral"
+                      />
                     </td>
-                    <td>
+                    <td role="cell" aria-colindex={3} data-label="Features">
                       {p.modules.length ? (
                         p.modules.map((m) => (
                           <span className="tag" key={m}>
-                            {m}
+                            {m === "dependencies"
+                              ? "Repository observations"
+                              : m + " · planned"}
                           </span>
                         ))
                       ) : (
                         <span className="muted">None selected</span>
                       )}
                     </td>
-                    <td>{p.revision}</td>
-                    <td>{stamp(p.updatedAt)}</td>
+                    <td role="cell" aria-colindex={4} data-label="Updated">
+                      <Time value={p.updatedAt} />
+                      <small>Revision {p.revision}</small>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -271,7 +376,14 @@ function Register({
     [modules, setModules] = useState<string[]>([]),
     [error, setError] = useState<unknown>(null),
     [busy, setBusy] = useState(false);
-  const alive = useRef(true);
+  const alive = useRef(true),
+    pending = useRef(false);
+  const markSaved = useUnsavedChanges(
+    !!(id || name || description || modules.length),
+    busy
+      ? "new project registration in progress (it can finish after leaving)"
+      : "new project",
+  );
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -280,7 +392,7 @@ function Register({
   }, []);
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (busy) return;
+    if (pending.current) return;
     if (!projectID.test(id))
       return setError(
         new Error(
@@ -289,6 +401,7 @@ function Register({
       );
     const problem = metadataProblem(name, description);
     if (problem) return setError(new Error(problem));
+    pending.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -298,10 +411,14 @@ function Register({
         description,
         modules,
       });
-      if (alive.current) onCreated(p);
+      if (alive.current) {
+        markSaved();
+        onCreated(p);
+      }
     } catch (err) {
       if (alive.current) setError(err);
     } finally {
+      pending.current = false;
       if (alive.current) setBusy(false);
     }
   }
@@ -327,11 +444,13 @@ function Register({
           className="form"
           onSubmit={submit}
           aria-label="Register a project"
+          aria-busy={busy}
         >
           <label>
             Project ID (permanent)
             <input
               name="projectId"
+              disabled={busy}
               value={id}
               onChange={(e) => setId(e.target.value)}
               required
@@ -347,6 +466,7 @@ function Register({
             Name
             <input
               name="projectName"
+              disabled={busy}
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
@@ -358,6 +478,7 @@ function Register({
             Description
             <textarea
               name="projectDescription"
+              disabled={busy}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={3}
@@ -367,7 +488,11 @@ function Register({
               URLs.
             </small>
           </label>
-          <ModulePicker modules={modules} onChange={setModules} />
+          <ModulePicker
+            modules={modules}
+            onChange={setModules}
+            disabled={busy}
+          />
           <div className="button-row">
             <button className="primary" disabled={busy}>
               {busy ? "Working…" : "Register project"}
@@ -401,6 +526,33 @@ const isDirty = (e: Edit) =>
   e.description !== e.baseline.description ||
   !sameModules(e.modules, e.baseline.modules);
 
+function reapplyEdit(edit: Edit, latest: Project): Edit {
+  const removed = new Set(
+    edit.baseline.modules.filter((module) => !edit.modules.includes(module)),
+  );
+  const added = edit.modules.filter(
+    (module) => !edit.baseline.modules.includes(module),
+  );
+  return {
+    baseline: latest,
+    name: edit.name !== edit.baseline.name ? edit.name : latest.name,
+    description:
+      edit.description !== edit.baseline.description
+        ? edit.description
+        : latest.description,
+    modules: [
+      ...new Set([
+        ...latest.modules.filter((module) => !removed.has(module)),
+        ...added,
+      ]),
+    ],
+  };
+}
+const featureNames = (modules: string[]) =>
+  modules
+    .map((module) => moduleInfo.find(([key]) => key === module)?.[1] || module)
+    .join(", ") || "None";
+
 function capabilityTone(state: string, current: boolean): ToneName {
   if (!current) return "neutral";
   if (state === "fresh") return "good";
@@ -419,16 +571,15 @@ function ProjectDetail({
   id,
   user,
   onVerify,
-  onBack,
 }: {
   id: string;
   user: User;
   onVerify: () => void;
-  onBack: () => void;
 }) {
   const [project, setProject] = useState<Project | null>(null),
     [caps, setCaps] = useState<ProjectCapabilities | null>(null),
     [events, setEvents] = useState<ProjectEvent[] | null>(null),
+    [historyError, setHistoryError] = useState<unknown>(null),
     [gone, setGone] = useState(false),
     [loadError, setLoadError] = useState<unknown>(null),
     [edit, setEdit] = useState<Edit | null>(null),
@@ -438,8 +589,30 @@ function ProjectDetail({
     [busy, setBusy] = useState(false);
   const alive = useRef(true),
     seq = useRef(0),
-    editRef = useRef<Edit | null>(null);
+    editRef = useRef<Edit | null>(null),
+    settingsRef = useRef<HTMLDetailsElement>(null);
   editRef.current = edit;
+  useUnsavedChanges(!!edit && isDirty(edit), "project details");
+  useEffect(() => {
+    if (!conflict || !settingsRef.current) return;
+    settingsRef.current.open = true;
+    const frame = requestAnimationFrame(() =>
+      settingsRef.current
+        ?.querySelector(".project-conflict-review")
+        ?.scrollIntoView({ block: "nearest" }),
+    );
+    return () => cancelAnimationFrame(frame);
+  }, [conflict?.revision]);
+  useEffect(() => {
+    if (!error && !notice) return;
+    if (settingsRef.current) settingsRef.current.open = true;
+    const frame = requestAnimationFrame(() =>
+      settingsRef.current
+        ?.querySelector(".project-edit-feedback")
+        ?.scrollIntoView({ block: "nearest" }),
+    );
+    return () => cancelAnimationFrame(frame);
+  }, [error, notice]);
   const path = `/api/projects/${encodeURIComponent(id)}`;
 
   function adopt(p: Project) {
@@ -457,19 +630,35 @@ function ProjectDetail({
   async function load() {
     const n = ++seq.current;
     try {
-      const [p, c, a] = await Promise.all([
+      const [p, c] = await Promise.all([
         api<Project>(path),
         api<ProjectCapabilities>(`${path}/capabilities`),
-        api<{ events: ProjectEvent[] | null }>(`${path}/audit`),
       ]);
       if (!alive.current || n !== seq.current) return;
       adopt(p);
+      setGone(false);
       setCaps(c);
-      setEvents(a.events || []);
       setLoadError(null);
+      // History is secondary evidence. Its failure must not hide successful
+      // project/capability reads or the independently collected repository.
+      void api<{ events: ProjectEvent[] | null }>(`${path}/audit`)
+        .then((value) => {
+          if (!alive.current || n !== seq.current) return;
+          setEvents(value.events || []);
+          setHistoryError(null);
+        })
+        .catch((error) => {
+          if (!alive.current || n !== seq.current) return;
+          setHistoryError(error);
+          if (
+            error instanceof ApiError &&
+            [401, 403, 404].includes(error.status)
+          )
+            setEvents(null);
+        });
     } catch (e) {
       if (!alive.current || n !== seq.current) return;
-      if (e instanceof ApiError && e.status === 404) {
+      if (e instanceof ApiError && [401, 403, 404].includes(e.status)) {
         // Absent and no-longer-readable are identical; drop everything retained.
         setGone(true);
         setProject(null);
@@ -540,11 +729,7 @@ function ProjectDetail({
           if (!alive.current) return;
           setProject(latest);
           setConflict(latest);
-          setError(
-            new Error(
-              `This project changed to revision ${latest.revision} after you loaded it. Your edits were not saved and are kept below.`,
-            ),
-          );
+          setError(null);
         } catch (reload) {
           if (alive.current) setError(reload);
         }
@@ -559,8 +744,8 @@ function ProjectDetail({
     if (
       !window.confirm(
         archived
-          ? `Archive ${project.name}? It stays readable to authorized accounts; all modules become disabled and GitHub collection stops until restored.`
-          : `Restore ${project.name}? Selected modules become available again.`,
+          ? `Archive ${project.name}? It stays readable to authorized accounts; all features become disabled and GitHub collection stops until restored.`
+          : `Restore ${project.name}? Selected features become available again.`,
       )
     )
       return;
@@ -597,9 +782,9 @@ function ProjectDetail({
   }
 
   const back = (
-    <button className="text-link" onClick={onBack}>
+    <RouteLink className="text-link" to={{ view: "projects" }}>
       ← All projects
-    </button>
+    </RouteLink>
   );
   if (gone)
     return (
@@ -642,18 +827,27 @@ function ProjectDetail({
       </>
     );
   const dirty = !!edit && isDirty(edit);
-  const differs = conflict &&
-    edit && {
-      name: conflict.name !== edit.name,
-      description: conflict.description !== edit.description,
-      modules: !sameModules(conflict.modules, edit.modules),
-      archived: conflict.archived !== edit.baseline.archived,
-    };
+  const proposed = conflict && edit ? reapplyEdit(edit, conflict) : null;
   return (
     <>
-      <div className="page-heading">
+      <div className="page-heading project-page-heading">
         <div>
-          {back}
+          <div className="project-breadcrumb">
+            {back}
+            <button
+              className="text-link"
+              onClick={() => {
+                const settings = settingsRef.current;
+                if (settings) {
+                  settings.open = true;
+                  settings.scrollIntoView({ block: "start" });
+                  settings.querySelector("summary")?.focus();
+                }
+              }}
+            >
+              Project settings
+            </button>
+          </div>
           <h1>
             {project.name}{" "}
             {project.archived && <Tone value="archived" tone="neutral" />}
@@ -661,65 +855,17 @@ function ProjectDetail({
           <p className="muted project-description">
             {project.description || "No description."}
           </p>
-          <code>{project.id}</code>
         </div>
-        {canManage && (
-          <div className="button-row">
-            {project.archived ? (
-              <button onClick={() => void setArchived(false)} disabled={busy}>
-                Restore project
-              </button>
-            ) : (
-              <button
-                className="danger"
-                onClick={() => void setArchived(true)}
-                disabled={busy}
-              >
-                Archive project
-              </button>
-            )}
-          </div>
-        )}
       </div>
       <div aria-live="polite">
-        <ErrorNotice
-          error={error}
-          onDismiss={() => setError(null)}
-          onVerify={onVerify}
-        />
         {loadError && !error ? (
           <div className="notice error" role="alert">
             <span>
               Refresh failed: {(loadError as Error).message}. Showing the last
-              loaded details; module states below are not current.
+              loaded details; feature states below are not current.
             </span>
           </div>
         ) : null}
-        {notice && <div className="notice">{notice}</div>}
-      </div>
-      <div className="metrics">
-        <Metric
-          label="Metadata revision"
-          value={project.revision}
-          detail={`Updated ${stamp(project.updatedAt)}`}
-        />
-        <Metric
-          label="Registered"
-          value={new Date(project.createdAt).toLocaleDateString()}
-          detail={stamp(project.createdAt)}
-        />
-        <Metric
-          label="Modules selected"
-          value={`${project.modules.length} / ${moduleInfo.length}`}
-          detail="Selection is intent, not a working connector"
-        />
-        <Metric
-          label="Your permissions"
-          value={caps ? permissions.length : "Unknown"}
-          detail={
-            caps ? permissions.join(", ") || "None" : "Capabilities unavailable"
-          }
-        />
       </div>
       <GitHubPanel
         key={project.id}
@@ -729,260 +875,366 @@ function ProjectDetail({
         onVerify={onVerify}
         onChanged={() => void load()}
       />
-      <div className="two-columns">
-        <section className="panel">
-          <div className="panel-heading">
-            <h2>Metadata</h2>
-            <span className="muted">
-              {canManage
-                ? `Editing revision ${edit?.baseline.revision ?? project.revision}`
-                : "Read only"}
+      <details ref={settingsRef} className="disclosure project-settings">
+        <summary>
+          <strong>Project settings</strong>
+          <span>
+            {canManage
+              ? "Details, access, history and archive"
+              : "Details, access and history"}
+          </span>
+        </summary>
+        <div className="disclosure-body">
+          <p className="project-meta">
+            <code>{project.id}</code>
+            <span>
+              Updated <Time value={project.updatedAt} />
             </span>
-          </div>
-          <div className="panel-body">
-            {!canManage || !edit ? (
-              <dl className="facts">
-                <dt>Name</dt>
-                <dd>{project.name}</dd>
-                <dt>Description</dt>
-                <dd className="project-description">
-                  {project.description || "None"}
-                </dd>
-                <dt>Modules</dt>
-                <dd>{project.modules.join(", ") || "None selected"}</dd>
-                {caps && (
-                  <>
-                    <dt>Access</dt>
-                    <dd>
-                      Your account can read this project but not manage it.
+            <span>Revision {project.revision}</span>
+          </p>
+          {conflict && proposed && edit && canManage && (
+            <div
+              className="notice conflict project-conflict-review"
+              role="alert"
+            >
+              <b>Revision {conflict.revision} was saved by someone else.</b>
+              <p>
+                Your earlier draft is based on revision {edit.baseline.revision}
+                . Compare changes to the latest saved values below. Untouched
+                fields stay current. Reapply to update the form, then review and
+                save separately.
+              </p>
+              <ChangeComparison
+                label="Project changes for review"
+                savedHeading={`Saved (revision ${conflict.revision})`}
+                rows={[
+                  {
+                    key: "name",
+                    label: "Name",
+                    saved: conflict.name,
+                    proposed: proposed.name,
+                    changed: conflict.name !== proposed.name,
+                  },
+                  {
+                    key: "description",
+                    label: "Description",
+                    saved: conflict.description || "None",
+                    proposed: proposed.description || "None",
+                    changed: conflict.description !== proposed.description,
+                  },
+                  {
+                    key: "modules",
+                    label: "Features",
+                    saved: featureNames(conflict.modules),
+                    proposed: featureNames(proposed.modules),
+                    changed: !sameModules(conflict.modules, proposed.modules),
+                  },
+                  {
+                    key: "archived",
+                    label: "Archived",
+                    saved: conflict.archived ? "Yes" : "No",
+                    proposed: proposed.baseline.archived ? "Yes" : "No",
+                  },
+                ]}
+              />
+              <div className="button-row">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEdit(proposed);
+                    setConflict(null);
+                    setError(null);
+                  }}
+                >
+                  Reapply my changes for review
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEdit(fromProject(conflict));
+                    setConflict(null);
+                    setError(null);
+                  }}
+                >
+                  Discard my draft and load latest
+                </button>
+              </div>
+            </div>
+          )}
+          <div className="two-columns">
+            <section className="panel">
+              <div className="panel-heading">
+                <h2>Project details</h2>
+                <span className="muted">
+                  {canManage
+                    ? `Editing revision ${edit?.baseline.revision ?? project.revision}`
+                    : "Read only"}
+                </span>
+              </div>
+              <div className="panel-body">
+                <div className="project-edit-feedback">
+                  <ErrorNotice
+                    error={error}
+                    onDismiss={() => setError(null)}
+                    onVerify={onVerify}
+                  />
+                  <StatusNotice>{notice}</StatusNotice>
+                </div>
+                {!canManage || !edit ? (
+                  <dl className="facts">
+                    <dt>Name</dt>
+                    <dd>{project.name}</dd>
+                    <dt>Description</dt>
+                    <dd className="project-description">
+                      {project.description || "None"}
                     </dd>
-                  </>
-                )}
-              </dl>
-            ) : (
-              <form
-                className="form"
-                onSubmit={save}
-                aria-label="Project metadata"
-              >
-                {conflict && differs && (
-                  <div className="notice conflict" role="alert">
-                    <b>
-                      Revision {conflict.revision} was saved by someone else.
-                    </b>
-                    <p>
-                      Your unsaved edits are based on revision{" "}
-                      {edit.baseline.revision}. Compare and choose how to
-                      continue; nothing is overwritten automatically.
-                    </p>
-                    <div className="table-scroll">
-                      <table>
-                        <thead>
-                          <tr>
-                            <th>Field</th>
-                            <th>Saved (revision {conflict.revision})</th>
-                            <th>Your edits</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          <tr className={differs.name ? "changed" : ""}>
-                            <td>Name</td>
-                            <td>{conflict.name}</td>
-                            <td>{edit.name}</td>
-                          </tr>
-                          <tr className={differs.description ? "changed" : ""}>
-                            <td>Description</td>
-                            <td className="project-description">
-                              {conflict.description || "None"}
-                            </td>
-                            <td className="project-description">
-                              {edit.description || "None"}
-                            </td>
-                          </tr>
-                          <tr className={differs.modules ? "changed" : ""}>
-                            <td>Modules</td>
-                            <td>{conflict.modules.join(", ") || "None"}</td>
-                            <td>{edit.modules.join(", ") || "None"}</td>
-                          </tr>
-                          <tr className={differs.archived ? "changed" : ""}>
-                            <td>Archived</td>
-                            <td>{conflict.archived ? "Yes" : "No"}</td>
-                            <td>{edit.baseline.archived ? "Yes" : "No"}</td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
+                    <dt>Features</dt>
+                    <dd>
+                      {project.modules.length
+                        ? featureNames(project.modules)
+                        : "None selected"}
+                    </dd>
+                    {caps && (
+                      <>
+                        <dt>Access</dt>
+                        <dd>
+                          Your account can read this project but not manage it.
+                        </dd>
+                      </>
+                    )}
+                  </dl>
+                ) : (
+                  <form
+                    className="form"
+                    onSubmit={save}
+                    aria-label="Project details"
+                  >
+                    {conflict && (
+                      <p className="draft-label">
+                        <b>Your earlier draft · not yet reconciled.</b> Choose a
+                        recovery action above to update these fields.
+                      </p>
+                    )}
+                    <label>
+                      Name
+                      <input
+                        name="editName"
+                        disabled={busy}
+                        value={edit.name}
+                        onChange={(e) =>
+                          setEdit({ ...edit, name: e.target.value })
+                        }
+                        required
+                        maxLength={80}
+                        autoComplete="off"
+                      />
+                    </label>
+                    <label>
+                      Description
+                      <textarea
+                        name="editDescription"
+                        disabled={busy}
+                        value={edit.description}
+                        rows={4}
+                        onChange={(e) =>
+                          setEdit({ ...edit, description: e.target.value })
+                        }
+                      />
+                    </label>
+                    <ModulePicker
+                      registered
+                      disabled={busy}
+                      modules={edit.modules}
+                      onChange={(modules) => setEdit({ ...edit, modules })}
+                    />
                     <div className="button-row">
                       <button
-                        type="button"
-                        onClick={() => {
-                          setEdit({ ...edit, baseline: conflict });
-                          setConflict(null);
-                          setError(null);
-                        }}
+                        className="primary"
+                        disabled={busy || !dirty || !!conflict}
                       >
-                        Keep my edits on revision {conflict.revision}
+                        {busy ? "Working…" : "Save project details"}
                       </button>
                       <button
                         type="button"
+                        disabled={busy || !dirty}
                         onClick={() => {
-                          setEdit(fromProject(conflict));
+                          setEdit(fromProject(conflict || project));
                           setConflict(null);
-                          setError(null);
                         }}
                       >
-                        Discard my edits
+                        Reset
                       </button>
+                    </div>
+                    <small>
+                      Saving requires recent password and MFA verification. A
+                      stale revision is rejected rather than overwriting another
+                      save.
+                    </small>
+                  </form>
+                )}
+                {canManage && (
+                  <div className="project-lifecycle">
+                    <h3>Project lifecycle</h3>
+                    <p className="muted">
+                      Archiving keeps this project and its history, and pauses
+                      repository collection.
+                    </p>
+                    <div className="button-row">
+                      {project.archived ? (
+                        <button
+                          onClick={() => void setArchived(false)}
+                          disabled={busy}
+                        >
+                          Restore project
+                        </button>
+                      ) : (
+                        <button
+                          className="danger"
+                          onClick={() => void setArchived(true)}
+                          disabled={busy}
+                        >
+                          Archive project
+                        </button>
+                      )}
                     </div>
                   </div>
                 )}
-                <label>
-                  Name
-                  <input
-                    name="editName"
-                    value={edit.name}
-                    onChange={(e) => setEdit({ ...edit, name: e.target.value })}
-                    required
-                    maxLength={80}
-                    autoComplete="off"
-                  />
-                </label>
-                <label>
-                  Description
-                  <textarea
-                    name="editDescription"
-                    value={edit.description}
-                    rows={4}
-                    onChange={(e) =>
-                      setEdit({ ...edit, description: e.target.value })
-                    }
-                  />
-                </label>
-                <ModulePicker
-                  modules={edit.modules}
-                  onChange={(modules) => setEdit({ ...edit, modules })}
-                />
-                <div className="button-row">
-                  <button
-                    className="primary"
-                    disabled={busy || !dirty || !!conflict}
-                  >
-                    {busy ? "Working…" : "Save metadata"}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy || !dirty}
-                    onClick={() => {
-                      setEdit(fromProject(conflict || project));
-                      setConflict(null);
-                    }}
-                  >
-                    Reset
-                  </button>
+              </div>
+            </section>
+            <section className="panel">
+              <div className="panel-heading">
+                <h2>Features & access</h2>
+                {!caps && <span className="muted">Unavailable</span>}
+              </div>
+              {!caps ? (
+                <Empty>Capabilities unavailable.</Empty>
+              ) : (
+                <div className="table-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Feature</th>
+                        <th>Availability</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {caps.modules
+                        .filter((m) => m.enabled || m.id === "dependencies")
+                        .map((m) => (
+                          <tr key={m.id}>
+                            <td>
+                              {m.id === "dependencies"
+                                ? "Repository observations"
+                                : m.id}
+                              <small>
+                                {m.enabled ? "Selected" : "Not selected"}
+                              </small>
+                            </td>
+                            <td>
+                              <Tone
+                                value={m.state}
+                                tone={capabilityTone(m.state, capsCurrent)}
+                              />
+                              <small>
+                                {m.reason === "github_read_only"
+                                  ? "Read-only GitHub collection"
+                                  : m.reason.replaceAll("_", " ")}
+                                {!capsCurrent && " · last known, not current"}
+                              </small>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
                 </div>
-                <small>
-                  Saving requires recent password and MFA verification. A stale
-                  revision is rejected rather than overwriting another save.
-                </small>
-              </form>
-            )}
+              )}
+              <div className="panel-body">
+                <p className="muted">
+                  Effective permissions:{" "}
+                  {caps
+                    ? permissions.map((p) => (
+                        <span className="tag" key={p}>
+                          {permissionLabels[p] || p.replaceAll(".", " ")}
+                        </span>
+                      ))
+                    : "unknown"}
+                </p>
+                <p className="muted">
+                  No feature can publish, deploy or write to an application or
+                  repository. Planned features are not implemented.
+                </p>
+                {!!caps && (
+                  <details className="permission-reference">
+                    <summary>Permission identifiers</summary>
+                    <dl>
+                      {permissions.map((p) => (
+                        <div key={p}>
+                          <dt>{permissionLabels[p] || p}</dt>
+                          <dd>
+                            <code>{p}</code>
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </details>
+                )}
+              </div>
+            </section>
           </div>
-        </section>
-        <section className="panel">
-          <div className="panel-heading">
-            <h2>Capabilities</h2>
-            <span className="muted">
-              {caps ? `Contract v${caps.contractVersion}` : "Unavailable"}
-            </span>
-          </div>
-          {!caps ? (
-            <Empty>Capabilities unavailable.</Empty>
-          ) : (
-            <div className="table-scroll">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Module</th>
-                    <th>Availability</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {caps.modules.map((m) => (
-                    <tr key={m.id}>
-                      <td>
-                        {m.id}
-                        <small>{m.enabled ? "Selected" : "Not selected"}</small>
-                      </td>
-                      <td>
-                        <Tone
-                          value={m.state}
-                          tone={capabilityTone(m.state, capsCurrent)}
-                        />
-                        <small>
-                          {m.reason.replaceAll("_", " ")}
-                          {!capsCurrent && " · last known, not current"}
-                        </small>
-                      </td>
-                      <td>
-                        {m.actions?.length ? (
-                          m.actions.join(", ")
-                        ) : (
-                          <span className="muted">None available</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          <section className="panel project-history">
+            <div className="panel-heading">
+              <h2>Project history</h2>
+              <span className="muted">
+                Newest 100 events · no prior field values
+              </span>
             </div>
-          )}
-          <div className="panel-body">
-            <p className="muted">
-              Effective permissions:{" "}
-              {caps
-                ? permissions.map((p) => (
-                    <span className="tag" key={p}>
-                      {p}
-                    </span>
-                  ))
-                : "unknown"}
-            </p>
-            <p className="muted">
-              No module can publish, deploy or write to an application or
-              repository. Unsupported modules are not working features.
-            </p>
-          </div>
-        </section>
-      </div>
-      <section className="panel">
-        <div className="panel-heading">
-          <h2>Project history</h2>
-          <span className="muted">
-            Newest 100 events · no prior field values
-          </span>
+            {!!historyError && (
+              <p className="notice error" role="alert">
+                History could not be refreshed:{" "}
+                {(historyError as Error).message}.{" "}
+                {events
+                  ? "Showing last-loaded events."
+                  : "No current history can be established."}
+              </p>
+            )}
+            {!events ? (
+              historyError ? null : (
+                <p className="project-history-loading" role="status">
+                  Loading project history…
+                </p>
+              )
+            ) : !events.length ? (
+              <Empty>No project events recorded.</Empty>
+            ) : (
+              <ol className="timeline">
+                {events.map((a, i) => (
+                  <li key={`${a.at}-${a.action}-${i}`}>
+                    <span className="timeline-dot" />
+                    <div>
+                      <strong title={a.action}>
+                        {eventLabels[a.action] || a.action}
+                      </strong>{" "}
+                      <span className="tag">revision {a.revision}</span>
+                      <small>
+                        <Time value={a.at} />
+                      </small>
+                      <details className="project-actor">
+                        <summary>
+                          Actor:{" "}
+                          {a.actor.length > 18
+                            ? a.actor.slice(0, 12) + "…"
+                            : a.actor || "Not recorded"}
+                        </summary>
+                        <code>{a.actor || "Not recorded"}</code>
+                      </details>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </section>
         </div>
-        {!events ? (
-          <Empty>History unavailable.</Empty>
-        ) : !events.length ? (
-          <Empty>No project events recorded.</Empty>
-        ) : (
-          <ol className="timeline">
-            {events.map((a, i) => (
-              <li key={`${a.at}-${a.action}-${i}`}>
-                <span className="timeline-dot" />
-                <div>
-                  <strong>{a.action}</strong>{" "}
-                  <span className="tag">revision {a.revision}</span>
-                  <small>
-                    {stamp(a.at)} · actor {a.actor.slice(0, 12)}
-                  </small>
-                </div>
-              </li>
-            ))}
-          </ol>
-        )}
-      </section>
+      </details>
     </>
   );
 }

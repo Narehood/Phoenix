@@ -1,10 +1,312 @@
-import type { FormEvent, ReactNode } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import { ApiError } from "./api";
 
 export type ToneName = "good" | "bad" | "warn" | "neutral";
 
 export const stamp = (n: number) =>
-  n ? new Date(n).toLocaleString() : "Never";
+  n
+    ? new Date(n).toLocaleString(undefined, { timeZoneName: "short" })
+    : "Never";
+
+/** Evidence can age while a network request is pending or a tab is suspended. */
+export function useNow() {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const update = () => setNow(Date.now());
+    const timer = setInterval(update, 1000);
+    window.addEventListener("focus", update);
+    document.addEventListener("visibilitychange", update);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", update);
+      document.removeEventListener("visibilitychange", update);
+    };
+  }, []);
+  return now;
+}
+
+export function Time({ value }: { value: number }) {
+  const [expanded, setExpanded] = useState(false);
+  const id = useId();
+  if (!value) return <span>Never</span>;
+  const elapsed = Math.max(0, Math.floor((Date.now() - value) / 1000));
+  const label =
+    elapsed < 60
+      ? "Just now"
+      : elapsed < 3600
+        ? `${Math.floor(elapsed / 60)}m ago`
+        : elapsed < 86400
+          ? `${Math.floor(elapsed / 3600)}h ago`
+          : new Date(value).toLocaleDateString();
+  return (
+    <span className="timestamp">
+      <button
+        type="button"
+        className="time-trigger"
+        aria-expanded={expanded}
+        aria-controls={id}
+        title="Exact date and time"
+        aria-label={`${expanded ? "Hide" : "Show"} exact time: ${label}`}
+        onClick={() => setExpanded(!expanded)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") setExpanded(false);
+        }}
+      >
+        <time dateTime={new Date(value).toISOString()}>{label}</time>
+        <span aria-hidden="true">{expanded ? "▾" : "▸"}</span>
+      </button>
+      <span id={id} className="time-exact" hidden={!expanded}>
+        {stamp(value)}
+      </span>
+    </span>
+  );
+}
+
+/** Summary information starts collapsed on small screens without losing fields. */
+export function ResponsiveDetails({
+  children,
+  label,
+  summaryLabel,
+  className = "",
+}: {
+  children: ReactNode;
+  label: ReactNode;
+  summaryLabel?: string;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(
+    () => matchMedia("(min-width: 721px)").matches,
+  );
+  useEffect(() => {
+    const query = matchMedia("(min-width: 721px)");
+    const changed = () => setOpen(query.matches);
+    query.addEventListener("change", changed);
+    return () => query.removeEventListener("change", changed);
+  }, []);
+  return (
+    <details
+      className={`responsive-details ${className}`}
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <summary aria-label={summaryLabel}>{label}</summary>
+      {children}
+    </details>
+  );
+}
+
+export function ChangeComparison({
+  label,
+  rows,
+  itemHeading = "Field",
+  savedHeading = "Saved now",
+  unchangedLabel = "Unchanged fields",
+}: {
+  label: string;
+  rows: {
+    key: string;
+    label: ReactNode;
+    saved: ReactNode;
+    proposed: ReactNode;
+    changed?: boolean;
+  }[];
+  itemHeading?: string;
+  savedHeading?: string;
+  unchangedLabel?: string;
+}) {
+  const changed = rows.filter((row) => row.changed),
+    unchanged = rows.filter((row) => !row.changed);
+  const table = (items: typeof rows, name: string) => (
+    <div
+      className="change-comparison-wrap"
+      tabIndex={items.length > 8 ? 0 : undefined}
+    >
+      <table
+        className="change-comparison"
+        role="table"
+        aria-colcount={3}
+        aria-label={name}
+      >
+        <thead role="rowgroup">
+          <tr role="row">
+            <th role="columnheader" scope="col" aria-colindex={1}>
+              {itemHeading}
+            </th>
+            <th role="columnheader" scope="col" aria-colindex={2}>
+              {savedHeading}
+            </th>
+            <th role="columnheader" scope="col" aria-colindex={3}>
+              After reapplying
+            </th>
+          </tr>
+        </thead>
+        <tbody role="rowgroup">
+          {items.map((row) => (
+            <tr
+              role="row"
+              key={row.key}
+              className={row.changed ? "changed" : undefined}
+            >
+              <th role="rowheader" scope="row" aria-colindex={1}>
+                {row.label}
+              </th>
+              <td role="cell" aria-colindex={2} data-label={savedHeading}>
+                {row.saved}
+              </td>
+              <td role="cell" aria-colindex={3} data-label="After reapplying">
+                {row.proposed}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+  return (
+    <div className="change-review">
+      {changed.length ? (
+        table(changed, label)
+      ) : (
+        <p>
+          Reapplying makes no additional changes to the latest saved values.
+        </p>
+      )}
+      {!!unchanged.length && (
+        <details className="unchanged-comparison">
+          <summary>
+            {unchangedLabel} ({unchanged.length})
+          </summary>
+          {table(unchanged, `${label}: unchanged values`)}
+        </details>
+      )}
+    </div>
+  );
+}
+
+/** Copy only after an explicit gesture; never persist a setup key in the app. */
+export function SetupKey({
+  value,
+  accountName,
+}: {
+  value: string;
+  accountName?: string;
+}) {
+  const [busy, setBusy] = useState(false),
+    [message, setMessage] = useState("");
+  const alive = useRef(true),
+    pending = useRef(false);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+  async function copy() {
+    if (pending.current) return;
+    pending.current = true;
+    setBusy(true);
+    setMessage("");
+    try {
+      if (!navigator.clipboard?.writeText)
+        throw new Error("Clipboard unavailable");
+      await navigator.clipboard.writeText(value);
+      if (alive.current) setMessage("Setup key copied.");
+    } catch {
+      if (alive.current)
+        setMessage(
+          "Copy unavailable. Select the setup key and copy it manually.",
+        );
+    } finally {
+      pending.current = false;
+      if (alive.current) setBusy(false);
+    }
+  }
+  return (
+    <>
+      <code className="secret">{value}</code>
+      <div className="setup-key-copy">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void copy()}
+          aria-label={`Copy setup key${accountName ? ` for ${accountName}` : ""}`}
+        >
+          {busy ? "Copying…" : "Copy setup key"}
+        </button>
+        <span role="status" aria-atomic="true">
+          {message}
+        </span>
+      </div>
+    </>
+  );
+}
+
+/** Native modal semantics provide focus containment and an inert background. */
+export function Dialog({
+  title,
+  children,
+  onClose,
+  busy = false,
+  wide = false,
+}: {
+  title: ReactNode;
+  children: ReactNode;
+  onClose: () => void;
+  busy?: boolean;
+  wide?: boolean;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
+  useEffect(() => {
+    const dialog = ref.current!;
+    const opener =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    dialog.showModal();
+    (
+      dialog.querySelector<HTMLElement>("input:not([disabled]), textarea") ||
+      dialog.querySelector<HTMLElement>("h2") ||
+      dialog
+    ).focus();
+    return () => {
+      dialog.close();
+      if (opener?.isConnected) opener.focus();
+    };
+  }, []);
+  return (
+    <dialog
+      ref={ref}
+      className={`modal panel${wide ? " wide" : ""}`}
+      aria-labelledby={titleId}
+      onCancel={(event) => {
+        event.preventDefault();
+        if (!busy) onClose();
+      }}
+    >
+      <button
+        type="button"
+        className="close"
+        aria-label="Close dialog"
+        onClick={onClose}
+        disabled={busy}
+      >
+        ×
+      </button>
+      <h2 id={titleId} tabIndex={-1}>
+        {title}
+      </h2>
+      {children}
+    </dialog>
+  );
+}
 
 export function toneOf(value: string): ToneName {
   return [
@@ -27,14 +329,23 @@ export function Tone({
   value,
   tone,
   label,
+  mobilePrefix,
 }: {
   value: string;
   tone?: ToneName;
   label?: string;
+  mobilePrefix?: string;
 }) {
+  const text = label ?? value.replaceAll("_", " ");
   return (
     <span className={`chip ${tone || toneOf(value)}`}>
-      <span aria-hidden="true">●</span> {label ?? value.replaceAll("_", " ")}
+      <span aria-hidden="true">●</span>{" "}
+      {mobilePrefix && (
+        <span className="mobile-tone-prefix" aria-hidden="true">
+          {mobilePrefix}:{" "}
+        </span>
+      )}
+      {text.charAt(0).toUpperCase() + text.slice(1)}
     </span>
   );
 }
@@ -47,16 +358,28 @@ export function Metric({
   label,
   value,
   detail,
+  retained = false,
 }: {
   label: string;
   value: ReactNode;
-  detail?: string;
+  detail?: ReactNode;
+  retained?: boolean;
 }) {
   return (
     <div className="metric">
       <span>{label}</span>
+      {retained && <small className="retained-label">Last known</small>}
       <strong>{value}</strong>
       {detail && <small>{detail}</small>}
+    </div>
+  );
+}
+
+/** The region stays mounted so asynchronous confirmation text is announced. */
+export function StatusNotice({ children }: { children: ReactNode }) {
+  return (
+    <div className="status-notice" role="status" aria-atomic="true">
+      {children && <div className="notice">{children}</div>}
     </div>
   );
 }
@@ -108,11 +431,13 @@ export function ErrorNotice({
   if (!error) return null;
   const recent = needsRecentAuth(error);
   return (
-    <div className="notice error" role="alert">
+    <div className="notice error error-notice" role="alert">
       <span>
-        {error instanceof Error ? error.message : String(error)}
-        {recent &&
-          " — verify your password and authenticator code, then try again. Your unsaved input is kept."}
+        {recent
+          ? "A recent password and MFA verification is required. Verify your identity, then try again. Your unsaved input is kept."
+          : error instanceof Error
+            ? error.message
+            : String(error)}
       </span>
       <span className="button-row">
         {recent && onVerify && (

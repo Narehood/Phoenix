@@ -75,7 +75,7 @@ func TestCanarySourceIdentityMultipleMappingsAndOutage(t *testing.T) {
 			t.Fatal(e)
 		}
 	}
-	f.call("PUT", "/api/hosts/"+a.id+"/mappings", map[string]any{"mappings": []map[string]string{{"sourceId": "source-a", "monitorId": "same-id"}, {"sourceId": "source-a", "monitorId": "second-id"}, {"sourceId": "source-b", "monitorId": "same-id"}}}, 200, nil)
+	f.call("PUT", "/api/hosts/"+a.id+"/mappings", map[string]any{"mappings": []map[string]string{{"sourceId": "source-a", "monitorId": "same-id"}, {"sourceId": "source-a", "monitorId": "second-id"}, {"sourceId": "source-b", "monitorId": "same-id"}}, "expectedMappings": []mappingTarget{}}, 200, nil)
 	var out struct {
 		Sources []struct {
 			ID        string               `json:"id"`
@@ -117,7 +117,7 @@ func TestCanaryMappingRequiresAdministrator(t *testing.T) {
 		Secret string    `json:"secret"`
 	}
 	f.call("POST", "/api/users", map[string]string{"name": "mapping-operator", "role": "operator", "password": "mapping fixture password"}, 201, &account)
-	f.call("PUT", "/api/users/"+account.User.ID+"/grants", map[string]any{"grants": []core.Grant{{ScopeType: "host", Scope: a.id, Action: "host.read"}, {ScopeType: "host", Scope: a.id, Action: "host.manage"}}}, 200, nil)
+	f.replaceGrants(account.User.ID, []core.Grant{{ScopeType: "host", Scope: a.id, Action: "host.read"}, {ScopeType: "host", Scope: a.id, Action: "host.manage"}})
 	jar, _ := cookiejar.New(nil)
 	operator := &http.Client{Transport: f.browser.Transport, Jar: jar, Timeout: 5 * time.Second}
 	code, e := totp.GenerateCode(account.Secret, f.now)
@@ -135,7 +135,7 @@ func TestCanaryMappingRequiresAdministrator(t *testing.T) {
 	if len(out.Sources) != 0 {
 		t.Fatal("unmapped private monitor was visible")
 	}
-	body := map[string]any{"mappings": []map[string]string{{"sourceId": "source-a", "monitorId": "private-monitor"}}}
+	body := map[string]any{"mappings": []map[string]string{{"sourceId": "source-a", "monitorId": "private-monitor"}}, "expectedMappings": []mappingTarget{}}
 	f.request(operator, f.web.URL, "PUT", "/api/hosts/"+a.id+"/mappings", body, 403, nil, auth.CSRF)
 	f.request(operator, f.web.URL, "GET", "/api/canary/source-a/monitors/private-monitor/history", nil, 403, nil, "")
 	f.request(operator, f.web.URL, "GET", "/api/canary", nil, 200, &out, "")
@@ -147,6 +147,32 @@ func TestCanaryMappingRequiresAdministrator(t *testing.T) {
 	if len(out.Sources) != 1 {
 		t.Fatal("administrator-approved mapping was not visible to the host reader")
 	}
+	var detail struct {
+		Mappings []mapping `json:"mappings"`
+	}
+	f.call("GET", "/api/hosts/"+a.id, nil, 200, &detail)
+	if len(detail.Mappings) != 1 || detail.Mappings[0].MonitorID != "private-monitor" {
+		t.Fatal("host detail did not return its complete saved mapping set")
+	}
+	path := "/api/hosts/" + a.id + "/mappings"
+	original := []mappingTarget{{SourceID: "source-a", MonitorID: "private-monitor"}}
+	f.call("PUT", path, map[string]any{"mappings": []mappingTarget{}}, 428, nil)
+	f.call("PUT", path, map[string]any{"mappings": []mappingTarget{}, "expectedMappings": original}, 200, nil)
+	// A stale replacement must not restore a mapping removed by another editor.
+	f.call("PUT", path, map[string]any{"mappings": original, "expectedMappings": original}, 409, nil)
+	f.call("GET", "/api/hosts/"+a.id, nil, 200, &detail)
+	if len(detail.Mappings) != 0 {
+		t.Fatal("stale replacement restored a removed monitor mapping")
+	}
+	var audits int
+	if err := f.s.DB.QueryRow(`SELECT COUNT(*) FROM audit WHERE host_id=? AND action='canary.mapping'`, a.id).Scan(&audits); err != nil || audits != 2 {
+		t.Fatal("rejected mapping replacement recorded success", audits, err)
+	}
+	f.request(operator, f.web.URL, "GET", "/api/canary", nil, 200, &out, "")
+	if len(out.Sources) != 0 {
+		t.Fatal("removed monitor mapping remained visible to the host reader")
+	}
+	f.call("PUT", path, map[string]any{"mappings": original, "expectedMappings": []mappingTarget{}}, 200, nil)
 }
 
 func TestCanaryCapacityCountsRetainedSourceIDs(t *testing.T) {

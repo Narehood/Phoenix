@@ -1,0 +1,264 @@
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ComponentProps,
+  type ReactNode,
+} from "react";
+
+export type Route = { view: string; id?: string };
+const pages = new Set([
+  "fleet",
+  "projects",
+  "jobs",
+  "activity",
+  "canary",
+  "access",
+]);
+function readRoute(): Route {
+  try {
+    const [page, raw, extra] = location.hash.replace(/^#\/?/, "").split("/");
+    if (extra !== undefined) return { view: "fleet" };
+    if (
+      page === "hosts" &&
+      raw &&
+      /^[A-Za-z0-9_-]{1,80}$/.test(decodeURIComponent(raw))
+    )
+      return { view: "host", id: decodeURIComponent(raw) };
+    if (
+      page === "projects" &&
+      raw &&
+      /^[a-z0-9][a-z0-9-]{0,63}$/.test(decodeURIComponent(raw))
+    )
+      return { view: "projects", id: decodeURIComponent(raw) };
+    if (pages.has(page) && !raw) return { view: page };
+    if (
+      page === "jobs" &&
+      raw &&
+      /^[A-Za-z0-9_-]{1,80}$/.test(decodeURIComponent(raw))
+    )
+      return { view: "jobs", id: decodeURIComponent(raw) };
+  } catch {
+    /* Invalid fragments are never used as API paths. */
+  }
+  return { view: "fleet" };
+}
+export function routeHref(route: Route) {
+  if (route.view === "host" && route.id)
+    return `#/hosts/${encodeURIComponent(route.id)}`;
+  if (route.view === "projects" && route.id)
+    return `#/projects/${encodeURIComponent(route.id)}`;
+  if (route.view === "jobs" && route.id)
+    return `#/jobs/${encodeURIComponent(route.id)}`;
+  return `#/${pages.has(route.view) ? route.view : "fleet"}`;
+}
+function focusHeading(scrollY = 0, outcomeHref?: string) {
+  let frame = requestAnimationFrame(() => {
+    // Returning a route also remounts its list. Restore after its layout frame.
+    frame = requestAnimationFrame(() => {
+      const heading =
+        (outcomeHref &&
+          [
+            ...document.querySelectorAll<HTMLAnchorElement>("#content a[href]"),
+          ].find((link) => link.getAttribute("href") === outcomeHref)) ||
+        document.querySelector<HTMLElement>("#content h1");
+      if (heading) {
+        if (!(heading instanceof HTMLAnchorElement)) heading.tabIndex = -1;
+        heading.focus({ preventScroll: true });
+      }
+      window.scrollTo(0, scrollY);
+    });
+  });
+  return () => cancelAnimationFrame(frame);
+}
+type Navigation = {
+  route: Route;
+  navigate: (
+    route: Route,
+    options?: { replace?: boolean; force?: boolean },
+  ) => boolean;
+  canLeave: () => boolean;
+  closeOutcome: () => void;
+  register: (guard: () => string | null) => () => void;
+};
+const Context = createContext<Navigation | null>(null);
+export function NavigationProvider({ children }: { children: ReactNode }) {
+  const [route, setRoute] = useState(readRoute);
+  const current = useRef(route);
+  const outcomeOrigin = useRef<{
+    route: Route;
+    scrollY: number;
+    href: string;
+  } | null>(null);
+  const restorePosition = useRef<{ scrollY: number; href: string } | null>(
+    null,
+  );
+  const guards = useRef(new Set<() => string | null>());
+  const closingOutcome = useRef(false);
+  const register = useCallback((guard: () => string | null) => {
+    guards.current.add(guard);
+    return () => {
+      guards.current.delete(guard);
+    };
+  }, []);
+  const canLeave = useCallback(() => {
+    const labels = [...guards.current].map((guard) => guard()).filter(Boolean);
+    return (
+      !labels.length ||
+      window.confirm(
+        `Leave without saving changes to ${labels.join(" and ")}? Unsaved input will be discarded.`,
+      )
+    );
+  }, []);
+  const navigate = useCallback(
+    (next: Route, options: { replace?: boolean; force?: boolean } = {}) => {
+      if (routeHref(next) === routeHref(current.current)) {
+        focusHeading();
+        return true;
+      }
+      if (!options.force && !canLeave()) return false;
+      restorePosition.current = null;
+      closingOutcome.current = false;
+      if (next.view === "jobs" && next.id) {
+        if (
+          !options.replace &&
+          !(current.current.view === "jobs" && current.current.id)
+        )
+          outcomeOrigin.current = {
+            route: current.current,
+            scrollY: window.scrollY,
+            href: routeHref(next),
+          };
+      } else outcomeOrigin.current = null;
+      history[options.replace ? "replaceState" : "pushState"](
+        null,
+        "",
+        routeHref(next),
+      );
+      current.current = next;
+      setRoute(next);
+      return true;
+    },
+    [canLeave],
+  );
+  const closeOutcome = useCallback(() => {
+    if (closingOutcome.current) return;
+    if (
+      outcomeOrigin.current?.href === routeHref(current.current) &&
+      current.current.view === "jobs" &&
+      current.current.id
+    ) {
+      closingOutcome.current = true;
+      history.back();
+    } else navigate({ view: "jobs" }, { replace: true });
+  }, [navigate]);
+  useEffect(() => {
+    // This router owns scrolling; browser history must not overwrite a restore.
+    const previousScrollRestoration = history.scrollRestoration;
+    history.scrollRestoration = "manual";
+    if (location.hash !== routeHref(current.current))
+      history.replaceState(null, "", routeHref(current.current));
+    const changed = () => {
+      const next = readRoute();
+      closingOutcome.current = false;
+      if (routeHref(next) === routeHref(current.current)) {
+        if (location.hash !== routeHref(next))
+          history.replaceState(null, "", routeHref(next));
+        return;
+      }
+      if (!canLeave()) {
+        history.pushState(null, "", routeHref(current.current));
+        return;
+      }
+      const origin = outcomeOrigin.current;
+      if (origin && routeHref(next) === routeHref(origin.route)) {
+        restorePosition.current = {
+          scrollY: origin.scrollY,
+          href: origin.href,
+        };
+        outcomeOrigin.current = null;
+      } else if (!(next.view === "jobs" && next.id))
+        outcomeOrigin.current = null;
+      current.current = next;
+      if (location.hash !== routeHref(next))
+        history.replaceState(null, "", routeHref(next));
+      setRoute(next);
+    };
+    const unloading = (event: BeforeUnloadEvent) => {
+      if ([...guards.current].some((guard) => guard())) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    };
+    window.addEventListener("popstate", changed);
+    window.addEventListener("hashchange", changed);
+    window.addEventListener("beforeunload", unloading);
+    return () => {
+      history.scrollRestoration = previousScrollRestoration;
+      window.removeEventListener("popstate", changed);
+      window.removeEventListener("hashchange", changed);
+      window.removeEventListener("beforeunload", unloading);
+    };
+  }, [canLeave]);
+  useEffect(() => {
+    const restore = restorePosition.current;
+    restorePosition.current = null;
+    return focusHeading(restore?.scrollY, restore?.href);
+  }, [route.view, route.id]);
+  return (
+    <Context.Provider
+      value={{ route, navigate, canLeave, closeOutcome, register }}
+    >
+      {children}
+    </Context.Provider>
+  );
+}
+export function useNavigation() {
+  const navigation = useContext(Context);
+  if (!navigation) throw new Error("Navigation context is required");
+  return navigation;
+}
+/** Keep drafts in memory only; secrets never enter browser storage or URLs. */
+export function useUnsavedChanges(dirty: boolean, label: string) {
+  const { register } = useNavigation();
+  const value = useRef<string | null>(null);
+  value.current = dirty ? label : null;
+  useEffect(() => register(() => value.current), [register]);
+  return () => {
+    value.current = null;
+  };
+}
+export function RouteLink({
+  to,
+  afterNavigate,
+  children,
+  ...props
+}: Omit<ComponentProps<"a">, "href" | "onClick"> & {
+  to: Route;
+  afterNavigate?: () => void;
+}) {
+  const { navigate } = useNavigation();
+  return (
+    <a
+      {...props}
+      href={routeHref(to)}
+      onClick={(event) => {
+        if (
+          event.button !== 0 ||
+          event.metaKey ||
+          event.ctrlKey ||
+          event.shiftKey ||
+          event.altKey
+        )
+          return;
+        event.preventDefault();
+        if (navigate(to)) afterNavigate?.();
+      }}
+    >
+      {children}
+    </a>
+  );
+}

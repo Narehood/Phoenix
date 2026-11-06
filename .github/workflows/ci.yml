@@ -4,37 +4,87 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      dependency_refresh:
+        description: Resolve dependency manifests for review instead of running fixtures
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
   group: phoenix-validation-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  dependency-refresh:
+    if: github.event_name == 'workflow_dispatch' && inputs.dependency_refresh
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GOCACHE: ${{ github.workspace }}/.validation/go-build
+      NPM_CONFIG_CACHE: ${{ github.workspace }}/.validation/npm-cache
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '26.13.0'
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.3'
+          cache: false
+      - name: Resolve current stable dependencies without running application code
+        run: |
+          python3 scripts/validate.py --timeout 180 -- npm install --global npm@12.2.2 --ignore-scripts --no-audit --no-fund
+          python3 scripts/validate.py --timeout 600 -- python3 scripts/refresh_dependencies.py
+      - name: Retain manifests and audit evidence for review
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: phoenix-dependency-refresh
+          include-hidden-files: true
+          path: |
+            web/package.json
+            web/package-lock.json
+            go.mod
+            go.sum
+            .validation/dependency-refresh.json
+          if-no-files-found: error
+          retention-days: 7
   debian-fixtures:
+    name: ${{ inputs.dependency_refresh && 'Dependency refresh (validation skipped)' || 'debian-fixtures' }}
+    if: github.event_name != 'workflow_dispatch' || !inputs.dependency_refresh
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Fixture, authorization, mTLS, job and race checks in Debian container
-        run: docker build --target validate --progress=plain .
+        run: python3 scripts/validate.py --timeout 600 -- docker build --pull --target validate --progress=plain .
       - name: Server image, React bundle and unprivileged binary smoke
-        run: docker build --target server --progress=plain -t phoenix:ci .
+        run: python3 scripts/validate.py --timeout 300 -- docker build --pull --target server --progress=plain -t phoenix:ci .
       - name: Dashboard browser regression fixtures
-        run: python3 scripts/validate.py --timeout 120 -- node scripts/browser-fixtures.mjs
+        # Retain production timers for conflict, revocation and session-expiry flows.
+        run: python3 scripts/validate.py --timeout 240 -- node scripts/browser-fixtures.mjs
       - name: Export and package the tested Linux kit
         run: |
           python3 scripts/validate.py --timeout 300 -- docker build --target test-kit --output type=local,dest=.validation/test-kit .
           python3 scripts/validate.py --timeout 120 -- python3 scripts/test_kit.py "$GITHUB_SHA"
       - name: Retain development test kit
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: phoenix-linux-amd64-test-kit
           path: .validation/test-kit-artifact/
           if-no-files-found: error
           retention-days: 7
+      - name: Export the tested development server image
+        run: python3 scripts/validate.py --timeout 180 -- python3 scripts/export_image.py "$GITHUB_SHA"
+      - name: Retain checksummed server image
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: phoenix-linux-amd64-server-image
+          path: .validation/server-image-artifact/
+          if-no-files-found: error
+          retention-days: 7
       - name: Retain bounded browser evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: phoenix-browser-evidence
           path: .validation/browser-evidence/

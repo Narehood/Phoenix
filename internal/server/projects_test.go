@@ -118,7 +118,7 @@ func TestProjectAuthorizationAndRequestGuards(t *testing.T) {
 		Projects []core.Project `json:"projects"`
 	}
 	// Existing fleet-wide grants cannot expose this new category of data.
-	f.call("PUT", "/api/users/"+account.User.ID+"/grants", map[string]any{"grants": []core.Grant{{ScopeType: "all", Scope: "*", Action: "*"}}}, 200, nil)
+	f.replaceGrants(account.User.ID, []core.Grant{{ScopeType: "all", Scope: "*", Action: "*"}})
 	f.request(operator, f.web.URL, "GET", "/api/projects", nil, 200, &inventory, "")
 	if len(inventory.Projects) != 0 {
 		t.Fatal("host wildcard leaked project metadata")
@@ -127,7 +127,7 @@ func TestProjectAuthorizationAndRequestGuards(t *testing.T) {
 		f.request(operator, f.web.URL, "GET", path, nil, 404, nil, "")
 	}
 	grants := []core.Grant{{ScopeType: "project", Scope: "visible", Action: "project.read"}}
-	f.call("PUT", "/api/users/"+account.User.ID+"/grants", map[string]any{"grants": grants}, 200, nil)
+	f.replaceGrants(account.User.ID, grants)
 	f.request(operator, f.web.URL, "GET", "/api/projects", nil, 200, &inventory, "")
 	if len(inventory.Projects) != 1 || inventory.Projects[0].ID != "visible" {
 		t.Fatal("project inventory did not respect explicit grants")
@@ -136,12 +136,12 @@ func TestProjectAuthorizationAndRequestGuards(t *testing.T) {
 	f.request(operator, f.web.URL, "PUT", "/api/projects/visible", body, 403, nil, auth.CSRF)
 	f.request(operator, f.web.URL, "POST", "/api/projects", map[string]string{"id": "unauthorized", "name": "Unauthorized"}, 403, nil, auth.CSRF)
 	grants = append(grants, core.Grant{ScopeType: "project", Scope: "visible", Action: "project.manage"})
-	f.call("PUT", "/api/users/"+account.User.ID+"/grants", map[string]any{"grants": grants}, 200, nil)
+	f.replaceGrants(account.User.ID, grants)
 	f.request(operator, f.web.URL, "PUT", "/api/projects/visible", body, 403, nil, "")
 	f.request(operator, f.web.URL, "PUT", "/api/projects/private", body, 404, nil, auth.CSRF)
 	f.request(operator, f.web.URL, "PUT", "/api/projects/visible", body, 200, nil, auth.CSRF)
 	// A project wildcard cannot authorize existing host actions.
-	f.call("PUT", "/api/users/"+account.User.ID+"/grants", map[string]any{"grants": []core.Grant{{ScopeType: "project", Scope: "visible", Action: "*"}}}, 200, nil)
+	f.replaceGrants(account.User.ID, []core.Grant{{ScopeType: "project", Scope: "visible", Action: "*"}})
 	h := f.newAgent("Separate host")
 	f.request(operator, f.web.URL, "GET", "/api/hosts/"+h.id, nil, 403, nil, "")
 	// Even a wildcard project grant cannot give a viewer write permission.
@@ -152,7 +152,7 @@ func TestProjectAuthorizationAndRequestGuards(t *testing.T) {
 	f.request(operator, f.web.URL, "PUT", "/api/projects/visible", body, 403, nil, auth.CSRF)
 	f.request(operator, f.web.URL, "GET", "/api/projects/visible", nil, 200, nil, "")
 	// Replacing grants takes effect on the existing session immediately.
-	f.call("PUT", "/api/users/"+account.User.ID+"/grants", map[string]any{"grants": []core.Grant{}}, 200, nil)
+	f.replaceGrants(account.User.ID, []core.Grant{})
 	f.request(operator, f.web.URL, "GET", "/api/projects/visible", nil, 404, nil, "")
 	f.request(&http.Client{Transport: f.browser.Transport, Timeout: 5 * time.Second}, f.web.URL, "GET", "/api/projects", nil, 401, nil, "")
 	req, e := http.NewRequest("POST", f.web.URL+"/api/projects", strings.NewReader(`{"id":"bad-origin","name":"Bad origin"}`))
@@ -200,7 +200,7 @@ func TestProjectValidationCapacityAndAuditBounds(t *testing.T) {
 		{ScopeType: "project", Scope: "valid", Action: "host.reboot"},
 		{ScopeType: "all", Scope: "*", Action: "project.manage"},
 	} {
-		f.call("PUT", "/api/users/bounded-operator/grants", map[string]any{"grants": []core.Grant{g}}, 400, nil)
+		f.call("PUT", "/api/users/bounded-operator/grants", map[string]any{"grants": []core.Grant{g}, "expectedGrants": []core.Grant{{ScopeType: "project", Scope: "valid", Action: "project.read"}}}, 400, nil)
 	}
 	if ok, e := projectAllowed(f.s.DB, "bounded-operator", "valid", "project.read"); e != nil || !ok {
 		t.Fatal("failed grant replacement removed existing access", e)

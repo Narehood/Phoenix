@@ -20,6 +20,7 @@ type Host struct {
 	Addresses              []string `json:"addresses"`
 	Tags                   []string `json:"tags"`
 	Groups                 []string `json:"groups"`
+	InventoryRevision      string   `json:"inventoryRevision"`
 	ConnectionMethod       string   `json:"connectionMethod"`
 	AgentVersion           string   `json:"agentVersion"`
 	LastContact            int64    `json:"lastContact"`

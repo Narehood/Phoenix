@@ -486,7 +486,8 @@ func (s *Server) userGrants(w http.ResponseWriter, r *http.Request, u core.User)
 
 func (s *Server) setGrants(w http.ResponseWriter, r *http.Request, u core.User) error {
 	var b struct {
-		Grants []core.Grant `json:"grants"`
+		Grants         []core.Grant  `json:"grants"`
+		ExpectedGrants *[]core.Grant `json:"expectedGrants"`
 	}
 	if e := decode(r, &b); e != nil {
 		return e
@@ -507,6 +508,19 @@ func (s *Server) setGrants(w http.ResponseWriter, r *http.Request, u core.User) 
 			return fail(400, "invalid grant")
 		}
 	}
+	if b.ExpectedGrants == nil {
+		return fail(428, "read the complete current grant set before replacing grants")
+	}
+	if len(*b.ExpectedGrants) > 100 {
+		return fail(400, "too many expected grants")
+	}
+	expected := make(map[core.Grant]bool, len(*b.ExpectedGrants))
+	for _, g := range *b.ExpectedGrants {
+		expected[g] = true
+	}
+	if len(expected) != len(*b.ExpectedGrants) {
+		return fail(400, "duplicate expected grant")
+	}
 	tx, e := s.DB.Begin()
 	if e != nil {
 		return e
@@ -518,6 +532,33 @@ func (s *Server) setGrants(w http.ResponseWriter, r *http.Request, u core.User) 
 	}
 	if role == "admin" {
 		return fail(403, "administrator grants are maintained offline")
+	}
+	// Compare and replace in one transaction so a concurrent revocation cannot
+	// be restored by an editor that loaded an older complete grant set.
+	rows, e := tx.Query(`SELECT scope_type,scope,action FROM grants WHERE user_id=? LIMIT 101`, id)
+	if e != nil {
+		return e
+	}
+	count, matches := 0, true
+	for rows.Next() {
+		var g core.Grant
+		if e = rows.Scan(&g.ScopeType, &g.Scope, &g.Action); e != nil {
+			rows.Close()
+			return e
+		}
+		count++
+		matches = matches && expected[g]
+	}
+	e = rows.Err()
+	closeErr := rows.Close()
+	if e != nil {
+		return e
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	if !matches || count != len(expected) {
+		return fail(409, "saved grants changed; review the latest grant set before replacing grants")
 	}
 	for _, g := range b.Grants {
 		if g.ScopeType == "project" {
@@ -544,7 +585,7 @@ func (s *Server) setGrants(w http.ResponseWriter, r *http.Request, u core.User) 
 	if e = tx.Commit(); e != nil {
 		return e
 	}
-	write(w, 200, b)
+	write(w, 200, map[string]any{"grants": b.Grants})
 	return nil
 }
 func (s *Server) disableUser(w http.ResponseWriter, r *http.Request, u core.User) error {

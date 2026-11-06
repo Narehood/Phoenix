@@ -44,6 +44,15 @@ type testAgent struct {
 	identity        core.Identity
 }
 
+func (f *fixture) replaceGrants(user string, grants []core.Grant) {
+	f.t.Helper()
+	var saved struct {
+		Grants []core.Grant `json:"grants"`
+	}
+	f.call("GET", "/api/users/"+user+"/grants", nil, 200, &saved)
+	f.call("PUT", "/api/users/"+user+"/grants", map[string]any{"grants": grants, "expectedGrants": saved.Grants}, 200, nil)
+}
+
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	dir := t.TempDir()
@@ -318,6 +327,9 @@ func TestRevocationRotationAndWrongCertificates(t *testing.T) {
 	a.client = f.agentClient(identity, string(key))
 	f.exchange(a, nil, nil, "")
 	f.call("POST", "/api/hosts/"+a.id+"/revoke", map[string]string{"confirm": a.id}, 200, nil)
+	// Revocation closes existing agent connections. Check authorization over a
+	// fresh connection instead of racing the old keep-alive socket's teardown.
+	a.client.CloseIdleConnections()
 	f.request(a.client, f.agents.URL, "POST", "/agent/exchange", core.Exchange{Protocol: 1}, 401, nil, "")
 	f.call("POST", "/api/hosts/"+a.id+"/jobs", map[string]any{"action": "diagnostic", "args": core.Args{Diagnostic: "system.summary"}}, 409, nil)
 	wrong, e := security.NewCA()
@@ -364,7 +376,7 @@ func TestAuthorizationCSRFRecentAuthAndOutput(t *testing.T) {
 		Secret string    `json:"secret"`
 	}
 	f.call("POST", "/api/users", map[string]string{"name": "operator", "role": "operator", "password": "another fixture password"}, 201, &account)
-	f.call("PUT", "/api/users/"+account.User.ID+"/grants", map[string]any{"grants": []core.Grant{{ScopeType: "host", Scope: a.id, Action: "host.read"}, {ScopeType: "host", Scope: a.id, Action: "diagnostic"}}}, 200, nil)
+	f.replaceGrants(account.User.ID, []core.Grant{{ScopeType: "host", Scope: a.id, Action: "host.read"}, {ScopeType: "host", Scope: a.id, Action: "diagnostic"}})
 	jar, _ := cookiejar.New(nil)
 	operator := &http.Client{Transport: f.browser.Transport, Jar: jar, Timeout: 5 * time.Second}
 	code, _ := totp.GenerateCode(account.Secret, f.now)
@@ -373,15 +385,89 @@ func TestAuthorizationCSRFRecentAuthAndOutput(t *testing.T) {
 	}
 	f.request(operator, f.web.URL, "POST", "/api/auth/login", map[string]string{"name": "operator", "password": "another fixture password", "code": code}, 200, &auth, "")
 	f.request(operator, f.web.URL, "GET", "/api/hosts/"+b.id, nil, 403, nil, "")
+	var detail struct {
+		Permissions []string `json:"permissions"`
+	}
+	f.request(operator, f.web.URL, "GET", "/api/hosts/"+a.id, nil, 200, &detail, "")
+	if strings.Join(detail.Permissions, ",") != "host.read,diagnostic" {
+		t.Fatalf("host detail permissions do not match scoped operator grants: %v", detail.Permissions)
+	}
 	f.request(operator, f.web.URL, "POST", "/api/hosts/"+a.id+"/jobs", map[string]any{"action": "service.restart", "args": core.Args{Service: "fixture.service"}, "confirm": a.id}, 403, nil, auth.CSRF)
 	j := f.job(a, "diagnostic", core.Args{Diagnostic: "system.summary"})
 	f.exchange(a, nil, nil, "")
 	f.exchange(a, nil, []core.Receipt{{ID: j.ID, Result: core.Result{State: "succeeded", Stdout: "secret command output"}}}, "")
-	var got core.Job
+	var got jobDetailView
 	f.request(operator, f.web.URL, "GET", "/api/jobs/"+j.ID, nil, 200, &got, "")
-	if got.Result != nil {
+	if got.Result != nil || got.CanReadOutput || got.HostName != "Scoped" {
 		t.Fatal("output leaked without grant")
 	}
+	f.call("GET", "/api/jobs/"+j.ID, nil, 200, &got)
+	if !got.CanReadOutput || got.Result == nil || got.Result.Stdout != "secret command output" {
+		t.Fatal("permitted output was not identified accurately")
+	}
+	if _, e := f.s.DB.Exec(`INSERT INTO grants VALUES(?,'host',?,'jobs.output')`, account.User.ID, a.id); e != nil {
+		t.Fatal(e)
+	}
+	f.request(operator, f.web.URL, "GET", "/api/jobs/"+j.ID, nil, 200, &got, "")
+	if !got.CanReadOutput || got.Result == nil {
+		t.Fatal("new output grant was not applied")
+	}
+	if _, e := f.s.DB.Exec(`DELETE FROM grants WHERE user_id=? AND action='jobs.output'`, account.User.ID); e != nil {
+		t.Fatal(e)
+	}
+	got = jobDetailView{}
+	f.request(operator, f.web.URL, "GET", "/api/jobs/"+j.ID, nil, 200, &got, "")
+	if got.CanReadOutput || got.Result != nil {
+		t.Fatal("removed output grant retained command output")
+	}
+	queued := f.job(a, "diagnostic", core.Args{Diagnostic: "system.summary"})
+	var pending jobView
+	f.call("GET", "/api/jobs/"+queued.ID, nil, 200, &pending)
+	if !pending.CanCancel {
+		t.Fatal("administrator cannot discover an available cancellation")
+	}
+	var adminList []jobView
+	f.call("GET", "/api/jobs", nil, 200, &adminList)
+	for _, item := range adminList {
+		if item.CanCancel != (item.ID == queued.ID) {
+			t.Fatal("list cancellation eligibility ignored individual job state")
+		}
+	}
+	f.request(operator, f.web.URL, "GET", "/api/jobs/"+queued.ID, nil, 200, &pending, "")
+	if pending.CanCancel {
+		t.Fatal("job detail offered cancellation without a grant")
+	}
+	var listed []jobView
+	f.request(operator, f.web.URL, "GET", "/api/jobs", nil, 200, &listed, "")
+	for _, item := range listed {
+		if item.CanCancel || item.HostID != a.id || item.Result != nil {
+			t.Fatal("job list exceeded scoped read/cancellation/output permissions")
+		}
+	}
+	f.request(operator, f.web.URL, "POST", "/api/jobs/"+queued.ID+"/cancel", map[string]any{}, 403, nil, auth.CSRF)
+	f.call("POST", "/api/jobs/"+queued.ID+"/cancel", map[string]any{}, 200, nil)
+	f.call("GET", "/api/jobs/"+queued.ID, nil, 200, &pending)
+	if pending.CanCancel || pending.State != "cancelled" {
+		t.Fatal("cancelled request still offers cancellation")
+	}
+	if _, e := f.s.DB.Exec(`DELETE FROM grants WHERE user_id=? AND action='diagnostic'`, account.User.ID); e != nil {
+		t.Fatal(e)
+	}
+	f.request(operator, f.web.URL, "GET", "/api/hosts/"+a.id, nil, 200, &detail, "")
+	if strings.Join(detail.Permissions, ",") != "host.read" {
+		t.Fatal("host detail retained a removed action permission")
+	}
+	if _, e := f.s.DB.Exec(`UPDATE users SET role='viewer' WHERE id=?`, account.User.ID); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := f.s.DB.Exec(`INSERT INTO grants VALUES(?,'all','*','*')`, account.User.ID); e != nil {
+		t.Fatal(e)
+	}
+	f.request(operator, f.web.URL, "GET", "/api/hosts/"+a.id, nil, 200, &detail, "")
+	if strings.Join(detail.Permissions, ",") != "host.read" {
+		t.Fatal("host detail action permissions exceeded the viewer role ceiling")
+	}
+	f.request(operator, f.web.URL, "POST", "/api/hosts/"+a.id+"/jobs", map[string]any{"action": "diagnostic", "args": core.Args{Diagnostic: "system.summary"}}, 403, nil, auth.CSRF)
 	f.advance(6 * time.Minute)
 	f.call("POST", "/api/hosts/"+a.id+"/jobs", map[string]any{"action": "host.reboot", "args": core.Args{}, "confirm": a.id}, 403, nil)
 	f.call("POST", "/api/hosts/"+a.id+"/jobs", map[string]any{"action": "diagnostic", "args": core.Args{Diagnostic: "sh -c evil"}}, 400, nil)

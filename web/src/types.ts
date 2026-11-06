@@ -37,6 +37,7 @@ export type Host = {
   addresses: string[];
   tags: string[];
   groups: string[];
+  inventoryRevision: string;
   connectionMethod: string;
   agentVersion: string;
   lastContact: number;
@@ -72,6 +73,9 @@ export type Job = {
   dispatchedAt: number;
   finishedAt: number;
   cancelRequested: boolean;
+  canCancel?: boolean;
+  canReadOutput?: boolean;
+  hostName?: string;
   rebootObserved: boolean;
   result?: Result;
 };
