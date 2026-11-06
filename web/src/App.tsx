@@ -2332,6 +2332,29 @@ function History({ samples }: { samples: Reading[] }) {
     );
   const lo = ordered[0].measuredAt,
     hi = ordered[ordered.length - 1].measuredAt;
+  const dateFormat = new Intl.DateTimeFormat(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+  const sameDay = dateFormat.format(lo) === dateFormat.format(hi);
+  const timeFormat = new Intl.DateTimeFormat(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    ...(hi - lo < 120000 ? { second: "2-digit" as const } : {}),
+    hourCycle: "h23",
+  });
+  const zone = (at: number) =>
+    new Intl.DateTimeFormat(undefined, { timeZoneName: "short" })
+      .formatToParts(at)
+      .find((part) => part.type === "timeZoneName")?.value ||
+    Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const firstZone = zone(lo),
+    lastZone = zone(hi);
+  const tick = (at: number) =>
+    sameDay
+      ? timeFormat.format(at)
+      : `${new Date(at).toLocaleDateString(undefined, { month: "short", day: "numeric" })} ${timeFormat.format(at)}`;
   const parts: string[] = [];
   let part = "";
   let last = 0;
@@ -2373,6 +2396,12 @@ function History({ samples }: { samples: Reading[] }) {
       </p>
       {valid.length >= 2 && (
         <>
+          <p className="history-time-context">
+            {dateFormat.format(lo)}
+            {!sameDay && ` – ${dateFormat.format(hi)}`} ·{" "}
+            {firstZone === lastZone ? firstZone : `${firstZone} to ${lastZone}`}{" "}
+            · 24-hour time
+          </p>
           <div className="history-chart">
             <div className="history-axis" aria-hidden="true">
               <span>100%</span>
@@ -2410,11 +2439,18 @@ function History({ samples }: { samples: Reading[] }) {
             </div>
           </div>
           <div className="history-ticks" aria-hidden="true">
-            <time dateTime={new Date(lo).toISOString()}>{stamp(lo)}</time>
-            <time dateTime={new Date((lo + hi) / 2).toISOString()}>
-              {new Date((lo + hi) / 2).toLocaleTimeString()}
+            <time dateTime={new Date(lo).toISOString()} title={stamp(lo)}>
+              {tick(lo)}
             </time>
-            <time dateTime={new Date(hi).toISOString()}>{stamp(hi)}</time>
+            <time
+              dateTime={new Date((lo + hi) / 2).toISOString()}
+              title={stamp((lo + hi) / 2)}
+            >
+              {tick((lo + hi) / 2)}
+            </time>
+            <time dateTime={new Date(hi).toISOString()} title={stamp(hi)}>
+              {tick(hi)}
+            </time>
           </div>
         </>
       )}
@@ -2436,7 +2472,11 @@ function History({ samples }: { samples: Reading[] }) {
             <tbody>
               {ordered.map((sample, index) => (
                 <tr key={`${sample.measuredAt}-${index}`}>
-                  <td>{stamp(sample.measuredAt)}</td>
+                  <td>
+                    <time dateTime={new Date(sample.measuredAt).toISOString()}>
+                      {stamp(sample.measuredAt)}
+                    </time>
+                  </td>
                   <td>
                     {sample.cpuPercent === null
                       ? "Not measured"

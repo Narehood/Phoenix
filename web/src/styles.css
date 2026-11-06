@@ -1998,7 +1998,12 @@ textarea:disabled {
   gap: 8px;
   margin: 4px 0 0 44px;
   color: var(--text-2);
-  font-size: 12px;
+  font-size: 13px;
+}
+.history-time-context {
+  margin: 8px 0 4px;
+  font-size: 14px;
+  color: var(--text-2);
 }
 .history-ticks time {
   white-space: normal;
@@ -2491,6 +2496,31 @@ textarea:disabled {
 .change-comparison-wrap[tabindex] {
   max-height: 340px;
 }
+.project-conflict-review {
+  display: block;
+  margin: 12px 0 20px;
+  scroll-margin-top: 80px;
+}
+.project-conflict-review > p:first-of-type {
+  margin-bottom: 8px;
+}
+.unchanged-comparison > summary {
+  padding: 8px 0;
+  cursor: pointer;
+  font-size: 14px;
+}
+.unchanged-comparison .change-comparison-wrap {
+  margin-top: 4px;
+}
+.draft-label,
+.project-history-loading {
+  margin: 0 0 16px;
+  color: var(--text-2);
+  font-size: 14px;
+}
+.project-history-loading {
+  padding: 20px;
+}
 .change-comparison {
   table-layout: fixed;
   white-space: normal;
@@ -2877,6 +2907,10 @@ textarea:disabled {
     min-height: 44px;
     display: inline-flex;
     align-items: center;
+  }
+  .activity-context a {
+    min-width: 44px;
+    padding-inline: 4px;
   }
   .timeline > li {
     padding-block: 12px;

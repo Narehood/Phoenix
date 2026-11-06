@@ -148,6 +148,7 @@ function Feedback({
   dismiss,
   notice,
   changed,
+  intent,
   comparison,
   keep,
   keepLabel,
@@ -159,6 +160,7 @@ function Feedback({
   dismiss: () => void;
   notice: string;
   changed: boolean;
+  intent: ReactNode;
   comparison?: ReactNode;
   keep: () => void;
   keepLabel: string;
@@ -168,13 +170,24 @@ function Feedback({
 }) {
   return (
     <div className="host-form-feedback">
-      <ErrorNotice error={error} onDismiss={dismiss} onVerify={onVerify} />
+      <ErrorNotice
+        error={
+          changed && error instanceof ApiError && error.status === 409
+            ? null
+            : error
+        }
+        onDismiss={dismiss}
+        onVerify={onVerify}
+      />
       <StatusNotice>{notice}</StatusNotice>
       {changed && (
         <div className="notice retained" role="status">
           <p>
-            Saved values changed while you were editing. Your draft is kept.
+            <b>Saved values changed.</b> Your earlier draft is kept below.
+            Reapply your edits, review the updated form, then save. Nothing is
+            saved automatically.
           </p>
+          {intent}
           {comparison}
           <div className="button-row">
             <button type="button" disabled={busy} onClick={keep}>
@@ -237,6 +250,15 @@ export function HostInventoryForm({
         dismiss={() => model.setError(null)}
         notice={model.notice}
         changed={!!model.incoming}
+        intent={
+          <p>
+            Your edits:{" "}
+            {(["name", "tags", "groups"] as const)
+              .filter((field) => model.draft[field] !== model.baseline[field])
+              .join(", ") || "none"}
+            . Newer untouched fields stay intact.
+          </p>
+        }
         keepLabel="Reapply edited fields for review"
         keep={() => {
           if (!proposed) return;
@@ -263,8 +285,8 @@ export function HostInventoryForm({
       />
       {model.incoming && (
         <p className="muted">
-          Reapplying uses only the fields you edited. Newer values of untouched
-          fields stay intact. Review permission-bearing groups before saving.
+          <b>Your earlier draft · not yet reconciled.</b> Choose a recovery
+          action above to update these fields. Groups affect access.
         </p>
       )}
       {model.awaitingLatest && !model.incoming && (
@@ -437,6 +459,19 @@ export function MappingForm({
         dismiss={() => model.setError(null)}
         notice={model.notice}
         changed={!!model.incoming}
+        intent={
+          <p>
+            Your mapping edits: add{" "}
+            {added
+              .map((key) => (name(key) === key ? key : `${name(key)} (${key})`))
+              .join(", ") || "none"}
+            ; remove{" "}
+            {[...removed]
+              .map((key) => (name(key) === key ? key : `${name(key)} (${key})`))
+              .join(", ") || "none"}
+            . Other saved mappings stay intact.
+          </p>
+        }
         keepLabel="Reapply mapping changes for review"
         keep={() => {
           if (!proposed) return;
@@ -460,6 +495,7 @@ export function MappingForm({
             <ChangeComparison
               label="Monitor mapping changes for review"
               itemHeading="Monitor"
+              unchangedLabel="Unchanged mappings"
               rows={comparisonKeys.map((key) => ({
                 key,
                 label: (
@@ -482,9 +518,9 @@ export function MappingForm({
       />
       {model.incoming && (
         <p className="muted">
-          Reapply only your additions and removals to the latest saved mappings
-          for review. Other saved changes stay intact. Save separately after
-          reviewing the resulting selection.
+          <b>Your earlier draft · not yet reconciled.</b> The selections below
+          have not been updated to the comparison above. Choose a recovery
+          action first.
         </p>
       )}
       {model.awaitingLatest && !model.incoming && (

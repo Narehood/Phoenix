@@ -107,6 +107,7 @@ export function ChangeComparison({
   rows,
   itemHeading = "Field",
   savedHeading = "Saved now",
+  unchangedLabel = "Unchanged fields",
 }: {
   label: string;
   rows: {
@@ -118,17 +119,20 @@ export function ChangeComparison({
   }[];
   itemHeading?: string;
   savedHeading?: string;
+  unchangedLabel?: string;
 }) {
-  return (
+  const changed = rows.filter((row) => row.changed),
+    unchanged = rows.filter((row) => !row.changed);
+  const table = (items: typeof rows, name: string) => (
     <div
       className="change-comparison-wrap"
-      tabIndex={rows.length > 8 ? 0 : undefined}
+      tabIndex={items.length > 8 ? 0 : undefined}
     >
       <table
         className="change-comparison"
         role="table"
         aria-colcount={3}
-        aria-label={label}
+        aria-label={name}
       >
         <thead role="rowgroup">
           <tr role="row">
@@ -144,7 +148,7 @@ export function ChangeComparison({
           </tr>
         </thead>
         <tbody role="rowgroup">
-          {rows.map((row) => (
+          {items.map((row) => (
             <tr
               role="row"
               key={row.key}
@@ -163,6 +167,25 @@ export function ChangeComparison({
           ))}
         </tbody>
       </table>
+    </div>
+  );
+  return (
+    <div className="change-review">
+      {changed.length ? (
+        table(changed, label)
+      ) : (
+        <p>
+          Reapplying makes no additional changes to the latest saved values.
+        </p>
+      )}
+      {!!unchanged.length && (
+        <details className="unchanged-comparison">
+          <summary>
+            {unchangedLabel} ({unchanged.length})
+          </summary>
+          {table(unchanged, `${label}: unchanged values`)}
+        </details>
+      )}
     </div>
   );
 }

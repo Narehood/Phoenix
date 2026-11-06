@@ -1017,13 +1017,17 @@ try {
   await setValue("input[name=projectName]", "Fixture project");
   await setValue("textarea[name=projectDescription]", "Temporary browser fixture");
   await evaluate(`document.querySelector('form[aria-label="Register a project"] input[value=dependencies]').click()`);
-  await evaluate("window.fixture.failSources.add('/api/projects/fixture-project/audit')");
+  await evaluate("window.fixture.failSources.add('/api/projects/fixture-project/audit'); window.fixture.hold.add('/api/projects/fixture-project/audit')");
   await submit("Register a project");
   await wait(`document.querySelector('h1')?.textContent.includes('Fixture project') && !!document.querySelector('form[aria-label="Project details"]')`);
   await evaluate("document.querySelector('.project-settings > summary').click()");
   assert.ok(await evaluate("document.querySelector('input[name=editName]').getClientRects().length"), "Metadata edits are hidden from the user");
+  await wait("typeof window.fixture.holds['/api/projects/fixture-project/audit'] === 'function' && document.querySelector('.project-history [role=status]')?.textContent.includes('Loading project history')");
+  assert.ok(await evaluate("!document.querySelector('.project-history').innerText.includes('unavailable') && !document.querySelector('.project-history').innerText.includes('No project events')"), "An unresolved first history read implies failure or confirmed absence");
+  await evaluate("window.fixture.holds['/api/projects/fixture-project/audit']()");
   await wait("document.querySelector('.project-history [role=alert]')?.textContent.includes('History could not be refreshed') && document.querySelector('.repository-identity h3')?.textContent.includes('Connect a GitHub repository')");
   assert.ok(await evaluate("!document.querySelector('input[name=editName]').disabled"), "Project history failure disabled valid project controls");
+  pass("project history distinguishes its initial pending read from failure without blocking independent project controls");
   await evaluate("window.fixture.failSources.clear()");
   await evaluate("window.fixture.events['fixture-project'][0].actor = 'fixture-project-actor-full-identifier-123456'");
   assert.deepEqual(await evaluate("window.fixture.projects['fixture-project'].modules"), ["dependencies"]);

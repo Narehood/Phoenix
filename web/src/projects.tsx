@@ -539,8 +539,15 @@ function ProjectDetail({
   editRef.current = edit;
   useUnsavedChanges(!!edit && isDirty(edit), "project details");
   useEffect(() => {
-    if (conflict && settingsRef.current) settingsRef.current.open = true;
-  }, [conflict]);
+    if (!conflict || !settingsRef.current) return;
+    settingsRef.current.open = true;
+    const frame = requestAnimationFrame(() =>
+      settingsRef.current
+        ?.querySelector(".project-conflict-review")
+        ?.scrollIntoView({ block: "nearest" }),
+    );
+    return () => cancelAnimationFrame(frame);
+  }, [conflict?.revision]);
   useEffect(() => {
     if (!error && !notice) return;
     if (settingsRef.current) settingsRef.current.open = true;
@@ -666,11 +673,7 @@ function ProjectDetail({
           if (!alive.current) return;
           setProject(latest);
           setConflict(latest);
-          setError(
-            new Error(
-              `This project changed to revision ${latest.revision} after you loaded it. Your edits were not saved and are kept below.`,
-            ),
-          );
+          setError(null);
         } catch (reload) {
           if (alive.current) setError(reload);
         }
@@ -833,6 +836,75 @@ function ProjectDetail({
             </span>
             <span>Revision {project.revision}</span>
           </p>
+          {conflict && proposed && edit && canManage && (
+            <div
+              className="notice conflict project-conflict-review"
+              role="alert"
+            >
+              <b>Revision {conflict.revision} was saved by someone else.</b>
+              <p>
+                Your earlier draft is based on revision {edit.baseline.revision}
+                . Compare changes to the latest saved values below. Untouched
+                fields stay current. Reapply to update the form, then review and
+                save separately.
+              </p>
+              <ChangeComparison
+                label="Project changes for review"
+                savedHeading={`Saved (revision ${conflict.revision})`}
+                rows={[
+                  {
+                    key: "name",
+                    label: "Name",
+                    saved: conflict.name,
+                    proposed: proposed.name,
+                    changed: conflict.name !== proposed.name,
+                  },
+                  {
+                    key: "description",
+                    label: "Description",
+                    saved: conflict.description || "None",
+                    proposed: proposed.description || "None",
+                    changed: conflict.description !== proposed.description,
+                  },
+                  {
+                    key: "modules",
+                    label: "Features",
+                    saved: featureNames(conflict.modules),
+                    proposed: featureNames(proposed.modules),
+                    changed: !sameModules(conflict.modules, proposed.modules),
+                  },
+                  {
+                    key: "archived",
+                    label: "Archived",
+                    saved: conflict.archived ? "Yes" : "No",
+                    proposed: proposed.baseline.archived ? "Yes" : "No",
+                  },
+                ]}
+              />
+              <div className="button-row">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEdit(proposed);
+                    setConflict(null);
+                    setError(null);
+                  }}
+                >
+                  Reapply my changes for review
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEdit(fromProject(conflict));
+                    setConflict(null);
+                    setError(null);
+                  }}
+                >
+                  Discard my edits
+                </button>
+              </div>
+            </div>
+          )}
           <div className="two-columns">
             <section className="panel">
               <div className="panel-heading">
@@ -877,81 +949,11 @@ function ProjectDetail({
                     onSubmit={save}
                     aria-label="Project details"
                   >
-                    {conflict && proposed && (
-                      <div className="notice conflict" role="alert">
-                        <b>
-                          Revision {conflict.revision} was saved by someone
-                          else.
-                        </b>
-                        <p>
-                          Your unsaved edits are based on revision{" "}
-                          {edit.baseline.revision}. Compare the result of
-                          reapplying your changes below. Newer untouched fields
-                          and unrelated feature changes stay intact. Nothing is
-                          saved automatically.
-                        </p>
-                        <ChangeComparison
-                          label="Project changes for review"
-                          savedHeading={`Saved (revision ${conflict.revision})`}
-                          rows={[
-                            {
-                              key: "name",
-                              label: "Name",
-                              saved: conflict.name,
-                              proposed: proposed.name,
-                              changed: conflict.name !== proposed.name,
-                            },
-                            {
-                              key: "description",
-                              label: "Description",
-                              saved: conflict.description || "None",
-                              proposed: proposed.description || "None",
-                              changed:
-                                conflict.description !== proposed.description,
-                            },
-                            {
-                              key: "modules",
-                              label: "Features",
-                              saved: featureNames(conflict.modules),
-                              proposed: featureNames(proposed.modules),
-                              changed: !sameModules(
-                                conflict.modules,
-                                proposed.modules,
-                              ),
-                            },
-                            {
-                              key: "archived",
-                              label: "Archived",
-                              saved: conflict.archived ? "Yes" : "No",
-                              proposed: proposed.baseline.archived
-                                ? "Yes"
-                                : "No",
-                            },
-                          ]}
-                        />
-                        <div className="button-row">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEdit(proposed);
-                              setConflict(null);
-                              setError(null);
-                            }}
-                          >
-                            Reapply my changes for review
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEdit(fromProject(conflict));
-                              setConflict(null);
-                              setError(null);
-                            }}
-                          >
-                            Discard my edits
-                          </button>
-                        </div>
-                      </div>
+                    {conflict && (
+                      <p className="draft-label">
+                        <b>Your earlier draft · not yet reconciled.</b> Choose a
+                        recovery action above to update these fields.
+                      </p>
                     )}
                     <label>
                       Name
@@ -1136,7 +1138,11 @@ function ProjectDetail({
               </p>
             )}
             {!events ? (
-              <Empty>History unavailable.</Empty>
+              historyError ? null : (
+                <p className="project-history-loading" role="status">
+                  Loading project history…
+                </p>
+              )
             ) : !events.length ? (
               <Empty>No project events recorded.</Empty>
             ) : (

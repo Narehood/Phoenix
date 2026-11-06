@@ -144,8 +144,16 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await wait("document.body.innerText.includes('Website')");
   await top();
   await shot("projects-desktop");
+  await evaluate("window.fixture.hold.add('/api/projects/website/audit')");
   await click("Website");
   await wait("document.querySelector('h1')?.textContent.includes('Website') && document.body.innerText.includes('example/website')");
+  await wait("typeof window.fixture.holds['/api/projects/website/audit'] === 'function' && document.querySelector('.project-history [role=status]')?.textContent.includes('Loading project history')");
+  await section(".project-history");
+  await shot("project-history-loading-desktop");
+  await evaluate("window.fixture.holds['/api/projects/website/audit']()");
+  await wait("!!document.querySelector('.project-history .timeline')");
+  await evaluate("document.querySelector('.project-settings').open = false");
+  await top();
   await shot("repository-desktop");
   await evaluate("window.fixture.hold.add('POST /api/projects/website/github/sync')");
   await click("Request refresh");
