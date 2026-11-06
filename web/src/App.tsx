@@ -1894,6 +1894,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                   loaded={!!sourceLoaded.Jobs}
                   unavailable={!!sourceErrors.Jobs}
                   jobs={hostJobs}
+                  scopeHost={current}
                   hosts={hosts}
                   onChanged={() => void refresh()}
                   id="host-jobs"
@@ -1911,7 +1912,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
             ))}
           {view === "jobs" && (
             <>
-              <div className="page-heading">
+              <div className="page-heading jobs-page-heading">
                 <div>
                   <p className="eyebrow">DURABLE OPERATIONS</p>
                   <h1>Remote jobs</h1>
@@ -2506,6 +2507,7 @@ function Jobs({
   memoryKey,
   jobs,
   hosts,
+  scopeHost,
   onChanged,
   id,
   loaded,
@@ -2515,6 +2517,7 @@ function Jobs({
   memoryKey: string;
   jobs: Job[];
   hosts: Host[];
+  scopeHost?: Host;
   onChanged: () => void;
   id?: string;
   loaded: boolean;
@@ -2549,9 +2552,12 @@ function Jobs({
     changeFilters({ query: "", state: "", action: "" });
   };
   return (
-    <section className="panel jobs-panel" id={id}>
+    <section
+      className={`panel jobs-panel${scopeHost ? " host-scoped-jobs" : ""}`}
+      id={id}
+    >
       <div className="panel-heading">
-        <h2>Jobs</h2>
+        <h2>Jobs{scopeHost && <> for {scopeHost.name}</>}</h2>
         <span
           className="muted job-filter-count"
           id={boundsId}
@@ -2578,7 +2584,9 @@ function Jobs({
           <input
             type="search"
             name="jobSearch"
-            placeholder="Host, target or job ID…"
+            placeholder={
+              scopeHost ? "Target or job ID…" : "Host, target or job ID…"
+            }
             value={query}
             disabled={!loaded || !jobs.length}
             onChange={(event) => setQuery(event.target.value)}
@@ -2661,26 +2669,41 @@ function Jobs({
           <table
             className="jobs-table responsive-table"
             role="table"
-            aria-colcount={5}
+            aria-colcount={scopeHost ? 4 : 5}
           >
             <caption className="sr-only">
               Remote job targets, request states and permitted actions
+              {scopeHost && ` for ${scopeHost.name}`}
             </caption>
             <thead role="rowgroup">
               <tr role="row">
                 <th role="columnheader" scope="col" aria-colindex={1}>
                   Action
                 </th>
-                <th role="columnheader" scope="col" aria-colindex={2}>
-                  Host
-                </th>
-                <th role="columnheader" scope="col" aria-colindex={3}>
+                {!scopeHost && (
+                  <th role="columnheader" scope="col" aria-colindex={2}>
+                    Host
+                  </th>
+                )}
+                <th
+                  role="columnheader"
+                  scope="col"
+                  aria-colindex={scopeHost ? 2 : 3}
+                >
                   State
                 </th>
-                <th role="columnheader" scope="col" aria-colindex={4}>
+                <th
+                  role="columnheader"
+                  scope="col"
+                  aria-colindex={scopeHost ? 3 : 4}
+                >
                   Created
                 </th>
-                <th role="columnheader" scope="col" aria-colindex={5}>
+                <th
+                  role="columnheader"
+                  scope="col"
+                  aria-colindex={scopeHost ? 4 : 5}
+                >
                   Outcome
                 </th>
               </tr>
@@ -2694,25 +2717,39 @@ function Jobs({
                       <small>{j.args.service || j.args.diagnostic}</small>
                     )}
                   </td>
-                  <td role="cell" aria-colindex={2} data-label="Host">
-                    {hosts.some((host) => host.id === j.hostId) ? (
-                      <RouteLink to={{ view: "host", id: j.hostId }}>
-                        {hostName(j)}
-                      </RouteLink>
-                    ) : (
-                      hostName(j)
-                    )}
-                  </td>
-                  <td role="cell" aria-colindex={3} data-label="State">
+                  {!scopeHost && (
+                    <td role="cell" aria-colindex={2} data-label="Host">
+                      {hosts.some((host) => host.id === j.hostId) ? (
+                        <RouteLink to={{ view: "host", id: j.hostId }}>
+                          {hostName(j)}
+                        </RouteLink>
+                      ) : (
+                        hostName(j)
+                      )}
+                    </td>
+                  )}
+                  <td
+                    role="cell"
+                    aria-colindex={scopeHost ? 2 : 3}
+                    data-label="State"
+                  >
                     <Tone value={j.state} />
                     {j.cancelRequested && j.state !== "cancelled" && (
                       <small>Cancellation requested</small>
                     )}
                   </td>
-                  <td role="cell" aria-colindex={4} data-label="Created">
+                  <td
+                    role="cell"
+                    aria-colindex={scopeHost ? 3 : 4}
+                    data-label="Created"
+                  >
                     <Time value={j.createdAt} />
                   </td>
-                  <td role="cell" aria-colindex={5} data-label="Outcome">
+                  <td
+                    role="cell"
+                    aria-colindex={scopeHost ? 4 : 5}
+                    data-label="Outcome"
+                  >
                     <RouteLink
                       to={{ view: "jobs", id: j.id }}
                       aria-label={`View outcome for ${jobAction(j.action)}${j.args.service || j.args.diagnostic ? ` (${j.args.service || j.args.diagnostic})` : ""} on ${hostName(j)}, created ${stamp(j.createdAt)}`}

@@ -1005,19 +1005,23 @@ summary:hover {
   border: 0;
   padding: 0;
   background: transparent;
-  color: var(--accent-text);
+  color: var(--text-2);
   text-decoration: underline;
+  text-decoration-style: dotted;
+  text-decoration-color: var(--text-3);
   text-underline-offset: 3px;
   font: inherit;
   font-weight: inherit;
   text-align: left;
 }
-.time-trigger:hover {
+.time-trigger:hover,
+.time-trigger:focus-visible {
   background: var(--accent-wash);
   color: var(--accent-text);
+  text-decoration-style: solid;
 }
 .time-trigger > span {
-  color: var(--accent-text);
+  color: inherit;
 }
 .time-exact {
   display: block;
@@ -2464,6 +2468,18 @@ textarea:disabled {
 .jobs-table th:last-child {
   width: 27%;
 }
+.host-scoped-jobs .jobs-table th:nth-child(2) {
+  width: 15%;
+}
+.host-scoped-jobs .jobs-table th:nth-child(3) {
+  width: 20%;
+}
+.host-scoped-jobs .jobs-table th:last-child {
+  width: 37%;
+}
+.mobile-repository-settings {
+  display: none;
+}
 .jobs-table :is(td, small) {
   white-space: normal;
   overflow-wrap: anywhere;
@@ -2734,6 +2750,23 @@ textarea:disabled {
   .sidebar .nav-scroll-note {
     display: none;
   }
+  .jobs-page-heading {
+    margin-bottom: 12px;
+  }
+  .jobs-page-heading .eyebrow {
+    display: none;
+  }
+  .jobs-page-heading h1 {
+    margin-bottom: 6px;
+  }
+  .host-scoped-jobs .panel-heading {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .host-scoped-jobs h2 {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
   .job-filters {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2897,6 +2930,16 @@ textarea:disabled {
   .jobs-table tbody tr {
     padding: 8px 14px;
     gap: 2px 12px;
+  }
+  .host-scoped-jobs .jobs-table td[data-label="Action"] {
+    grid-row: 1 / 3;
+  }
+  .host-scoped-jobs .jobs-table td[data-label="Created"] {
+    grid-column: 2;
+    grid-row: 2;
+  }
+  .host-scoped-jobs .jobs-table td[data-label="Outcome"] {
+    grid-row: 3;
   }
   .jobs-panel .job-filters {
     padding-bottom: 0;
@@ -3347,6 +3390,27 @@ textarea:disabled {
   .github-heading {
     padding: 10px 14px;
     gap: 6px;
+  }
+  .github.observed-repository .github-heading {
+    flex-wrap: wrap;
+  }
+  .observed-repository .github-section-title {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .observed-repository .github-heading .button-row {
+    width: auto;
+    margin-left: auto;
+  }
+  .observed-repository .desktop-repository-settings {
+    display: none;
+  }
+  .observed-repository .mobile-repository-settings {
+    display: inline;
   }
   .github .collection-summary {
     display: grid;

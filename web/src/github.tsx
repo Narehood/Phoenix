@@ -37,7 +37,7 @@ const slowPoll = 30000,
 const stateText: Record<string, string> = {
   not_configured: "No repository is connected.",
   disabled:
-    "Not polled: the source is disabled, the dependencies module is not selected, or the project is archived.",
+    "Collection is paused: the source is disabled, the Repository observations feature is not selected, or the project is archived.",
   pending: "Configured; waiting for the first collection.",
   fresh: "Collected within 30 minutes with every source readable.",
   partial:
@@ -740,10 +740,12 @@ export function GitHubPanel({
   }
 
   return (
-    <section className="panel github">
+    <section
+      className={`panel github${view && canRead && !denied ? " observed-repository" : ""}`}
+    >
       <div className="panel-heading github-heading">
         <h2>
-          GitHub observations{" "}
+          <span className="github-section-title">GitHub observations</span>{" "}
           {view && canRead && !denied && (
             <Tone
               value={failed ? "unknown" : collectionState}
@@ -756,6 +758,7 @@ export function GitHubPanel({
           {admin && (
             <button
               className="text-link connection-shortcut"
+              aria-label="Repository settings"
               onClick={() => {
                 const settings = document.getElementById(
                   `repository-settings-${project.id}`,
@@ -767,7 +770,12 @@ export function GitHubPanel({
                 }
               }}
             >
-              Repository settings
+              <span className="desktop-repository-settings">
+                Repository settings
+              </span>
+              <span className="mobile-repository-settings" aria-hidden="true">
+                Settings
+              </span>
             </button>
           )}
           {canSync && view?.configured && (

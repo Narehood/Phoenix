@@ -792,10 +792,16 @@ try {
   assert.ok(await evaluate("document.documentElement.scrollWidth <= innerWidth && document.querySelector('.jobs-table').parentElement.scrollWidth <= document.querySelector('.jobs-table').parentElement.clientWidth && document.querySelector('.jobs-table td[data-label=Outcome] button').disabled"), "Mobile jobs require sideways scrolling or enable an ungranted cancellation");
   const jobHeaders = (await send("Accessibility.getFullAXTree", {}, sessionId)).nodes.filter(n => !n.ignored && n.role?.value === "columnheader").map(n => String(n.name?.value || "").trim().replace(/\s+/g, " ").toLowerCase());
   for(const label of ["Action","Host","State","Created","Outcome"]) assert.ok(jobHeaders.includes(label.toLowerCase()), `Mobile jobs lost its accessible ${label} header; accessible headers: ${JSON.stringify(jobHeaders)}`);
-  pass("mobile job rows expose labeled targets, state and outcome controls without overflow and preserve accessibility-tree headers");
   assert.equal(await evaluate("window.fixture.requests.filter(r => r.path.endsWith('/cancel')).length"), 0);
   await evaluate("history.back()");
   await wait("location.hash === '#/hosts/private-host' && !!document.querySelector('.service-requests')");
+  const scopedJobNodes = (await send("Accessibility.getFullAXTree", {}, sessionId)).nodes;
+  const scopedJobTable = scopedJobNodes.find(node => !node.ignored && node.role?.value === "table" && String(node.name?.value || "").startsWith("Remote job targets") && String(node.name?.value || "").includes(" for "));
+  assert.ok(scopedJobTable, "The host-scoped job table does not expose its host context");
+  const scopedJobMap = new Map(scopedJobNodes.map(node => [node.nodeId,node]));
+  const scopedHeaders = node => node ? [node.role?.value === "columnheader" && !node.ignored ? String(node.name?.value || "").trim().toLowerCase() : null,...(node.childIds || []).flatMap(id => scopedHeaders(scopedJobMap.get(id)))].filter(Boolean) : [];
+  assert.deepEqual(scopedHeaders(scopedJobTable), ["action","state","created","outcome"], "Host-scoped jobs lost their accessible target, state, creation or outcome headers");
+  pass("mobile host and global job rows expose scoped targets and actions without overflow and preserve accessibility-tree headers");
   pass("host and global job lists withhold cancellation when the effective host grant is missing");
   await evaluate("window.fixture.hostPermissions = null");
   await wait("!document.querySelector('.service-requests button:nth-child(2)').disabled");

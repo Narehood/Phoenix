@@ -932,8 +932,12 @@ function ProjectDetail({
                     <dd className="project-description">
                       {project.description || "None"}
                     </dd>
-                    <dt>Modules</dt>
-                    <dd>{project.modules.join(", ") || "None selected"}</dd>
+                    <dt>Features</dt>
+                    <dd>
+                      {project.modules.length
+                        ? featureNames(project.modules)
+                        : "None selected"}
+                    </dd>
                     {caps && (
                       <>
                         <dt>Access</dt>
