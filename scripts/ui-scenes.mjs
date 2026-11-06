@@ -125,7 +125,7 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await wait("!!document.querySelector('.host-inventory-form .change-comparison')");
   await section(".host-inventory-form");
   await shot("host-inventory-conflict-desktop");
-  await evaluate("[...document.querySelectorAll('.host-inventory-form button')].find(b => b.textContent === 'Load saved values').click(); window.fixture.hosts[0].name = 'edge-01'; window.fixture.hosts[0].groups = ['Production']");
+  await evaluate("[...document.querySelectorAll('.host-inventory-form button')].find(b => b.textContent === 'Discard my draft and load latest').click(); window.fixture.hosts[0].name = 'edge-01'; window.fixture.hosts[0].groups = ['Production']");
   await wait("document.querySelector('.host-inventory-form input[name=name]').value === 'edge-01'");
   await evaluate("window.fixture.failWrites.clear(); [...document.querySelectorAll('.host-inventory-form button')].find(b => b.textContent === 'Reset').click(); document.querySelector('.host-mapping-form input[type=checkbox]').click()");
   await evaluate(`(() => {
@@ -136,7 +136,7 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await wait("!!document.querySelector('.host-mapping-form .retained')");
   await section(".host-mapping-form");
   await shot("host-mapping-conflict-desktop");
-  await evaluate("[...document.querySelectorAll('.host-mapping-form button')].find(b => b.textContent === 'Load saved values').click(); window.fixture.canary.mappings = [{hostId:'private-host',sourceId:'fixture-source',monitorId:'unobserved'}]; window.fixture.canary.sources[0].monitors.pop()");
+  await evaluate("[...document.querySelectorAll('.host-mapping-form button')].find(b => b.textContent === 'Discard my draft and load latest').click(); window.fixture.canary.mappings = [{hostId:'private-host',sourceId:'fixture-source',monitorId:'unobserved'}]; window.fixture.canary.sources[0].monitors.pop()");
   await wait("document.querySelector('.host-mapping-form input[type=checkbox]').checked && !document.querySelector('.host-mapping-form .retained')");
   await evaluate("Object.assign(window.fixture.hosts[0], window.fixture.freshHost); delete window.fixture.freshHost");
   await wait("!document.querySelector('.reading-snapshot')");
@@ -182,7 +182,7 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await wait("!!document.querySelector('.project-settings .change-comparison')");
   await section(".project-settings");
   await shot("project-conflict-desktop");
-  await click("Discard my edits");
+  await click("Discard my draft and load latest");
   await wait("!document.querySelector('.project-settings .notice.conflict') && document.querySelector('input[name=editName]').value === 'Website'");
   // Restore the fixture for later routes; the next project mount reads it afresh.
   await evaluate(`window.fixture.projects.website.description = ${JSON.stringify(websiteDescription)}; window.fixture.projects.website.revision++`);
@@ -213,6 +213,18 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await wait("document.querySelector('.account-create').open");
   await section(".account-create");
   await shot("account-create-desktop");
+  await evaluate(`(() => {
+    for (const [name,value] of [['name','capture-account'],['password','temporary fixture password']]) {
+      const input = document.querySelector('.account-create input[name='+name+']');
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input,value);
+      input.dispatchEvent(new Event('input',{bubbles:true}));
+    }
+    document.querySelector('.account-create form').requestSubmit();
+  })()`);
+  await wait("!!document.querySelector('.account-create .secret')");
+  await section(".account-create .notice:has(.secret)");
+  await shot("account-authenticator-setup-desktop");
+  await click("Dismiss secret");
   await navigate("Fleet overview");
   await top();
   await evaluate("window.fixture.failSources.add('/api/audit'); window.fixture.hosts[0].latest.cpuPercent = 37");
@@ -376,6 +388,24 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await wait("document.body.innerText.includes('No projects yet')");
   await top();
   await shot("empty-projects-desktop");
+  await click("Register a project");
+  await evaluate(`(() => {
+    for (const [name,value] of [['projectId','capture-registration'],['projectName','Temporary registration']]) {
+      const input = document.querySelector('input[name='+name+']');
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input,value);
+      input.dispatchEvent(new Event('input',{bubbles:true}));
+    }
+    window.fixture.hold.add('POST /api/projects');
+  })()`);
+  await evaluate("document.querySelector('form[aria-label=\"Register a project\"]').requestSubmit()");
+  await wait("typeof window.fixture.holds['POST /api/projects'] === 'function'");
+  await top();
+  await shot("project-registration-pending-desktop");
+  await evaluate("window.fixture.holds['POST /api/projects']()");
+  await wait("document.querySelector('h1')?.innerText.includes('Temporary registration')");
+  await evaluate("delete window.fixture.projects['capture-registration']; delete window.fixture.events['capture-registration']");
+  await click("← All projects");
+  await wait("document.body.innerText.includes('No projects yet')");
   await click("Verify identity");
   await wait("document.querySelector('dialog[open]')");
   await shot("verification-dialog");

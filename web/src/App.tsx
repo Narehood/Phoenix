@@ -9,6 +9,7 @@ import {
   Form,
   Metric,
   StatusNotice,
+  SetupKey,
   Time,
   Tone,
   field,
@@ -180,6 +181,7 @@ function Auth({ onLogin }: { onLogin: (u: User) => void }) {
   }, []);
   async function submit(e: FormEvent<HTMLFormElement>) {
     const f = field(e);
+    if (busy) return;
     setBusy(true);
     setError("");
     try {
@@ -259,6 +261,7 @@ function Auth({ onLogin }: { onLogin: (u: User) => void }) {
                 <input
                   name="token"
                   type="password"
+                  disabled={busy}
                   required
                   autoComplete="off"
                 />
@@ -275,6 +278,7 @@ function Auth({ onLogin }: { onLogin: (u: User) => void }) {
                   <input
                     name="name"
                     autoComplete="username"
+                    disabled={busy}
                     required
                     maxLength={80}
                   />
@@ -285,6 +289,7 @@ function Auth({ onLogin }: { onLogin: (u: User) => void }) {
                     name="password"
                     type="password"
                     autoComplete={setup ? "new-password" : "current-password"}
+                    disabled={busy}
                     required
                     minLength={setup ? 14 : 1}
                     maxLength={72}
@@ -296,10 +301,11 @@ function Auth({ onLogin }: { onLogin: (u: User) => void }) {
               <div className="notice">
                 <b>Add Phoenix to your authenticator</b>
                 <p>
-                  Enter this secret manually, using 6 digits, SHA1 and a
-                  30-second period.
+                  In your authenticator, add a time-based account named Phoenix
+                  and enter the setup key below. Use 6 digits, SHA1 and a
+                  30-second period. Enter its current code below to finish.
                 </p>
-                <code className="secret">{secret}</code>
+                <SetupKey key={secret} value={secret} accountName="Phoenix" />
               </div>
             )}
             {(!setup || secret) && (
@@ -309,6 +315,7 @@ function Auth({ onLogin }: { onLogin: (u: User) => void }) {
                   name="code"
                   inputMode="numeric"
                   autoComplete="one-time-code"
+                  disabled={busy}
                   required
                   pattern="[0-9]{6}"
                 />
@@ -3192,7 +3199,11 @@ function Access({ hosts, onVerify }: { hosts: Host[]; onVerify: () => void }) {
                 a trusted channel. It is shown once; dismiss it before creating
                 another account.
               </p>
-              <code className="secret">{secret}</code>
+              <p>
+                In the account owner’s authenticator, add a time-based account
+                with this key: 6 digits, SHA1, 30 seconds.
+              </p>
+              <SetupKey key={secret} value={secret} accountName={createdName} />
               <button type="button" onClick={() => setSecret("")}>
                 Dismiss secret
               </button>

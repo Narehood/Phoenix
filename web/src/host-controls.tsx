@@ -194,7 +194,7 @@ function Feedback({
               {keepLabel}
             </button>
             <button type="button" disabled={busy} onClick={reset}>
-              Load saved values
+              Discard my draft and load latest
             </button>
           </div>
         </div>

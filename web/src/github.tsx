@@ -740,12 +740,10 @@ export function GitHubPanel({
   }
 
   return (
-    <section
-      className={`panel github${view && canRead && !denied ? " observed-repository" : ""}`}
-    >
+    <section className="panel github">
       <div className="panel-heading github-heading">
         <h2>
-          <span className="github-section-title">GitHub observations</span>{" "}
+          GitHub observations{" "}
           {view && canRead && !denied && (
             <Tone
               value={failed ? "unknown" : collectionState}
@@ -770,12 +768,7 @@ export function GitHubPanel({
                 }
               }}
             >
-              <span className="desktop-repository-settings">
-                Repository settings
-              </span>
-              <span className="mobile-repository-settings" aria-hidden="true">
-                Settings
-              </span>
+              Repository settings
             </button>
           )}
           {canSync && view?.configured && (

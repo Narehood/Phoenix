@@ -190,6 +190,64 @@ export function ChangeComparison({
   );
 }
 
+/** Copy only after an explicit gesture; never persist a setup key in the app. */
+export function SetupKey({
+  value,
+  accountName,
+}: {
+  value: string;
+  accountName?: string;
+}) {
+  const [busy, setBusy] = useState(false),
+    [message, setMessage] = useState("");
+  const alive = useRef(true),
+    pending = useRef(false);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+  async function copy() {
+    if (pending.current) return;
+    pending.current = true;
+    setBusy(true);
+    setMessage("");
+    try {
+      if (!navigator.clipboard?.writeText)
+        throw new Error("Clipboard unavailable");
+      await navigator.clipboard.writeText(value);
+      if (alive.current) setMessage("Setup key copied.");
+    } catch {
+      if (alive.current)
+        setMessage(
+          "Copy unavailable. Select the setup key and copy it manually.",
+        );
+    } finally {
+      pending.current = false;
+      if (alive.current) setBusy(false);
+    }
+  }
+  return (
+    <>
+      <code className="secret">{value}</code>
+      <div className="setup-key-copy">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void copy()}
+          aria-label={`Copy setup key${accountName ? ` for ${accountName}` : ""}`}
+        >
+          {busy ? "Copying…" : "Copy setup key"}
+        </button>
+        <span role="status" aria-atomic="true">
+          {message}
+        </span>
+      </div>
+    </>
+  );
+}
+
 /** Native modal semantics provide focus containment and an inert background. */
 export function Dialog({
   title,

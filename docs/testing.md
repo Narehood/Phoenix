@@ -73,6 +73,9 @@ effective host-action permissions, compact mobile summaries, and populated CPU
 history with gaps and missing values. Chrome accessibility-tree checks retain
 responsive table roles and column headers; these are not a screen-reader
 acceptance test.
+Authenticator-copy checks use a temporary clipboard stub and never touch the
+test machine's clipboard. Actual browser permissions and account-owner handoff
+still require manual acceptance.
 The smoke uses real APIs but does not drive a browser. Neither substitutes for
 manual end-to-end browser acceptance. Container systemd service/log inspection
 may be unavailable; the smoke never installs or executes the root helper.
@@ -86,11 +89,11 @@ administrative-action failure.
 | Area | Test and expected result |
 | --- | --- |
 | Installation | Complete the [actual Debian/systemd procedure](validation.md#actual-debiansystemd-acceptance-procedure--not-run) on a dedicated test host; record OS/kernel/systemd/architecture and exact build/run. |
-| Authentication | Complete setup/TOTP, sign out/in, refresh identity, expire/revoke a session; rejected access must not leave another user's data on screen. |
+| Authentication | Complete setup/TOTP, including explicit setup-key copy and denied-clipboard manual fallback; copying must not finish verification. Sign out/in, refresh identity and expire/revoke a session; rejected access must not leave another user's data on screen. |
 | Hosts | Enroll and compare fingerprint through a trusted channel before approval; compare two telemetry samples and process/service/log readings with the test host; disconnect one agent and distinguish offline from stale resources and Canary status. |
 | Jobs | Run the fixed diagnostic; use only the new disposable acceptance service for a confirmed allowlisted restart. Open a copied outcome link and confirm its action, host and service/diagnostic target. Distinguish queued, dispatched, permission-restricted and missing output; remove an output grant and confirm old output disappears on the next read. Check both job lists on mobile, including labelled fields and cancellation eligibility. Verify forbidden services/shell and unauthorized output are refused, plus audit and uncertainty handling. Do not test real reboot. |
 | Accounts | Create an operator and viewer with narrow host/project grants; verify role ceilings, inaccessible resources, failed grant loading and preservation of mixed grants. Confirm the operator grant editor explains that host inventory editing requires an administrator. Confirm host request controls reflect effective action grants, update after grant removal, and stay disabled when permissions cannot be loaded; submitted requests must still be authorized by the server. |
-| Projects | Start empty; register a temporary project, edit metadata, provoke a two-tab revision conflict, archive and restore; verify bounded audit and explicit unsupported modules. |
+| Projects | Start empty; register a temporary project with a delayed response and confirm fields/features stay locked until completion. Edit metadata, provoke a two-tab revision conflict, archive and restore; verify bounded audit and explicitly planned features. |
 | GitHub | Optionally connect an operator-supplied disposable repository with a dedicated read-only token; verify PR checks/reviews, recent push CI and Dependabot observations, cooldowns and stale/permission states; disable/disconnect and ensure old observations do not reappear. Empty results never prove packages current. |
 | Canary | Only with a reachable operator-supplied node API/viewer account, verify source/build, independent freshness, mappings and unavailable-source behavior. Do not modify Canary or contact notification destinations. |
 | Recovery | Complete a stopped, isolated backup/restore drill with separate identity keys, revoke restored sessions, reconcile agents/jobs, and verify permissions before reconnecting. |

@@ -334,10 +334,13 @@ function Register({
     [modules, setModules] = useState<string[]>([]),
     [error, setError] = useState<unknown>(null),
     [busy, setBusy] = useState(false);
-  const alive = useRef(true);
+  const alive = useRef(true),
+    pending = useRef(false);
   const markSaved = useUnsavedChanges(
     !!(id || name || description || modules.length),
-    "new project",
+    busy
+      ? "new project registration in progress (it can finish after leaving)"
+      : "new project",
   );
   useEffect(() => {
     alive.current = true;
@@ -347,7 +350,7 @@ function Register({
   }, []);
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (busy) return;
+    if (pending.current) return;
     if (!projectID.test(id))
       return setError(
         new Error(
@@ -356,6 +359,7 @@ function Register({
       );
     const problem = metadataProblem(name, description);
     if (problem) return setError(new Error(problem));
+    pending.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -372,6 +376,7 @@ function Register({
     } catch (err) {
       if (alive.current) setError(err);
     } finally {
+      pending.current = false;
       if (alive.current) setBusy(false);
     }
   }
@@ -397,11 +402,13 @@ function Register({
           className="form"
           onSubmit={submit}
           aria-label="Register a project"
+          aria-busy={busy}
         >
           <label>
             Project ID (permanent)
             <input
               name="projectId"
+              disabled={busy}
               value={id}
               onChange={(e) => setId(e.target.value)}
               required
@@ -417,6 +424,7 @@ function Register({
             Name
             <input
               name="projectName"
+              disabled={busy}
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
@@ -428,6 +436,7 @@ function Register({
             Description
             <textarea
               name="projectDescription"
+              disabled={busy}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={3}
@@ -437,7 +446,11 @@ function Register({
               URLs.
             </small>
           </label>
-          <ModulePicker modules={modules} onChange={setModules} />
+          <ModulePicker
+            modules={modules}
+            onChange={setModules}
+            disabled={busy}
+          />
           <div className="button-row">
             <button className="primary" disabled={busy}>
               {busy ? "Working…" : "Register project"}
@@ -900,7 +913,7 @@ function ProjectDetail({
                     setError(null);
                   }}
                 >
-                  Discard my edits
+                  Discard my draft and load latest
                 </button>
               </div>
             </div>

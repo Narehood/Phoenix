@@ -1024,8 +1024,13 @@ try {
   await setValue("input[name=projectName]", "Fixture project");
   await setValue("textarea[name=projectDescription]", "Temporary browser fixture");
   await evaluate(`document.querySelector('form[aria-label="Register a project"] input[value=dependencies]').click()`);
-  await evaluate("window.fixture.failSources.add('/api/projects/fixture-project/audit'); window.fixture.hold.add('/api/projects/fixture-project/audit')");
+  await evaluate("window.fixture.failSources.add('/api/projects/fixture-project/audit'); window.fixture.hold.add('/api/projects/fixture-project/audit'); window.fixture.hold.add('POST /api/projects')");
   await submit("Register a project");
+  await wait("typeof window.fixture.holds['POST /api/projects'] === 'function' && document.querySelector('form[aria-label=\"Register a project\"]').getAttribute('aria-busy') === 'true'");
+  assert.ok(await evaluate("[...document.querySelector('form[aria-label=\"Register a project\"]').querySelectorAll('input,textarea,select')].every(control => control.matches(':disabled'))"), "Project registration fields or feature choices remain editable during submission");
+  await submit("Register a project");
+  assert.equal(await evaluate("window.fixture.requests.filter(request => request.method === 'POST' && request.path === '/api/projects').length"), 1, "Pending project registration submitted a duplicate request");
+  await evaluate("window.fixture.holds['POST /api/projects']()");
   await wait(`document.querySelector('h1')?.textContent.includes('Fixture project') && !!document.querySelector('form[aria-label="Project details"]')`);
   await evaluate("document.querySelector('.project-settings > summary').click()");
   assert.ok(await evaluate("document.querySelector('input[name=editName]').getClientRects().length"), "Metadata edits are hidden from the user");
@@ -1038,7 +1043,7 @@ try {
   await evaluate("window.fixture.failSources.clear()");
   await evaluate("window.fixture.events['fixture-project'][0].actor = 'fixture-project-actor-full-identifier-123456'");
   assert.deepEqual(await evaluate("window.fixture.projects['fixture-project'].modules"), ["dependencies"]);
-  pass("empty project inventory allows administrator registration with explicit modules");
+  pass("administrator registration freezes submitted metadata and feature choices and rejects repeat submission");
 
   await setValue("input[name=editName]", "Fixture project renamed");
   await evaluate("window.fixture.confirmCount = 0; window.confirm = () => { window.fixture.confirmCount++; return false; }");
@@ -1216,13 +1221,32 @@ try {
   await evaluate("window.fixture.recent = true; document.querySelector('form[aria-label=\"Create an account\"]').requestSubmit()");
   await wait("window.fixture.createdUsers.length === 1 && document.querySelector('.account-create .notice .secret')?.textContent === 'FIXTURE-ONLY-AUTHENTICATOR-SECRET' && document.querySelector('.account-create input[name=password]').value === '' && document.querySelector('.account-create form button').textContent === 'Create account'");
   assert.ok(await evaluate("document.querySelector('.account-create').innerText.includes('Authenticator setup for temporary-account') && document.querySelector('.account-create form button').disabled"), "One-time authenticator setup lacks account context or can be overwritten");
+  await evaluate(`(() => {
+    window.fixture.clipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+    window.fixture.clipboardWrites = [];
+    window.fixture.clipboardAttempts = 0;
+    window.fixture.clipboardReject = true;
+    Object.defineProperty(navigator, 'clipboard', {configurable:true,value:{writeText:async value => {
+      window.fixture.clipboardAttempts++;
+      if (window.fixture.clipboardReject) throw new Error('Fixture clipboard unavailable');
+      window.fixture.clipboardWrites.push(value);
+    }}});
+  })()`);
+  assert.equal(await evaluate("window.fixture.clipboardAttempts"), 0, "Authenticator setup copies a key without an explicit request");
+  await evaluate("document.querySelector('.account-create .setup-key-copy button').click()");
+  await wait("document.querySelector('.account-create .setup-key-copy [role=status]').innerText.includes('copy it manually')");
+  assert.equal(await evaluate("document.querySelector('.account-create .secret').textContent"), "FIXTURE-ONLY-AUTHENTICATOR-SECRET", "Clipboard failure discarded the one-time setup key");
+  await evaluate("window.fixture.clipboardReject = false; document.querySelector('.account-create .setup-key-copy button').click()");
+  await wait("document.querySelector('.account-create .setup-key-copy [role=status]').innerText.includes('Setup key copied')");
+  assert.deepEqual(await evaluate("window.fixture.clipboardWrites"), ["FIXTURE-ONLY-AUTHENTICATOR-SECRET"], "Explicit setup-key copy used an unrelated value or wrote more than once");
+  await evaluate("if (window.fixture.clipboardDescriptor) Object.defineProperty(navigator, 'clipboard', window.fixture.clipboardDescriptor); else delete navigator.clipboard");
   assert.equal(await evaluate("(() => {const secret = 'FIXTURE-ONLY-AUTHENTICATOR-SECRET'; return [localStorage,sessionStorage].some(s => Object.keys(s).some(k => (k+s.getItem(k)).includes(secret))) || location.href.includes(secret);})()"), false, "Authenticator setup leaked into storage or a URL");
   await evaluate("window.confirm = () => false");
   await click("Fleet overview");
   assert.equal(await evaluate("location.hash"), "#/access", "Navigation silently discarded one-time authenticator setup");
   await click("Dismiss secret");
   await evaluate("window.confirm = () => true");
-  pass("account setup keeps failed input local, clears successful passwords and protects named one-time secrets without storage");
+  pass("account setup protects named one-time keys, copies only on request, retains manual fallback and avoids URL or storage exposure");
   await click("Fleet overview");
   await click("ADMIN-ONLY-HOST");
   await wait("document.querySelectorAll('.metrics .chip.good').length >= 3");

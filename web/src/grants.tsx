@@ -277,8 +277,7 @@ export function GrantEditor({
   return (
     <form className="form grant-editor" onSubmit={submit} aria-busy={busy}>
       <p className="muted grant-instructions">
-        Select an account, add or remove grants, then replace its saved grants.
-        Changes stay in this working set until you save.
+        Choose an account, then edit its working grant set.
       </p>
       <div className="grant-workspace">
         <div className="grant-current">
@@ -326,9 +325,7 @@ export function GrantEditor({
             <div className="grant-list">
               <p className="muted">
                 {working.length} of at most {grantLimit} grants
-                {changed
-                  ? ` · ${added} added, ${removed} removed (unsaved)`
-                  : ""}
+                {changed ? " · unsaved" : ""}
               </p>
               {!working.length ? (
                 <p className="muted">
@@ -598,8 +595,8 @@ export function GrantEditor({
             aria-label="Grant conflict"
           >
             <p role="status">
-              Saved grants changed while you were editing. Your draft is kept.
-              Review the latest set before replacing it.
+              Saved grants changed. Your earlier draft is kept; choose how to
+              continue.
             </p>
             {busy && <p role="status">Loading latest grants…</p>}
             {latest && (
@@ -628,9 +625,9 @@ export function GrantEditor({
                   )}
                 </details>
                 <p>
-                  Reapply only your changes: {added} added, {removed} removed.
-                  Other saved changes stay intact; review the resulting set
-                  before saving.
+                  Reapply your additions and removals to the latest set,
+                  preserving other saved changes. Review the result before
+                  saving.
                 </p>
                 <div className="button-row">
                   <button
@@ -664,7 +661,8 @@ export function GrantEditor({
         {changed && (
           <details className="grant-change-review" open>
             <summary>
-              Review changes · {added} added · {removed} removed
+              {conflict ? "Earlier draft" : "Review changes"} · {added} added ·{" "}
+              {removed} removed
             </summary>
             <div className="grant-change-columns">
               {[
@@ -731,14 +729,14 @@ export function GrantEditor({
           </small>
           <small role="status">
             {conflict
-              ? "Review the latest saved grants above before replacing this set."
+              ? "Resolve the saved-set conflict before saving."
               : !loaded
                 ? load.state === "loading"
                   ? "Loading the complete grant set…"
                   : "Load current grants before making a replacement."
                 : !changed
                   ? "No unsaved changes."
-                  : `${added} added, ${removed} removed. Ready to replace the account’s complete grant set.`}
+                  : "Review the changes above, then save."}
           </small>
         </div>
         <button
