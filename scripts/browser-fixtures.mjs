@@ -853,7 +853,8 @@ try {
   await send("Emulation.setDeviceMetricsOverride", {width:390,height:844,deviceScaleFactor:1,mobile:true},sessionId);
   await wait("!document.querySelector('.activity-filter-disclosure').open && document.querySelector('.activity-event')?.getBoundingClientRect().top < innerHeight");
   await evaluate("document.querySelector('.activity-filter-disclosure > summary').focus()");
-  await send("Input.dispatchKeyEvent",{type:"keyDown",key:"Enter",code:"Enter",windowsVirtualKeyCode:13},sessionId);
+  // Include Enter's generated text to exercise native disclosure activation.
+  await send("Input.dispatchKeyEvent",{type:"keyDown",key:"Enter",code:"Enter",windowsVirtualKeyCode:13,text:"\r",unmodifiedText:"\r"},sessionId);
   await send("Input.dispatchKeyEvent",{type:"keyUp",key:"Enter",code:"Enter",windowsVirtualKeyCode:13},sessionId);
   await wait("document.querySelector('input[name=activitySearch]').checkVisibility()");
   await setValue("input[name=activitySearch]","fixture-actor-full");
@@ -863,7 +864,7 @@ try {
   await click("Clear activity filters");
   await wait("document.querySelectorAll('.activity-event').length === 2");
   await evaluate("document.querySelector('.activity-identifiers').open = false; document.querySelector('.activity-identifiers > summary').focus()");
-  await send("Input.dispatchKeyEvent",{type:"keyDown",key:"Enter",code:"Enter",windowsVirtualKeyCode:13},sessionId);
+  await send("Input.dispatchKeyEvent",{type:"keyDown",key:"Enter",code:"Enter",windowsVirtualKeyCode:13,text:"\r",unmodifiedText:"\r"},sessionId);
   await send("Input.dispatchKeyEvent",{type:"keyUp",key:"Enter",code:"Enter",windowsVirtualKeyCode:13},sessionId);
   await wait("document.querySelector('.activity-identifiers').open && document.querySelector('.activity-identifiers').innerText.includes('fixture-actor-full-identifier-123456')");
   await send("Emulation.setDeviceMetricsOverride",{width:1440,height:1000,deviceScaleFactor:1,mobile:false},sessionId);
