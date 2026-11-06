@@ -954,7 +954,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                 <div>
                   <p className="eyebrow">YOUR INFRASTRUCTURE, AT A GLANCE</p>
                   <h1>Fleet overview</h1>
-                  <p className="muted">
+                  <p className="muted fleet-description">
                     Agent connections and resource readings. Canary uptime is
                     independent.
                   </p>
@@ -990,6 +990,10 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                   </>
                 }
               >
+                <p className="mobile-fleet-description">
+                  Agent connection and reading freshness are independent of
+                  Canary uptime.
+                </p>
                 {user.role === "admin" && !!hosts.length && (
                   <button
                     className="mobile-enroll"
@@ -2669,7 +2673,10 @@ function Jobs({
                     <Time value={j.createdAt} />
                   </td>
                   <td role="cell" aria-colindex={5} data-label="Outcome">
-                    <RouteLink to={{ view: "jobs", id: j.id }}>
+                    <RouteLink
+                      to={{ view: "jobs", id: j.id }}
+                      aria-label={`View outcome for ${jobAction(j.action)}${j.args.service || j.args.diagnostic ? ` (${j.args.service || j.args.diagnostic})` : ""} on ${hostName(j)}, created ${stamp(j.createdAt)}`}
+                    >
                       View outcome →
                     </RouteLink>
                     {j.action === "host.reboot" && (
@@ -2680,6 +2687,7 @@ function Jobs({
                     )}
                     <JobCancellation
                       job={j}
+                      targetLabel={`${jobAction(j.action)}${j.args.service || j.args.diagnostic ? ` (${j.args.service || j.args.diagnostic})` : ""} on ${hostName(j)}, created ${stamp(j.createdAt)}`}
                       unavailable={unavailable}
                       onChanged={onChanged}
                     />

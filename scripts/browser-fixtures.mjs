@@ -931,13 +931,23 @@ try {
       const l = c => c.slice(0, 3).map(v => { v /= 255; return v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }).reduce((sum,v,i) => sum + v * [.2126,.7152,.0722][i], 0);
       const ratio = (a,b) => (Math.max(l(a),l(b)) + .05) / (Math.min(l(a),l(b)) + .05);
       const input = getComputedStyle(document.querySelector('input.search'));
-      return {status: ratio(fg,blend), control: ratio(rgb(input.borderTopColor),rgb(input.backgroundColor))};
+      const background = node => {
+        if (!node) return [255,255,255];
+        const color = rgb(getComputedStyle(node).backgroundColor), behind = background(node.parentElement);
+        return color.slice(0,3).map((v,i) => v * (color[3] ?? 1) + behind[i] * (1 - (color[3] ?? 1)));
+      };
+      const metadata = ['.fleet-table th', '.fleet-table .time-trigger', '.fleet-heading .muted'].map(selector => {
+        const node = document.querySelector(selector);
+        return {selector, ratio: ratio(rgb(getComputedStyle(node).color),background(node))};
+      });
+      return {status: ratio(fg,blend), control: ratio(rgb(input.borderTopColor),rgb(input.backgroundColor)), metadata};
     })()`);
     assert.ok(ratios.status >= 4.5, `Good status text contrast is below 4.5:1 in ${mode}: ${ratios.status}`);
     assert.ok(ratios.control >= 3, `Enabled control border contrast is below 3:1 in ${mode}: ${ratios.control}`);
+    for (const item of ratios.metadata) assert.ok(item.ratio >= 4.5, `Operational metadata contrast is below 4.5:1 in ${mode} (${item.selector}): ${item.ratio}`);
   }
   await evaluate("document.documentElement.dataset.mode = 'light'");
-  pass("actual light/dark status text meets 4.5:1 and enabled input boundaries meet 3:1 contrast");
+  pass("actual light/dark status and operational metadata meet 4.5:1 and enabled input boundaries meet 3:1 contrast");
 
   await evaluate("window.fixture.failSources.add('/api/audit'); window.fixture.hosts[0].latest.cpuPercent = 37");
   await wait("[...document.querySelectorAll('[role=alert]')].some(a => a.innerText.includes('Activity unavailable')) && document.querySelector('.fleet-table').innerText.includes('37.0%')");
@@ -1036,20 +1046,26 @@ try {
   await submit("Project details");
   await wait("document.querySelector('.project-edit-feedback [role=alert]')?.innerText.includes('Verify identity') && document.querySelector('input[name=editName]').value === 'Fixture project renamed'");
   await evaluate("window.fixture.recent = true");
-  await evaluate("window.fixture.externalEdit('fixture-project')");
+  await evaluate("document.querySelector('.project-settings .planned-features').open = true; document.querySelector('.project-settings input[value=content]').click(); window.fixture.externalEdit('fixture-project'); window.fixture.projects['fixture-project'].modules.push('documentation')");
   await submit("Project details");
   await wait("document.querySelector('.notice.conflict')?.innerText.includes('saved by someone else') && document.querySelector('input[name=editName]').value === 'Fixture project renamed'");
   assert.equal(await evaluate("window.fixture.projects['fixture-project'].name"), "Fixture project", "Stale metadata save overwrote a newer revision");
   assert.equal(await evaluate("[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Save project details').disabled"), true, "Save stays enabled during an unresolved conflict");
   await capture("06-project-conflict");
-  await click("Keep my edits on revision");
+  const projectWrites = await evaluate("window.fixture.requests.filter(r => r.method === 'PUT' && r.path === '/api/projects/fixture-project').length");
+  await click("Reapply my changes for review");
+  assert.equal(await evaluate("document.querySelector('textarea[name=editDescription]').value"), "Changed elsewhere", "Reapplying a name edit restored an outdated untouched description");
+  assert.ok(await evaluate("document.querySelector('.project-settings input[value=content]').checked && document.querySelector('.project-settings input[value=documentation]').checked"), "Reapplying discarded a local or concurrently selected future feature");
+  assert.equal(await evaluate("window.fixture.requests.filter(r => r.method === 'PUT' && r.path === '/api/projects/fixture-project').length"), projectWrites, "Conflict review saved without explicit submission");
   await evaluate("window.fixture.hold.add('PUT /api/projects/fixture-project')");
   await submit("Project details");
   await wait("typeof window.fixture.holds['PUT /api/projects/fixture-project'] === 'function'");
   assert.ok(await evaluate("document.querySelector('input[name=editName]').disabled && document.querySelector('textarea[name=editDescription]').disabled && document.querySelector('input[value=dependencies]').matches(':disabled')"), "Project controls remain editable during a pending save");
   await evaluate("window.fixture.holds['PUT /api/projects/fixture-project']()");
   await wait("window.fixture.projects['fixture-project'].name === 'Fixture project renamed' && window.fixture.projects['fixture-project'].revision === 3 && document.querySelector('h1').textContent.includes('renamed')");
-  pass("stale metadata saves reload as a conflict, keep unsaved input and save only after explicit resolution");
+  assert.equal(await evaluate("window.fixture.projects['fixture-project'].description"), "Changed elsewhere", "Reviewed save discarded the newer untouched description");
+  assert.ok(await evaluate("window.fixture.projects['fixture-project'].modules.includes('content') && window.fixture.projects['fixture-project'].modules.includes('documentation')"), "Reviewed save discarded intended or concurrent feature changes");
+  pass("stale metadata saves preserve intended edits and newer untouched fields, and save only after explicit resolution");
   pass("pending project saves lock fields and feature choices until the submitted revision completes");
   await wait("[...document.querySelectorAll('.project-actor code')].some(c => c.textContent === 'fixture-project-actor-full-identifier-123456')");
   await evaluate("[...document.querySelectorAll('.project-actor')].find(d => d.textContent.includes('fixture-project-actor-full-identifier-123456')).open = true");

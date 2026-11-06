@@ -1541,12 +1541,12 @@ textarea:disabled {
     padding: 12px 14px;
   }
   .fleet-summary > summary::after {
-    content: "+";
+    content: "▸" / "";
     margin-left: 12px;
     color: var(--accent-text);
   }
   .fleet-summary[open] > summary::after {
-    content: "−";
+    content: "▾" / "";
   }
   .fleet-summary > .metrics {
     margin: 0;
@@ -1577,10 +1577,10 @@ textarea:disabled {
     color: var(--accent-text);
   }
   .resource-details > summary::before {
-    content: "+ ";
+    content: "▸ " / "";
   }
   .resource-details[open] > summary::before {
-    content: "− ";
+    content: "▾ " / "";
   }
   .mobile-reading-time {
     display: block;
@@ -1762,12 +1762,12 @@ textarea:disabled {
     font-size: 12px;
   }
   .observation-counts > summary::after {
-    content: "+";
+    content: "▸" / "";
     color: var(--accent-text);
     margin-left: auto;
   }
   .observation-counts[open] > summary::after {
-    content: "−";
+    content: "▾" / "";
   }
   .observation-counts .metrics {
     margin-bottom: 12px;
@@ -2480,6 +2480,43 @@ textarea:disabled {
 .comparison-resource-summary {
   display: none;
 }
+.mobile-fleet-description {
+  display: none;
+}
+.change-comparison-wrap {
+  max-width: 100%;
+  overflow: auto;
+  margin: 12px 0;
+}
+.change-comparison-wrap[tabindex] {
+  max-height: 340px;
+}
+.change-comparison {
+  table-layout: fixed;
+  white-space: normal;
+  background: var(--surface);
+}
+.notice .change-comparison :is(th, td) {
+  padding: 10px;
+  font-size: 14px;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.change-comparison tbody th {
+  text-transform: none;
+  letter-spacing: 0;
+}
+.change-comparison small {
+  display: block;
+  font-weight: 400;
+}
+.fleet-table th,
+.github th,
+.panel-heading > .muted,
+.bounded-counts small {
+  font-size: 14px;
+}
 .activity-event {
   min-width: 0;
   flex: 1;
@@ -2875,10 +2912,10 @@ textarea:disabled {
     text-underline-offset: 3px;
   }
   .resource-disclosure-action::after {
-    content: " ▾" / "";
+    content: " ▸" / "";
   }
   .resource-details[open] .resource-disclosure-action::after {
-    content: " ▴" / "";
+    content: " ▾" / "";
   }
   .fleet-table tr {
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 10em), 1fr));
@@ -3212,6 +3249,93 @@ textarea:disabled {
 @media (max-width: 720px) {
   .sidebar {
     padding: 10px 14px;
+  }
+  .fleet-heading .fleet-description {
+    display: none;
+  }
+  .mobile-fleet-description {
+    display: block;
+    padding: 0 14px;
+    color: var(--text-2);
+    font-size: 14px;
+  }
+  .fleet-panel > .panel-heading {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .fleet-panel .attention-filter {
+    justify-self: end;
+    min-width: 0;
+    max-width: 100%;
+    margin: 0;
+    white-space: normal;
+  }
+  .fleet-panel .search {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+  .change-comparison thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .change-comparison,
+  .change-comparison tbody {
+    display: block;
+  }
+  .change-comparison tbody tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 14px;
+    padding: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .notice .change-comparison tbody :is(th, td) {
+    display: block;
+    padding: 0;
+    border: 0;
+  }
+  .change-comparison tbody th {
+    grid-column: 1 / -1;
+  }
+  .change-comparison td::before {
+    content: attr(data-label) / "";
+    display: block;
+    color: var(--text-2);
+    font-size: 13px;
+    margin-bottom: 4px;
+  }
+  .github-heading {
+    padding: 10px 14px;
+    gap: 6px;
+  }
+  .github .collection-summary {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    gap: 0 8px;
+    padding: 0 14px 4px;
+  }
+  .collection-summary > * {
+    min-width: 0;
+  }
+  .collection-summary details[open] {
+    grid-column: 1 / -1;
+  }
+  .observation-counts.responsive-details > summary {
+    padding-block: 4px;
+    min-height: 44px;
+  }
+  .github .coverage-note p {
+    margin: 0;
+  }
+  .github .section {
+    padding: 12px 14px;
+  }
+  .github .section h4 {
+    margin: 8px 0;
   }
   .brand img {
     width: 28px;

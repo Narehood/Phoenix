@@ -60,7 +60,7 @@ export function Time({ value }: { value: number }) {
         }}
       >
         <time dateTime={new Date(value).toISOString()}>{label}</time>
-        <span aria-hidden="true">{expanded ? "▴" : "▾"}</span>
+        <span aria-hidden="true">{expanded ? "▾" : "▸"}</span>
       </button>
       <span id={id} className="time-exact" hidden={!expanded}>
         {stamp(value)}
@@ -73,10 +73,12 @@ export function Time({ value }: { value: number }) {
 export function ResponsiveDetails({
   children,
   label,
+  summaryLabel,
   className = "",
 }: {
   children: ReactNode;
   label: ReactNode;
+  summaryLabel?: string;
   className?: string;
 }) {
   const [open, setOpen] = useState(
@@ -94,9 +96,74 @@ export function ResponsiveDetails({
       open={open}
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
-      <summary>{label}</summary>
+      <summary aria-label={summaryLabel}>{label}</summary>
       {children}
     </details>
+  );
+}
+
+export function ChangeComparison({
+  label,
+  rows,
+  itemHeading = "Field",
+  savedHeading = "Saved now",
+}: {
+  label: string;
+  rows: {
+    key: string;
+    label: ReactNode;
+    saved: ReactNode;
+    proposed: ReactNode;
+    changed?: boolean;
+  }[];
+  itemHeading?: string;
+  savedHeading?: string;
+}) {
+  return (
+    <div
+      className="change-comparison-wrap"
+      tabIndex={rows.length > 8 ? 0 : undefined}
+    >
+      <table
+        className="change-comparison"
+        role="table"
+        aria-colcount={3}
+        aria-label={label}
+      >
+        <thead role="rowgroup">
+          <tr role="row">
+            <th role="columnheader" scope="col" aria-colindex={1}>
+              {itemHeading}
+            </th>
+            <th role="columnheader" scope="col" aria-colindex={2}>
+              {savedHeading}
+            </th>
+            <th role="columnheader" scope="col" aria-colindex={3}>
+              After reapplying
+            </th>
+          </tr>
+        </thead>
+        <tbody role="rowgroup">
+          {rows.map((row) => (
+            <tr
+              role="row"
+              key={row.key}
+              className={row.changed ? "changed" : undefined}
+            >
+              <th role="rowheader" scope="row" aria-colindex={1}>
+                {row.label}
+              </th>
+              <td role="cell" aria-colindex={2} data-label={savedHeading}>
+                {row.saved}
+              </td>
+              <td role="cell" aria-colindex={3} data-label="After reapplying">
+                {row.proposed}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

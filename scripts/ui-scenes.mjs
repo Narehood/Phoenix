@@ -122,7 +122,7 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await shot("host-inventory-feedback-desktop");
   await evaluate("window.fixture.failWrites.clear(); window.fixture.hosts[0].name = 'edge-01 changed elsewhere'; window.fixture.hosts[0].groups = ['Operations']; document.querySelector('.host-inventory-form').requestSubmit()");
   await wait("!!document.querySelector('.host-inventory-form .host-form-feedback .retained')");
-  await evaluate("document.querySelector('.host-inventory-form .retained details').open = true");
+  await wait("!!document.querySelector('.host-inventory-form .change-comparison')");
   await section(".host-inventory-form");
   await shot("host-inventory-conflict-desktop");
   await evaluate("[...document.querySelectorAll('.host-inventory-form button')].find(b => b.textContent === 'Load saved values').click(); window.fixture.hosts[0].name = 'edge-01'; window.fixture.hosts[0].groups = ['Production']");
@@ -168,6 +168,16 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await wait("document.querySelector('.project-edit-feedback [role=alert]')?.innerText.includes('Verify identity')");
   await shot("project-verification-feedback-desktop");
   await evaluate("(() => { window.fixture.recent = true; const input = document.querySelector('input[name=editName]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'Website'); input.dispatchEvent(new Event('input', {bubbles:true})); document.querySelector('.project-edit-feedback [aria-label=\"Dismiss error\"]').click(); })()");
+  const websiteDescription = await evaluate("window.fixture.projects.website.description");
+  await evaluate("(() => { const input = document.querySelector('input[name=editName]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'Website revised'); input.dispatchEvent(new Event('input', {bubbles:true})); window.fixture.externalEdit('website'); })()");
+  await evaluate("document.querySelector('form[aria-label=\"Project details\"]').requestSubmit()");
+  await wait("!!document.querySelector('.project-settings .change-comparison')");
+  await section(".project-settings");
+  await shot("project-conflict-desktop");
+  await click("Discard my edits");
+  await wait("!document.querySelector('.project-settings .notice.conflict') && document.querySelector('input[name=editName]').value === 'Website'");
+  await evaluate(`window.fixture.projects.website.description = ${JSON.stringify(websiteDescription)}; window.fixture.projects.website.revision++`);
+  await wait(`document.querySelector('textarea[name=editDescription]').value === ${JSON.stringify(websiteDescription)}`);
   await navigate("Access & accounts");
   await wait("document.querySelector('select[name=user] option[value=operator-fixture]')");
   await top();

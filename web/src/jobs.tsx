@@ -14,10 +14,12 @@ import {
 
 export function JobCancellation({
   job,
+  targetLabel,
   unavailable,
   onChanged,
 }: {
   job: Job;
+  targetLabel: string;
   unavailable: boolean;
   onChanged: () => void;
 }) {
@@ -35,6 +37,17 @@ export function JobCancellation({
   const eligible =
     ["queued", "dispatched"].includes(job.state) && !job.cancelRequested;
   const cancelled = job.state === "cancelled";
+  const disclosureLabel = busy
+    ? "Requesting cancellation…"
+    : accepted
+      ? cancelled
+        ? "Cancelled"
+        : "Cancellation requested"
+      : unavailable || job.canCancel === undefined
+        ? "Cancellation unavailable"
+        : job.canCancel
+          ? "Cancellation options"
+          : "Cancellation restricted";
   const receipt = cancelled
     ? !job.dispatchedAt
       ? "Cancelled before dispatch. This request was not sent to the agent."
@@ -70,24 +83,14 @@ export function JobCancellation({
   return (
     <ResponsiveDetails
       className="job-cancel"
-      label={
-        busy
-          ? "Requesting cancellation…"
-          : accepted
-            ? cancelled
-              ? "Cancelled"
-              : "Cancellation requested"
-            : unavailable || job.canCancel === undefined
-              ? "Cancellation unavailable"
-              : job.canCancel
-                ? "Cancellation options"
-                : "Cancellation restricted"
-      }
+      label={disclosureLabel}
+      summaryLabel={`${disclosureLabel}: ${targetLabel}`}
     >
       <div className="job-cancel-feedback" aria-busy={busy}>
         {!accepted && (
           <button
             type="button"
+            aria-label={`${busy ? "Requesting cancellation of" : "Request cancellation of"} ${targetLabel}`}
             disabled={
               busy || !eligible || unavailable || job.canCancel !== true
             }

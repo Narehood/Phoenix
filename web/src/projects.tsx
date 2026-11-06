@@ -3,6 +3,7 @@ import { api, ApiError } from "./api";
 import { GitHubPanel } from "./github";
 import type { Project, ProjectCapabilities, ProjectEvent, User } from "./types";
 import {
+  ChangeComparison,
   Empty,
   ErrorNotice,
   StatusNotice,
@@ -470,6 +471,33 @@ const isDirty = (e: Edit) =>
   e.description !== e.baseline.description ||
   !sameModules(e.modules, e.baseline.modules);
 
+function reapplyEdit(edit: Edit, latest: Project): Edit {
+  const removed = new Set(
+    edit.baseline.modules.filter((module) => !edit.modules.includes(module)),
+  );
+  const added = edit.modules.filter(
+    (module) => !edit.baseline.modules.includes(module),
+  );
+  return {
+    baseline: latest,
+    name: edit.name !== edit.baseline.name ? edit.name : latest.name,
+    description:
+      edit.description !== edit.baseline.description
+        ? edit.description
+        : latest.description,
+    modules: [
+      ...new Set([
+        ...latest.modules.filter((module) => !removed.has(module)),
+        ...added,
+      ]),
+    ],
+  };
+}
+const featureNames = (modules: string[]) =>
+  modules
+    .map((module) => moduleInfo.find(([key]) => key === module)?.[1] || module)
+    .join(", ") || "None";
+
 function capabilityTone(state: string, current: boolean): ToneName {
   if (!current) return "neutral";
   if (state === "fresh") return "good";
@@ -740,13 +768,7 @@ function ProjectDetail({
       </>
     );
   const dirty = !!edit && isDirty(edit);
-  const differs = conflict &&
-    edit && {
-      name: conflict.name !== edit.name,
-      description: conflict.description !== edit.description,
-      modules: !sameModules(conflict.modules, edit.modules),
-      archived: conflict.archived !== edit.baseline.archived,
-    };
+  const proposed = conflict && edit ? reapplyEdit(edit, conflict) : null;
   return (
     <>
       <div className="page-heading project-page-heading">
@@ -855,7 +877,7 @@ function ProjectDetail({
                     onSubmit={save}
                     aria-label="Project details"
                   >
-                    {conflict && differs && (
+                    {conflict && proposed && (
                       <div className="notice conflict" role="alert">
                         <b>
                           Revision {conflict.revision} was saved by someone
@@ -863,58 +885,60 @@ function ProjectDetail({
                         </b>
                         <p>
                           Your unsaved edits are based on revision{" "}
-                          {edit.baseline.revision}. Compare and choose how to
-                          continue; nothing is overwritten automatically.
+                          {edit.baseline.revision}. Compare the result of
+                          reapplying your changes below. Newer untouched fields
+                          and unrelated feature changes stay intact. Nothing is
+                          saved automatically.
                         </p>
-                        <div className="table-scroll">
-                          <table>
-                            <thead>
-                              <tr>
-                                <th>Field</th>
-                                <th>Saved (revision {conflict.revision})</th>
-                                <th>Your edits</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              <tr className={differs.name ? "changed" : ""}>
-                                <td>Name</td>
-                                <td>{conflict.name}</td>
-                                <td>{edit.name}</td>
-                              </tr>
-                              <tr
-                                className={differs.description ? "changed" : ""}
-                              >
-                                <td>Description</td>
-                                <td className="project-description">
-                                  {conflict.description || "None"}
-                                </td>
-                                <td className="project-description">
-                                  {edit.description || "None"}
-                                </td>
-                              </tr>
-                              <tr className={differs.modules ? "changed" : ""}>
-                                <td>Modules</td>
-                                <td>{conflict.modules.join(", ") || "None"}</td>
-                                <td>{edit.modules.join(", ") || "None"}</td>
-                              </tr>
-                              <tr className={differs.archived ? "changed" : ""}>
-                                <td>Archived</td>
-                                <td>{conflict.archived ? "Yes" : "No"}</td>
-                                <td>{edit.baseline.archived ? "Yes" : "No"}</td>
-                              </tr>
-                            </tbody>
-                          </table>
-                        </div>
+                        <ChangeComparison
+                          label="Project changes for review"
+                          savedHeading={`Saved (revision ${conflict.revision})`}
+                          rows={[
+                            {
+                              key: "name",
+                              label: "Name",
+                              saved: conflict.name,
+                              proposed: proposed.name,
+                              changed: conflict.name !== proposed.name,
+                            },
+                            {
+                              key: "description",
+                              label: "Description",
+                              saved: conflict.description || "None",
+                              proposed: proposed.description || "None",
+                              changed:
+                                conflict.description !== proposed.description,
+                            },
+                            {
+                              key: "modules",
+                              label: "Features",
+                              saved: featureNames(conflict.modules),
+                              proposed: featureNames(proposed.modules),
+                              changed: !sameModules(
+                                conflict.modules,
+                                proposed.modules,
+                              ),
+                            },
+                            {
+                              key: "archived",
+                              label: "Archived",
+                              saved: conflict.archived ? "Yes" : "No",
+                              proposed: proposed.baseline.archived
+                                ? "Yes"
+                                : "No",
+                            },
+                          ]}
+                        />
                         <div className="button-row">
                           <button
                             type="button"
                             onClick={() => {
-                              setEdit({ ...edit, baseline: conflict });
+                              setEdit(proposed);
                               setConflict(null);
                               setError(null);
                             }}
                           >
-                            Keep my edits on revision {conflict.revision}
+                            Reapply my changes for review
                           </button>
                           <button
                             type="button"

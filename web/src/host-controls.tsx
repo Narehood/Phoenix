@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api, ApiError } from "./api";
 import type { Canary, Host, Job } from "./types";
 import { RouteLink, useUnsavedChanges } from "./navigation";
-import { ErrorNotice, StatusNotice, Time } from "./ui";
+import { ChangeComparison, ErrorNotice, StatusNotice, Time } from "./ui";
 
 const same = (a: unknown, b: unknown) =>
   JSON.stringify(a) === JSON.stringify(b);
@@ -129,12 +129,26 @@ function inventoryValue(host: Host) {
   };
 }
 
+type InventoryDraft = ReturnType<typeof inventoryValue>;
+function reapplyInventory(
+  draft: InventoryDraft,
+  baseline: InventoryDraft,
+  latest: InventoryDraft,
+): InventoryDraft {
+  return {
+    ...latest,
+    name: draft.name !== baseline.name ? draft.name : latest.name,
+    tags: draft.tags !== baseline.tags ? draft.tags : latest.tags,
+    groups: draft.groups !== baseline.groups ? draft.groups : latest.groups,
+  };
+}
+
 function Feedback({
   error,
   dismiss,
   notice,
   changed,
-  latest,
+  comparison,
   keep,
   keepLabel,
   reset,
@@ -145,7 +159,7 @@ function Feedback({
   dismiss: () => void;
   notice: string;
   changed: boolean;
-  latest?: ReactNode;
+  comparison?: ReactNode;
   keep: () => void;
   keepLabel: string;
   reset: () => void;
@@ -161,10 +175,7 @@ function Feedback({
           <p>
             Saved values changed while you were editing. Your draft is kept.
           </p>
-          <details>
-            <summary>Show saved values</summary>
-            {latest}
-          </details>
+          {comparison}
           <div className="button-row">
             <button type="button" disabled={busy} onClick={keep}>
               {keepLabel}
@@ -191,6 +202,10 @@ export function HostInventoryForm({
   onVerify: () => void;
 }) {
   const model = useDraft(inventoryValue(host), "host inventory", onSaved, true);
+  const latest = model.incoming;
+  const proposed = latest
+    ? reapplyInventory(model.draft, model.baseline, latest)
+    : null;
   return (
     <form
       className="form host-inventory-form"
@@ -224,45 +239,32 @@ export function HostInventoryForm({
         changed={!!model.incoming}
         keepLabel="Reapply edited fields for review"
         keep={() => {
-          const latest = model.incoming;
-          if (!latest) return;
-          model.setDraft({
-            ...latest,
-            name:
-              model.draft.name !== model.baseline.name
-                ? model.draft.name
-                : latest.name,
-            tags:
-              model.draft.tags !== model.baseline.tags
-                ? model.draft.tags
-                : latest.tags,
-            groups:
-              model.draft.groups !== model.baseline.groups
-                ? model.draft.groups
-                : latest.groups,
-          });
+          if (!proposed) return;
+          model.setDraft(proposed);
           model.keepDraft();
         }}
         reset={model.reset}
         onVerify={onVerify}
-        latest={
-          model.incoming && (
-            <dl className="facts">
-              <dt>Name</dt>
-              <dd>{model.incoming.name}</dd>
-              <dt>Tags</dt>
-              <dd>{model.incoming.tags || "None"}</dd>
-              <dt>Groups</dt>
-              <dd>{model.incoming.groups || "None"}</dd>
-            </dl>
+        comparison={
+          latest &&
+          proposed && (
+            <ChangeComparison
+              label="Inventory changes for review"
+              rows={(["name", "tags", "groups"] as const).map((field) => ({
+                key: field,
+                label: { name: "Name", tags: "Tags", groups: "Groups" }[field],
+                saved: latest[field] || "None",
+                proposed: proposed[field] || "None",
+                changed: latest[field] !== proposed[field],
+              }))}
+            />
           )
         }
       />
       {model.incoming && (
         <p className="muted">
-          Keeping your draft reapplies only the fields you edited. Newer values
-          of untouched fields stay intact. Review permission-bearing groups
-          before saving.
+          Reapplying uses only the fields you edited. Newer values of untouched
+          fields stay intact. Review permission-bearing groups before saving.
         </p>
       )}
       {model.awaitingLatest && !model.incoming && (
@@ -371,6 +373,18 @@ export function MappingForm({
       const [sourceId, monitorId] = key.split("/");
       return { sourceId, monitorId };
     });
+  const latest = model.incoming;
+  const removed = new Set(
+    model.baseline.filter((key) => !model.draft.includes(key)),
+  );
+  const added = model.draft.filter((key) => !model.baseline.includes(key));
+  const proposed = latest
+    ? [
+        ...new Set([...latest.filter((key) => !removed.has(key)), ...added]),
+      ].sort()
+    : null;
+  const comparisonKeys =
+    latest && proposed ? [...new Set([...latest, ...proposed])].sort() : [];
   const name = (key: string) => {
     const [source, monitor] = key.split("/");
     return (
@@ -425,20 +439,8 @@ export function MappingForm({
         changed={!!model.incoming}
         keepLabel="Reapply mapping changes for review"
         keep={() => {
-          if (!model.incoming) return;
-          const removed = new Set(
-            model.baseline.filter((key) => !model.draft.includes(key)),
-          );
-          const added = model.draft.filter(
-            (key) => !model.baseline.includes(key),
-          );
-          const merged = [
-            ...new Set([
-              ...model.incoming.filter((key) => !removed.has(key)),
-              ...added,
-            ]),
-          ].sort();
-          if (merged.length > 20) {
+          if (!proposed) return;
+          if (proposed.length > 20) {
             model.setError(
               new Error(
                 "The combined set exceeds 20 mappings. Reduce your draft before reapplying, or load saved values.",
@@ -446,21 +448,36 @@ export function MappingForm({
             );
             return;
           }
-          model.setDraft(merged);
+          model.setDraft(proposed);
           model.keepDraft();
         }}
         reset={model.reset}
         onVerify={onVerify}
-        latest={
-          model.incoming && (
-            <ul>
-              {model.incoming.length ? (
-                model.incoming.map((v) => <li key={v}>{name(v)}</li>)
-              ) : (
-                <li>No monitors mapped</li>
-              )}
-            </ul>
-          )
+        comparison={
+          latest &&
+          proposed &&
+          (comparisonKeys.length ? (
+            <ChangeComparison
+              label="Monitor mapping changes for review"
+              itemHeading="Monitor"
+              rows={comparisonKeys.map((key) => ({
+                key,
+                label: (
+                  <>
+                    {name(key) !== key && <strong>{name(key)}</strong>}
+                    <small>
+                      <code>{key}</code>
+                    </small>
+                  </>
+                ),
+                saved: latest.includes(key) ? "Mapped" : "Not mapped",
+                proposed: proposed.includes(key) ? "Mapped" : "Not mapped",
+                changed: latest.includes(key) !== proposed.includes(key),
+              }))}
+            />
+          ) : (
+            <p>No saved or proposed monitor mappings.</p>
+          ))
         }
       />
       {model.incoming && (

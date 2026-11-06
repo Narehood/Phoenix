@@ -611,7 +611,15 @@ export function GrantEditor({
                       {latest.map((grant) => (
                         <li key={key(grant)}>
                           {actionLabels[grant.action] || grant.action} ·{" "}
-                          {grant.scopeType}: <code>{grant.scope}</code>
+                          {grant.scopeType === "all"
+                            ? "All hosts"
+                            : `${grant.scopeType === "project" ? "Project" : grant.scopeType === "host" ? "Host" : "Group"}: ${scopeName(grant) || grant.scope}`}
+                          {grant.scopeType !== "all" && (
+                            <>
+                              {" "}
+                              · ID: <code>{grant.scope}</code>
+                            </>
+                          )}
                         </li>
                       ))}
                     </ul>
