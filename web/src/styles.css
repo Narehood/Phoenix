@@ -3393,6 +3393,7 @@ textarea:disabled {
   }
   .github.observed-repository .github-heading {
     flex-wrap: wrap;
+    gap: 4px;
   }
   .observed-repository .github-section-title {
     position: absolute;
@@ -3405,6 +3406,11 @@ textarea:disabled {
   .observed-repository .github-heading .button-row {
     width: auto;
     margin-left: auto;
+    gap: 4px;
+  }
+  .observed-repository .github-heading .button-row > button {
+    padding-inline: 6px;
+    min-width: 44px;
   }
   .observed-repository .desktop-repository-settings {
     display: none;
