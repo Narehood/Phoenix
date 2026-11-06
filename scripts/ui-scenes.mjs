@@ -171,11 +171,10 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await wait("typeof window.fixture.holds['POST /api/projects/website/github/sync'] === 'function'");
   await top();
   await shot("repository-refresh-pending-desktop");
-  await evaluate("window.fixture.holds['POST /api/projects/website/github/sync']()");
+  await evaluate("window.fixture.githubViews.website.nextAttemptAt = Date.now() + 900000; window.fixture.holds['POST /api/projects/website/github/sync']()");
   await wait("document.querySelector('.github-feedback')?.innerText.includes('Refresh is cooling down')");
   await section(".github .section");
   await shot("repository-checks-desktop");
-  await evaluate("window.fixture.githubViews.website.nextAttemptAt = Date.now() + 900000; window.dispatchEvent(new Event('focus'))");
   await wait("document.querySelector('.repository-refresh small')?.innerText.includes('Eligible at')");
   await top();
   await shot("repository-refresh-cooldown-desktop");

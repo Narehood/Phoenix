@@ -1163,12 +1163,11 @@ try {
   await wait("typeof window.fixture.holds['POST /api/projects/fixture-project/github/sync'] === 'function' && [...document.querySelectorAll('.github button')].some(b => b.textContent === 'Requesting refresh…' && b.disabled && b.getAttribute('aria-busy') === 'true')");
   await evaluate("[...document.querySelectorAll('.github button')].find(b => b.textContent === 'Requesting refresh…').click()");
   assert.equal(await evaluate("window.fixture.requests.filter(r => r.method === 'POST' && r.path.endsWith('/github/sync')).length"), 1, "Pending GitHub refresh submitted a repeat request");
-  await evaluate("window.fixture.holds['POST /api/projects/fixture-project/github/sync']()");
+  await evaluate("window.fixture.githubViews['fixture-project'].nextAttemptAt = Date.now() + 900000; window.fixture.holds['POST /api/projects/fixture-project/github/sync']()");
   await wait("document.body.innerText.includes('Refresh is cooling down')");
   pass("GitHub refresh shows pending feedback and rejects repeated submission before a response");
   assert.ok(await evaluate("[...document.querySelectorAll('.github-feedback [role=status]')].some(s => s.innerText.includes('Refresh is cooling down'))"), "Refresh feedback is outside its status region");
   assert.ok(await evaluate("window.fixture.requests.some(r => r.method === 'POST' && r.path === '/api/projects/fixture-project/github/sync')"));
-  await evaluate("window.fixture.githubViews['fixture-project'].nextAttemptAt = Date.now() + 900000; window.dispatchEvent(new Event('focus'))");
   await wait("document.querySelector('.repository-refresh small')?.innerText.includes('Eligible at') && document.querySelector('.repository-refresh button').disabled");
   pass("retained, partial, unreadable and truncated GitHub data stay explicit; refresh cooldown is reported");
 
