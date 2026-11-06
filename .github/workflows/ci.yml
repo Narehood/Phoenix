@@ -9,14 +9,24 @@ on:
         description: Resolve dependency manifests for review instead of running fixtures
         type: boolean
         default: false
+      publish_release:
+        description: Publish a testing prerelease from a successful main build
+        type: boolean
+        default: false
+      release_tag:
+        description: Existing testing tag, for example v0.1.0-rc.1
+        type: string
+      source_run:
+        description: Successful main Linux validation run ID to promote
+        type: string
 permissions:
   contents: read
 concurrency:
-  group: phoenix-validation-${{ github.ref }}
-  cancel-in-progress: true
+  group: phoenix-validation-${{ github.ref }}-${{ inputs.publish_release && 'release' || inputs.dependency_refresh && 'dependencies' || 'checks' }}
+  cancel-in-progress: ${{ !inputs.publish_release }}
 jobs:
   dependency-refresh:
-    if: github.event_name == 'workflow_dispatch' && inputs.dependency_refresh
+    if: github.event_name == 'workflow_dispatch' && inputs.dependency_refresh && !inputs.publish_release
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -48,9 +58,50 @@ jobs:
             .validation/dependency-refresh.json
           if-no-files-found: error
           retention-days: 7
+  publish-release:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_release && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+      packages: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      SOURCE_RUN: ${{ inputs.source_run }}
+      DOCKER_CONFIG: ${{ runner.temp }}/phoenix-release-docker
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Exercise release checksum and archive guards
+        run: python3 scripts/validate.py --timeout 60 -- python3 -m unittest discover -s scripts -p test_prepare_release.py
+      - name: Verify and prepare the exact tested build
+        run: python3 scripts/validate.py --timeout 180 -- python3 scripts/prepare_release.py prepare "$SOURCE_RUN" "$RELEASE_TAG"
+      # Publishing is an explicitly requested external operation, not validation.
+      - name: Publish and pull back versioned container images
+        run: |
+          IMAGE=$(jq -r .image .validation/release-assets/release-manifest.json)
+          EXPECTED=$(jq -r .imageId .validation/release-assets/release-manifest.json)
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          docker push "$IMAGE"
+          docker pull "$IMAGE"
+          test "$(docker image inspect --format '{{.Id}}' "$IMAGE")" = "$EXPECTED"
+          docker tag "$IMAGE" ghcr.io/narehood/phoenix:testing
+          docker push ghcr.io/narehood/phoenix:testing
+      - name: Upload and verify assets before publishing the prerelease
+        run: |
+          SOURCE=$(jq -r .sourceSha .validation/release-assets/release-manifest.json)
+          gh release create "$RELEASE_TAG" .validation/release-assets/* --repo "$GITHUB_REPOSITORY" --verify-tag --target "$SOURCE" --title "Phoenix $RELEASE_TAG — Debian testing" --notes-file .validation/release-notes.md --draft --prerelease --latest=false
+          python3 scripts/prepare_release.py verify "$SOURCE_RUN" "$RELEASE_TAG"
+          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease --latest=false
+      - name: Remove temporary registry credentials
+        if: always()
+        run: docker logout ghcr.io
   debian-fixtures:
     name: ${{ inputs.dependency_refresh && 'Dependency refresh (validation skipped)' || 'debian-fixtures' }}
-    if: github.event_name != 'workflow_dispatch' || !inputs.dependency_refresh
+    if: github.event_name != 'workflow_dispatch' || (!inputs.dependency_refresh && !inputs.publish_release)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

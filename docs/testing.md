@@ -8,6 +8,14 @@ manually approves it for review; passing checks do not grant that approval.
 
 ## Get the exact tested build
 
+Published [testing prereleases](https://github.com/Narehood/Phoenix/releases) provide
+permanent Linux kit/image downloads, a standalone `compose.release.yaml`, setup
+instructions, source identity and checksums. The matching server image is published
+as `ghcr.io/narehood/phoenix:<version>`; `testing` follows the most recent testing
+release. Use the versioned tag for a repeatable test. GHCR may require authentication
+if its package visibility is private; the image download supports `docker load`
+without registry access. These prereleases preserve the development acceptance limits.
+
 Open the draft PR's **Phoenix Linux validation** check. Use a successful run for
 the current head, and download `phoenix-linux-amd64-test-kit` from that run's
 artifacts. Artifacts expire after seven days; rerun validation if needed. The kit
@@ -31,6 +39,15 @@ cat build-info.json
 tests a temporary merge commit: it may differ from the branch head. Keep the run
 URL and both SHAs in your test report. Checksums detect transfer changes; these
 are unsigned development artifacts, not signed releases.
+
+To publish a testing prerelease, explicitly create a `vX.Y.Z-rc.N` tag at the exact
+source SHA of a successful **push to main** Linux validation run. Manually dispatch
+the Linux workflow on main with `publish_release=true`, `release_tag` and
+`source_run`. The publisher verifies the run, tag, all transfer checksums, kit
+contents, image identity and production-timer browser proof. It promotes those
+artifacts, pushes and pulls back the GHCR image, then uploads and verifies all
+assets before publishing a prerelease. Publishing uses a separately scoped job
+and occurs outside validation; it never installs agents or replaces deployments.
 
 For the server-image artifact, extract its ZIP into a separate directory, run
 `sha256sum -c SHA256SUMS`, inspect `image.json`, then use
