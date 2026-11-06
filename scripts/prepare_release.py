@@ -200,6 +200,22 @@ def verify(tag):
     print(f"Verified {len(assets)} uploaded assets before publication")
 
 
+def registry():
+    if not os.environ.get("PHOENIX_OUTPUT"):
+        raise ValueError("Record release metadata through validate.py")
+    path = DEST / "release-manifest.json"
+    manifest = json.loads(path.read_bytes())
+    digests = json.loads(command(["docker", "image", "inspect", "--format", "{{json .RepoDigests}}", manifest["image"]]))
+    matching = [d for d in digests if re.fullmatch(r"ghcr.io/narehood/phoenix@sha256:[a-f0-9]{64}", d)]
+    if len(matching) != 1:
+        raise ValueError("Missing verified registry digest")
+    manifest["registryImage"] = matching[0]
+    manifest["registryScope"] = "Linux amd64 runtime; archive also retains its original build index"
+    path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    (DEST / "SHA256SUMS").write_text("".join(f"{sha(p.read_bytes())}  {p.name}\n" for p in sorted(DEST.iterdir()) if p.name != "SHA256SUMS"), encoding="utf-8")
+    print(json.dumps({"registryImage": matching[0]}))
+
+
 if __name__ == "__main__":
     if len(sys.argv) != 4 or not re.fullmatch(r"[1-9][0-9]*", sys.argv[2]) or not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+-rc\.[1-9][0-9]*", sys.argv[3]):
         raise SystemExit("Use prepare|verify RUN_ID vX.Y.Z-rc.N")
@@ -207,5 +223,7 @@ if __name__ == "__main__":
         prepare(sys.argv[2], sys.argv[3])
     elif sys.argv[1] == "verify":
         verify(sys.argv[3])
+    elif sys.argv[1] == "registry":
+        registry()
     else:
         raise SystemExit("Unknown release operation")

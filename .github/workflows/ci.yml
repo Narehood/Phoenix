@@ -83,13 +83,15 @@ jobs:
       - name: Publish and pull back versioned container images
         run: |
           IMAGE=$(jq -r .image .validation/release-assets/release-manifest.json)
-          EXPECTED=$(jq -r .imageId .validation/release-assets/release-manifest.json)
+          EXPECTED=$(docker image inspect --format '{{json .Config}} {{json .RootFS}} {{.Os}}/{{.Architecture}}' "$IMAGE")
           printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
-          docker push "$IMAGE"
-          docker pull "$IMAGE"
-          test "$(docker image inspect --format '{{.Id}}' "$IMAGE")" = "$EXPECTED"
+          docker push --platform linux/amd64 "$IMAGE"
+          docker pull --platform linux/amd64 "$IMAGE"
+          test "$(docker image inspect --format '{{json .Config}} {{json .RootFS}} {{.Os}}/{{.Architecture}}' "$IMAGE")" = "$EXPECTED"
           docker tag "$IMAGE" ghcr.io/narehood/phoenix:testing
-          docker push ghcr.io/narehood/phoenix:testing
+          docker push --platform linux/amd64 ghcr.io/narehood/phoenix:testing
+      - name: Record the verified registry digest
+        run: python3 scripts/validate.py --timeout 30 -- python3 scripts/prepare_release.py registry "$SOURCE_RUN" "$RELEASE_TAG"
       - name: Upload and verify assets before publishing the prerelease
         run: |
           SOURCE=$(jq -r .sourceSha .validation/release-assets/release-manifest.json)
