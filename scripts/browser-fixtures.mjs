@@ -614,6 +614,7 @@ try {
   await evaluate("document.querySelector('.history-data').open = true");
   assert.ok(await evaluate("document.querySelector('.history-summary').innerText.includes('12.0–64.0%') && document.querySelector('.history-data').innerText.includes('Not measured') && document.querySelector('.history-data').innerText.includes('Gap before this reading')"), "Populated CPU history lacks equivalent values or missing-data context");
   assert.ok(await evaluate("[...document.querySelectorAll('.history-axis span')].map(s => s.textContent).join(',') === '100%,50%,0%' && [...document.querySelectorAll('.history-point')].every(p => p.getBoundingClientRect().width >= 7) && document.querySelectorAll('.history-ticks time').length === 3"), "CPU chart lacks readable reference values, time ticks or screen-sized markers");
+  assert.ok(await evaluate("[...document.querySelectorAll('.history-data tbody td')].every(cell => cell.scrollWidth <= cell.clientWidth + 1)"), "Mobile history timestamps or readings overflow into adjacent columns");
   await evaluate("window.fixture.samples = []");
   pass("CPU history exposes a range summary and bounded chronological readings including missing values and gaps");
   for (const id of ["host-overview", "host-history", "host-services", "host-processes", "host-configuration", "host-jobs"]) {

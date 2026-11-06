@@ -2129,6 +2129,9 @@ textarea:disabled {
 .history-data table {
   width: 100%;
 }
+.history-data time {
+  white-space: normal;
+}
 .history-empty .empty {
   padding: 20px;
 }
