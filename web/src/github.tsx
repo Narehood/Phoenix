@@ -976,7 +976,7 @@ function GitHubSettings({
       setBase(v.revision);
       setTouched(false);
       setNotice(
-        `Saved source revision ${v.revision}. Previous observations were cleared; collection runs automatically.`,
+        `Saved source revision ${v.revision}. Previous observations were cleared. ${enabled ? "Collection runs automatically." : "Automatic collection is disabled."}`,
       );
       onSaved();
     } catch (err) {

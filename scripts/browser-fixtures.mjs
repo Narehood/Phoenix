@@ -1134,11 +1134,9 @@ try {
   await click("Reapply my changes for review");
   await wait("document.querySelector('input[name=repository]').value === 'fixture-owner/other-repo' && document.querySelector('input[data-secret=github-token]').value === '' && !document.querySelector('.settings .notice.conflict')");
   assert.equal(await evaluate("window.fixture.githubPuts.length"),2,"Repository target reconciliation submitted or reused a token without review");
-  await evaluate("window.confirm = () => true");
-  await click("← All projects");
-  await wait("!document.querySelector('input[name=repository]')");
-  await click("Fixture project renamed");
-  await wait("!!document.querySelector('.github')");
+  await submit("GitHub source settings");
+  await wait("window.fixture.githubPuts.length === 3 && document.body.innerText.includes('Saved source revision 5') && document.body.innerText.includes('Automatic collection is disabled')");
+  assert.deepEqual(await evaluate("window.fixture.githubPuts[2]"),{repository:'fixture-owner/other-repo',enabled:false,revision:4,tokenLength:0},"Reviewed target save restored collection or reused the old draft token");
   pass("repository conflict reconciliation preserves untouched collection settings, requires a separate save and clears a token when its target changes");
 
   await evaluate("window.fixture.githubViews['fixture-project'] = window.fixture.freshView('fixture-owner/fixture-repo')");
