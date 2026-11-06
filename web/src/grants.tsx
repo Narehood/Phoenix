@@ -620,7 +620,7 @@ export function GrantEditor({
                   )}
                 </details>
                 <p>
-                  Reapply only your {added} additions and {removed} removals.
+                  Reapply only your changes: {added} added, {removed} removed.
                   Other saved changes stay intact; review the resulting set
                   before saving.
                 </p>
@@ -722,13 +722,15 @@ export function GrantEditor({
             including host and project grants.
           </small>
           <small role="status">
-            {!loaded
-              ? load.state === "loading"
-                ? "Loading the complete grant set…"
-                : "Load current grants before making a replacement."
-              : !changed
-                ? "No unsaved changes."
-                : `${added} added, ${removed} removed. Ready to replace the account’s complete grant set.`}
+            {conflict
+              ? "Review the latest saved grants above before replacing this set."
+              : !loaded
+                ? load.state === "loading"
+                  ? "Loading the complete grant set…"
+                  : "Load current grants before making a replacement."
+                : !changed
+                  ? "No unsaved changes."
+                  : `${added} added, ${removed} removed. Ready to replace the account’s complete grant set.`}
           </small>
         </div>
         <button

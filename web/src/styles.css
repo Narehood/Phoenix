@@ -3080,6 +3080,23 @@ textarea:disabled {
   font-size: 14px;
   overflow-wrap: anywhere;
 }
+.activity-filter-disclosure[open] + .activity-applied > span {
+  display: none;
+}
+@media (min-width: 721px) {
+  .activity-filter-tools {
+    display: flex;
+    align-items: end;
+  }
+  .activity-filter-disclosure {
+    flex: 1;
+    min-width: 0;
+  }
+  .activity-applied {
+    flex: none;
+    padding-left: 0;
+  }
+}
 .grant-conflict {
   display: block;
   margin-bottom: 16px;
