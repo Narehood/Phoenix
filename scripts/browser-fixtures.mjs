@@ -279,6 +279,9 @@ function installFixture(visualCapture = false) {
       }
       if (hostWrite[2] === "/mappings" && method === "PUT") {
         if (body.mappings.length > 20) return json({error: "mapping limit exceeded"}, 400);
+        if (!Array.isArray(body.expectedMappings)) return json({error:"Read complete host mappings before replacing"},428);
+        const mappingKeys = entries => entries.map(m => JSON.stringify([m.sourceId,m.monitorId])).sort();
+        if (JSON.stringify(mappingKeys(body.expectedMappings)) !== JSON.stringify(mappingKeys(canary.mappings.filter(m => m.hostId === h.id)))) return json({error:"Saved mappings changed; reload saved values"},409);
         canary.mappings = [...canary.mappings.filter(m => m.hostId !== h.id), ...body.mappings.map(m => ({...m, hostId: h.id}))];
         return json({mappings: body.mappings});
       }
@@ -294,8 +297,8 @@ function installFixture(visualCapture = false) {
         return json(job, 201);
       }
     }
-    if (path === "/api/hosts/private-host") { refreshEvidence(); return admin ? json({ host: privateHost, samples: control.samples, permissions: hostPermissions() }) : json({ error: "action forbidden" }, 403); }
-    if (path === "/api/hosts/viewer-host") { refreshEvidence(); return json({ host: viewerHost, samples: [], permissions: hostPermissions() }); }
+    if (path === "/api/hosts/private-host") { refreshEvidence(); return admin ? json({ host: privateHost, samples: control.samples, permissions: hostPermissions(), mappings: canary.mappings.filter(m => m.hostId === privateHost.id) }) : json({ error: "action forbidden" }, 403); }
+    if (path === "/api/hosts/viewer-host") { refreshEvidence(); return json({ host: viewerHost, samples: [], permissions: hostPermissions(), mappings: canary.mappings.filter(m => m.hostId === viewerHost.id) }); }
     if (path === "/api/canary") { refreshEvidence(); return json(admin ? canary : emptyCanary); }
     if (path === "/api/jobs") return json(control.jobs.filter(j => admin || j.hostId === viewerHost.id).map(j => ({...jobView(j), result:null})));
     const jobRoute = path.match(/^\/api\/jobs\/([^/]+)(\/cancel)?$/);
@@ -635,6 +638,7 @@ try {
   await wait("[...document.querySelectorAll('.host-form-feedback .retained')].length === 2");
   assert.ok(await evaluate("document.querySelector('.host-inventory-form input[name=name]').value === 'Unsaved host draft' && [...document.querySelectorAll('.host-mapping-form input[type=checkbox]')].every(c => !c.checked)"), "Polling replaced a dirty host or mapping draft");
   await evaluate("document.querySelectorAll('.host-form-feedback .retained button:first-of-type').forEach(b => b.click())");
+  assert.ok(await evaluate("(() => { const selected = [...document.querySelectorAll('.host-mapping-form input[type=checkbox]:checked')]; return selected.length === 1 && selected[0].closest('label').innerText.toLowerCase().includes('secondary'); })()"), "Mapping reconciliation restored a removed monitor or lost another saved mapping");
   pass("host inventory and monitor mapping drafts block navigation and survive independently changed saved values");
   await evaluate("window.fixture.failWrites.add('PATCH /api/hosts/private-host')");
   await submit("Host inventory");
@@ -656,22 +660,37 @@ try {
   await wait("typeof window.fixture.holds['GET /api/hosts/private-host'] === 'function' && document.querySelector('.host-inventory-form').innerText.includes('Reload saved inventory')");
   assert.ok(await evaluate("document.querySelector('.host-inventory-form input[name=name]').value === 'Concurrent local draft' && document.querySelector('.host-inventory-form button.primary').disabled && window.fixture.hosts[0].name === 'Concurrent saved name'"), "Inventory conflict discarded the draft or overwrote saved fields before a fresh read");
   await evaluate("window.fixture.holds['GET /api/hosts/private-host']()");
-  await wait("document.querySelector('.host-inventory-form .host-form-feedback .retained')?.innerText.includes('Keep my draft')");
+  await wait("document.querySelector('.host-inventory-form .host-form-feedback .retained')?.innerText.includes('Reapply edited fields for review')");
   const conflictWrites = await evaluate("window.fixture.requests.filter(r => r.method === 'PATCH').length");
-  await evaluate("[...document.querySelectorAll('.host-inventory-form button')].find(b => b.textContent === 'Keep my draft').click()");
+  await evaluate("[...document.querySelectorAll('.host-inventory-form button')].find(b => b.textContent === 'Reapply edited fields for review').click()");
   assert.ok(await evaluate("document.querySelector('.host-inventory-form input[name=name]').value === 'Concurrent local draft' && document.querySelector('.host-inventory-form input[name=groups]').value === 'Operations'"), "Reapplying a name edit restored old permission-bearing groups");
   assert.equal(await evaluate("window.fixture.requests.filter(r => r.method === 'PATCH').length"), conflictWrites, "Review choice saved inventory without explicit submission");
   await submit("Host inventory");
   await wait("window.fixture.hosts[0].name === 'Concurrent local draft' && document.querySelector('.host-inventory-form .status-notice').innerText.includes('Host inventory saved')");
   assert.deepEqual(await evaluate("window.fixture.hosts[0].groups"), ["Operations"]);
   pass("inventory revision conflicts retain the draft, wait for saved values and reapply only edited fields without restoring newer groups");
-  await evaluate("window.fixture.hold.add('PUT /api/hosts/private-host/mappings')");
+  await evaluate("document.querySelectorAll('.host-mapping-form input[type=checkbox]:checked').forEach(c => c.click()); window.fixture.hold.add('PUT /api/hosts/private-host/mappings')");
   await submit("Host monitor mappings");
   await wait("typeof window.fixture.holds['PUT /api/hosts/private-host/mappings'] === 'function' && document.querySelector('.host-mapping-form fieldset').disabled");
   await submit("Host monitor mappings");
   assert.equal(await evaluate("window.fixture.requests.filter(r => r.method === 'PUT' && r.path.endsWith('/mappings')).length"), 1, "Pending mappings were submitted twice");
   await evaluate("window.fixture.holds['PUT /api/hosts/private-host/mappings']()");
   await wait("document.querySelector('.host-mapping-form .status-notice').innerText.includes('Monitor mappings saved') && window.fixture.canary.mappings.length === 0");
+  await evaluate("document.querySelector('.host-mapping-form input[value=\"fixture-source/unobserved\"]').click(); window.fixture.hold.add('PUT /api/hosts/private-host/mappings')");
+  await submit("Host monitor mappings");
+  await wait("typeof window.fixture.holds['PUT /api/hosts/private-host/mappings'] === 'function'");
+  await evaluate("window.fixture.canary.mappings = [{hostId:'private-host',sourceId:'fixture-source',monitorId:'secondary'}]; window.fixture.hold.add('GET /api/hosts/private-host'); window.fixture.holds['PUT /api/hosts/private-host/mappings']()");
+  await wait("typeof window.fixture.holds['GET /api/hosts/private-host'] === 'function' && document.querySelector('.host-mapping-form').innerText.includes('Reload saved mappings')");
+  assert.ok(await evaluate("document.querySelector('.host-mapping-form button.primary').disabled && document.querySelector('.host-mapping-form input[value=\"fixture-source/unobserved\"]').checked && window.fixture.canary.mappings.length === 1 && window.fixture.canary.mappings[0].monitorId === 'secondary'"), "Stale mapping save overwrote saved data or discarded its draft");
+  await evaluate("window.fixture.holds['GET /api/hosts/private-host']()");
+  await wait("!!document.querySelector('.host-mapping-form .host-form-feedback .retained')");
+  const mappingWrites = await evaluate("window.fixture.requests.filter(r => r.method === 'PUT' && r.path.endsWith('/mappings')).length");
+  await evaluate("[...document.querySelectorAll('.host-mapping-form button')].find(b => b.textContent === 'Reapply mapping changes for review').click()");
+  assert.equal(await evaluate("document.querySelectorAll('.host-mapping-form input[type=checkbox]:checked').length"), 2, "Reconciliation lost a concurrent saved mapping or local addition");
+  assert.equal(await evaluate("window.fixture.requests.filter(r => r.method === 'PUT' && r.path.endsWith('/mappings')).length"), mappingWrites, "Mapping review saved without explicit submission");
+  await submit("Host monitor mappings");
+  await wait("window.fixture.canary.mappings.length === 2 && document.querySelector('.host-mapping-form .status-notice').innerText.includes('Monitor mappings saved')");
+  pass("mapping preconditions retain stale drafts, reconcile only intended additions/removals and require a separate reviewed save");
   pass("host saves retain failed drafts, freeze submitted values, reject duplicate submissions and report results beside each form");
 
   await evaluate("window.fixture.hold.add('POST /api/hosts/private-host/jobs')");
@@ -871,7 +890,7 @@ try {
   await wait("document.querySelector('.activity-panel').innerText.includes('No matching events within the latest 500')");
   await setValue("select[name=activityAction]", "logs.read");
   await wait("document.querySelectorAll('.activity-event').length === 1");
-  await click("View job outcome");
+  await click("Outcome →");
   await wait("location.hash === '#/jobs/fixture-job-1' && !!document.querySelector('dialog[open] .job-target')");
   await click("×");
   await wait("location.hash === '#/activity' && document.querySelector('input[name=activitySearch]')?.value === 'fixture-actor-full' && document.querySelector('select[name=activityAction]').value === 'logs.read' && document.querySelectorAll('.activity-event').length === 1");

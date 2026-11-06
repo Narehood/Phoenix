@@ -61,7 +61,12 @@ const needsAttention = (host: Host) =>
   host.freshness === "stale" ||
   host.freshness === "unknown" ||
   host.resourceHealth === "warning";
-type HostDetail = { host: Host; samples: Reading[]; permissions?: string[] };
+type HostDetail = {
+  host: Host;
+  samples: Reading[];
+  permissions?: string[];
+  mappings: Canary["mappings"];
+};
 const requestNames = [
   ["diagnostic", "diagnostics"],
   ["logs.read", "service logs"],
@@ -1580,7 +1585,11 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                             ? "Not measured"
                             : `${reading.cpuPercent.toFixed(1)}%`
                         }
-                        detail={`Measured ${stamp(reading.measuredAt)}`}
+                        detail={
+                          <>
+                            Measured <Time value={reading.measuredAt} />
+                          </>
+                        }
                       />
                       <Metric
                         label="Memory used"
@@ -1818,7 +1827,11 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                             key={current.id}
                             host={current}
                             canary={canary}
-                            loaded={!!sourceLoaded.Canary}
+                            savedMappings={detail?.mappings || []}
+                            loaded={
+                              !!sourceLoaded.Canary &&
+                              detail?.mappings !== undefined
+                            }
                             unavailable={!!sourceErrors.Canary}
                             onSaved={() => {
                               refreshDetail.current();
@@ -2847,8 +2860,11 @@ function Activity({
                       <span>Host outside loaded inventory</span>
                     ) : null}
                     {host && a.jobId && (
-                      <RouteLink to={{ view: "jobs", id: a.jobId }}>
-                        View job outcome →
+                      <RouteLink
+                        to={{ view: "jobs", id: a.jobId }}
+                        aria-label={`View job outcome for ${label} on ${host.name}`}
+                      >
+                        Outcome →
                       </RouteLink>
                     )}
                   </div>

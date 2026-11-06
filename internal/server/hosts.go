@@ -165,7 +165,11 @@ func (s *Server) hostDetail(w http.ResponseWriter, r *http.Request, u core.User)
 			permissions = append(permissions, action)
 		}
 	}
-	write(w, 200, map[string]any{"host": h, "samples": samples, "permissions": permissions, "now": s.Now().UnixMilli()})
+	savedMappings, e := hostMappings(s.DB, h.ID)
+	if e != nil {
+		return e
+	}
+	write(w, 200, map[string]any{"host": h, "samples": samples, "permissions": permissions, "mappings": savedMappings, "now": s.Now().UnixMilli()})
 	return nil
 }
 func (s *Server) updateHost(w http.ResponseWriter, r *http.Request, u core.User) error {

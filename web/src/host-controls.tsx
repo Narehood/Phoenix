@@ -136,6 +136,7 @@ function Feedback({
   changed,
   latest,
   keep,
+  keepLabel,
   reset,
   onVerify,
   busy,
@@ -146,6 +147,7 @@ function Feedback({
   changed: boolean;
   latest?: ReactNode;
   keep: () => void;
+  keepLabel: string;
   reset: () => void;
   onVerify: () => void;
   busy: boolean;
@@ -165,7 +167,7 @@ function Feedback({
           </details>
           <div className="button-row">
             <button type="button" disabled={busy} onClick={keep}>
-              Keep my draft
+              {keepLabel}
             </button>
             <button type="button" disabled={busy} onClick={reset}>
               Load saved values
@@ -220,6 +222,7 @@ export function HostInventoryForm({
         dismiss={() => model.setError(null)}
         notice={model.notice}
         changed={!!model.incoming}
+        keepLabel="Reapply edited fields for review"
         keep={() => {
           const latest = model.incoming;
           if (!latest) return;
@@ -344,6 +347,7 @@ export function HostInventoryForm({
 export function MappingForm({
   host,
   canary,
+  savedMappings,
   loaded,
   unavailable,
   onSaved,
@@ -351,16 +355,22 @@ export function MappingForm({
 }: {
   host: Host;
   canary: Canary;
+  savedMappings: Canary["mappings"];
   loaded: boolean;
   unavailable: boolean;
   onSaved: () => void;
   onVerify: () => void;
 }) {
-  const value = canary.mappings
+  const value = savedMappings
     .filter((m) => m.hostId === host.id)
     .map((m) => `${m.sourceId}/${m.monitorId}`)
     .sort();
-  const model = useDraft(value, "host monitor mappings", onSaved);
+  const model = useDraft(value, "host monitor mappings", onSaved, true);
+  const targets = (keys: string[]) =>
+    keys.map((key) => {
+      const [sourceId, monitorId] = key.split("/");
+      return { sourceId, monitorId };
+    });
   const name = (key: string) => {
     const [source, monitor] = key.split("/");
     return (
@@ -391,15 +401,18 @@ export function MappingForm({
       onSubmit={(event) => {
         event.preventDefault();
         if (unavailable) return;
-        const mappings = model.draft.map((v) => {
-          const [sourceId, monitorId] = v.split("/");
-          return { sourceId, monitorId };
-        });
         void model.save(
           () =>
-            api(`/api/hosts/${encodeURIComponent(host.id)}/mappings`, "PUT", {
-              mappings,
-            }).then(() => model.draft),
+            api<{ mappings: { sourceId: string; monitorId: string }[] }>(
+              `/api/hosts/${encodeURIComponent(host.id)}/mappings`,
+              "PUT",
+              {
+                mappings: targets(model.draft),
+                expectedMappings: targets(model.baseline),
+              },
+            ).then((result) =>
+              result.mappings.map((m) => `${m.sourceId}/${m.monitorId}`).sort(),
+            ),
           "Monitor mappings saved.",
         );
       }}
@@ -410,7 +423,32 @@ export function MappingForm({
         dismiss={() => model.setError(null)}
         notice={model.notice}
         changed={!!model.incoming}
-        keep={model.keepDraft}
+        keepLabel="Reapply mapping changes for review"
+        keep={() => {
+          if (!model.incoming) return;
+          const removed = new Set(
+            model.baseline.filter((key) => !model.draft.includes(key)),
+          );
+          const added = model.draft.filter(
+            (key) => !model.baseline.includes(key),
+          );
+          const merged = [
+            ...new Set([
+              ...model.incoming.filter((key) => !removed.has(key)),
+              ...added,
+            ]),
+          ].sort();
+          if (merged.length > 20) {
+            model.setError(
+              new Error(
+                "The combined set exceeds 20 mappings. Reduce your draft before reapplying, or load saved values.",
+              ),
+            );
+            return;
+          }
+          model.setDraft(merged);
+          model.keepDraft();
+        }}
         reset={model.reset}
         onVerify={onVerify}
         latest={
@@ -425,6 +463,24 @@ export function MappingForm({
           )
         }
       />
+      {model.incoming && (
+        <p className="muted">
+          Reapply only your additions and removals to the latest saved mappings
+          for review. Other saved changes stay intact. Save separately after
+          reviewing the resulting selection.
+        </p>
+      )}
+      {model.awaitingLatest && !model.incoming && (
+        <div className="notice retained" role="status">
+          <p>
+            Your draft is kept. Load the latest saved host mappings before
+            reviewing and saving again.
+          </p>
+          <button type="button" disabled={model.busy} onClick={onSaved}>
+            Reload saved mappings
+          </button>
+        </div>
+      )}
       {unavailable && (
         <p className="muted" role="status">
           Canary configuration is unavailable. Your draft is kept; saving is
@@ -487,14 +543,18 @@ export function MappingForm({
         <button
           className="primary"
           disabled={
-            model.busy || unavailable || !model.dirty || !!model.incoming
+            model.busy ||
+            unavailable ||
+            !model.dirty ||
+            !!model.incoming ||
+            model.awaitingLatest
           }
         >
           {model.busy ? "Saving mappings…" : "Save monitor mappings"}
         </button>
         <button
           type="button"
-          disabled={model.busy || !model.dirty}
+          disabled={model.busy || !model.dirty || model.awaitingLatest}
           onClick={model.reset}
         >
           Reset

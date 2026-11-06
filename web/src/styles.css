@@ -2849,7 +2849,7 @@ textarea:disabled {
     margin: 0;
   }
   .activity-context .timestamp {
-    flex: 1 1 105px;
+    flex: 0 0 auto;
   }
   .grant-change-columns {
     grid-template-columns: 1fr;

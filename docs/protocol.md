@@ -23,7 +23,7 @@ Implemented routes (v1):
 | POST `/api/auth/recent` | Authenticated + CSRF; `{password,code}`; five-minute window; no code replay |
 | POST `/api/auth/revoke-sessions` | Admin + recent + CSRF; revokes all browser sessions |
 | GET `/api/hosts` | Filters by `host.read`; separate connectivity, freshness and resource health |
-| GET `/api/hosts/{host}` | `host.read`; host and newest 240 samples |
+| GET `/api/hosts/{host}` | `host.read`; host, newest 240 samples, advisory permissions and complete saved `mappings` for this host |
 | PATCH `/api/hosts/{host}` | Admin and `host.manage`; `{name,tags,groups,inventoryRevision}` using the opaque revision from the host read; missing precondition returns 428, changed inventory returns 409 without saving; group changes affect scopes |
 | POST `/api/invitations` | Admin + recent; `{name,groups,reenrollHost?,confirm?}`; one-time invitation and target ID |
 | POST `/api/hosts/{host}/approve` | Admin + recent; `{confirm:<host ID>,certificateFingerprint}`; trusted-channel comparison required |
@@ -45,7 +45,7 @@ Implemented routes (v1):
 | PUT/DELETE `/api/projects/{project}/github` | Admin + recent; revision-checked source configuration/disconnection; credentials never returned |
 | POST `/api/projects/{project}/github/sync` | Project read + `github.read` + `github.sync`; schedules collection, cooldown enforced |
 | GET `/api/canary` | Admin inventory or mapped `host.read` views; no tokens or private monitor settings |
-| PUT `/api/hosts/{host}/mappings` | Admin + CSRF; `{mappings:[{sourceId,monitorId}]}`, at most 20 |
+| PUT `/api/hosts/{host}/mappings` | Admin + CSRF; `{mappings:[{sourceId,monitorId}],expectedMappings:[...]}` using the complete set from host detail, including `[]`; at most 20 per set; missing precondition returns 428 and changed saved mappings return 409 without replacement |
 | GET `/api/canary/{source}/monitors/{monitor}/history` | Mapped host read permission; bounded/throttled server-side viewer read |
 | POST `/enroll` | Authenticated server TLS, invitation, signed CSR and Linux metadata; no browser session required |
 | POST `/agent/exchange` | Agent listener, TLS 1.3 mTLS and current serial; one optional receipt, one optional reading, optional runningJob |
@@ -58,6 +58,12 @@ permission-bearing groups. Telemetry does not change it. Inventory replacement
 compares that revision inside the write transaction before changing fields or
 recording success. On conflict, reload and review the saved values before a new
 explicit save; a stale draft must not restore groups removed by another editor.
+
+Monitor mapping replacement similarly compares `expectedMappings` within its
+write transaction before changing rows or recording success. Use the complete
+host-detail set, not the bounded fleet-wide Canary list. Conflict recovery
+reapplies only intended additions/removals to the latest saved set for review;
+the operator must then save separately. Mapping changes never write to Canary.
 
 Project registration/update bodies have a tighter 8 KiB cap. Project scopes are
 independent of host/group/all grants. See [project maintenance](project-maintenance.md)

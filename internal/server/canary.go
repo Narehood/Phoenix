@@ -159,6 +159,30 @@ type mapping struct {
 	MonitorID string `json:"monitorId"`
 }
 
+type mappingTarget struct {
+	SourceID  string `json:"sourceId"`
+	MonitorID string `json:"monitorId"`
+}
+
+func hostMappings(q interface {
+	Query(string, ...any) (*sql.Rows, error)
+}, host string) ([]mapping, error) {
+	rows, err := q.Query(`SELECT host_id,source_id,monitor_id FROM mappings WHERE host_id=? ORDER BY source_id,monitor_id LIMIT 21`, host)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []mapping{}
+	for rows.Next() {
+		var m mapping
+		if err = rows.Scan(&m.HostID, &m.SourceID, &m.MonitorID); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
 func (s *Server) mappingList() ([]mapping, error) {
 	rows, e := s.DB.Query(`SELECT host_id,source_id,monitor_id FROM mappings LIMIT 2000`)
 	if e != nil {
@@ -250,10 +274,8 @@ func (s *Server) canaryList(w http.ResponseWriter, r *http.Request, u core.User)
 }
 func (s *Server) setMappings(w http.ResponseWriter, r *http.Request, u core.User) error {
 	var b struct {
-		Mappings []struct {
-			SourceID  string `json:"sourceId"`
-			MonitorID string `json:"monitorId"`
-		} `json:"mappings"`
+		Mappings         []mappingTarget  `json:"mappings"`
+		ExpectedMappings *[]mappingTarget `json:"expectedMappings"`
 	}
 	if e := decode(r, &b); e != nil {
 		return e
@@ -261,12 +283,37 @@ func (s *Server) setMappings(w http.ResponseWriter, r *http.Request, u core.User
 	if len(b.Mappings) > 20 {
 		return fail(400, "too many mappings")
 	}
+	if b.ExpectedMappings == nil {
+		return fail(428, "read the complete saved host mappings before replacing them")
+	}
+	if len(*b.ExpectedMappings) > 20 {
+		return fail(400, "too many expected mappings")
+	}
+	expected := map[mappingTarget]bool{}
+	for _, m := range *b.ExpectedMappings {
+		if !validIdentifier(m.SourceID) || !validIdentifier(m.MonitorID) || expected[m] {
+			return fail(400, "invalid expected mappings")
+		}
+		expected[m] = true
+	}
 	host := r.PathValue("host")
 	tx, e := s.DB.Begin()
 	if e != nil {
 		return e
 	}
 	defer tx.Rollback()
+	current, e := hostMappings(tx, host)
+	if e != nil {
+		return e
+	}
+	if len(current) != len(expected) {
+		return fail(409, "saved monitor mappings changed; reload and review them before replacing")
+	}
+	for _, m := range current {
+		if !expected[mappingTarget{SourceID: m.SourceID, MonitorID: m.MonitorID}] {
+			return fail(409, "saved monitor mappings changed; reload and review them before replacing")
+		}
+	}
 	if _, e = tx.Exec(`DELETE FROM mappings WHERE host_id=?`, host); e != nil {
 		return e
 	}
@@ -301,7 +348,7 @@ func (s *Server) setMappings(w http.ResponseWriter, r *http.Request, u core.User
 	if e = tx.Commit(); e != nil {
 		return e
 	}
-	write(w, 200, b)
+	write(w, 200, map[string]any{"mappings": b.Mappings})
 	return nil
 }
 func (s *Server) canaryHistory(w http.ResponseWriter, r *http.Request, u core.User) error {
