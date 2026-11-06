@@ -2,7 +2,7 @@
 
 This guide is for testing the implemented Debian/Linux slice, including Projects
 and read-only GitHub health. It is a development build, not a production release.
-Windows/SSH, documentation/content editors, dependency updates and deployment
+Windows/SSH, documentation/content editors, dashboard dependency updates and deployment
 workflows remain planned. Keep the pull request in **draft** until the operator
 manually approves it for review; passing checks do not grant that approval.
 
@@ -12,7 +12,9 @@ Open the draft PR's **Phoenix Linux validation** check. Use a successful run for
 the current head, and download `phoenix-linux-amd64-test-kit` from that run's
 artifacts. Artifacts expire after seven days; rerun validation if needed. The kit
 is uploaded only after fixtures, race checks, built-binary smoke and browser
-regressions pass. No image is published or deployed by CI.
+regressions pass. A passing run also exports `phoenix-linux-amd64-server-image`,
+with a compressed Docker image, checksums, tested revision/tree, base-image
+digests and installed-package inventory. CI does not replace running deployments.
 
 Extract the downloaded artifact ZIP in a new directory on a disposable Linux
 test machine, then verify and unpack its inner archive:
@@ -29,6 +31,20 @@ cat build-info.json
 tests a temporary merge commit: it may differ from the branch head. Keep the run
 URL and both SHAs in your test report. Checksums detect transfer changes; these
 are unsigned development artifacts, not signed releases.
+
+For the server-image artifact, extract its ZIP into a separate directory, run
+`sha256sum -c SHA256SUMS`, inspect `image.json`, then use
+`docker load --input phoenix-linux-amd64-image.tar.gz` on the disposable Linux
+Docker host. It provides `phoenix:development` for the supplied Compose file and
+an exact-revision tag. Loading an image does not migrate data or replace a running
+container; follow the operations guide and preserve the installation's identity.
+
+The Linux workflow's manual `dependency_refresh` input resolves current stable
+development dependencies in a temporary checkout and exports manifests with npm
+audit evidence. It does not commit them or run the application. Review that
+artifact, commit the intended manifest changes, then run the full validation
+again. This maintenance operation is separate from the dashboard's planned
+repository-update feature.
 
 The kit contains CGO-enabled Linux amd64 server/agent/helper binaries, the built
 dashboard, example configuration, agent unit/sudoers file and documentation.
@@ -81,6 +97,11 @@ test machine's clipboard. Actual browser permissions and account-owner handoff
 still require manual acceptance. Account creation foregrounds the one-time key
 and requires an explicit stored/shared acknowledgement before clearing it; this
 acknowledgement does not establish that the owner completed TOTP verification.
+Protected request expiry returns the browser to sign-in and clears authenticated
+views. Authoritative denied/missing resource reads clear their cached data;
+transient failures may retain explicitly unknown snapshots. Fixtures check
+that an old session's late 401 cannot expire a later login, and that a rejected
+recent-authentication challenge keeps a still-valid session.
 The smoke uses real APIs but does not drive a browser. Neither substitutes for
 manual end-to-end browser acceptance. Container systemd service/log inspection
 may be unavailable; the smoke never installs or executes the root helper.

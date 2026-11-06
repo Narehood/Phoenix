@@ -249,7 +249,7 @@ export async function captureUI({ send, sessionId, evaluate, wait, click, captur
   await section(".account-create .notice:has(.secret)");
   await shot("account-authenticator-setup-desktop");
   await evaluate("document.querySelector('.account-setup input[type=checkbox]').click()");
-  await click("Finish setup");
+  await click("Finish key handoff");
   await navigate("Fleet overview");
   await top();
   await evaluate("window.fixture.failSources.add('/api/audit'); window.fixture.hosts[0].latest.cpuPercent = 37");

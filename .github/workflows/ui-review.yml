@@ -17,14 +17,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Build the actual dashboard
-        run: python3 scripts/validate.py --timeout 300 -- docker build --target web --progress=plain -t phoenix:web-ui .
+        run: python3 scripts/validate.py --timeout 300 -- docker build --pull --target web --progress=plain -t phoenix:web-ui .
       - name: Capture temporary desktop, mobile and dark-mode scenes
         run: python3 scripts/validate.py --timeout 120 -- node scripts/browser-fixtures.mjs --visual
       - name: Retain bounded UI evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: phoenix-ui-evidence
           path: .validation/ui-evidence/

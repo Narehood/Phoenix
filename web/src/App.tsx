@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
-import { api, csrf, ApiError } from "./api";
+import { api, csrf, ApiError, accessLost, sessionExpiredEvent } from "./api";
 import type { Audit, Canary, Host, Job, Reading, User, Monitor } from "./types";
 import {
   Dialog,
@@ -140,7 +140,8 @@ function SourceNotice({
             </p>
           ))}
           <small>
-            Failed sources show last-loaded results; current state is unknown.
+            Unavailable sources cannot establish current state. Retained results
+            are labelled.
           </small>
         </div>
       </details>
@@ -166,7 +167,13 @@ function monitorState(m: Monitor) {
   return m.state;
 }
 
-function Auth({ onLogin }: { onLogin: (u: User) => void }) {
+function Auth({
+  onLogin,
+  notice = "",
+}: {
+  onLogin: (u: User) => void;
+  notice?: string;
+}) {
   const [setup, setSetup] = useState(false),
     [checking, setChecking] = useState(true),
     [secret, setSecret] = useState(""),
@@ -238,6 +245,11 @@ function Auth({ onLogin }: { onLogin: (u: User) => void }) {
           Secure access to your fleet. Password and authenticator verification
           are required.
         </p>
+        {notice && (
+          <p className="notice" role="status">
+            {notice}
+          </p>
+        )}
         {error && (
           <p role="alert" className="error">
             {error}
@@ -333,7 +345,19 @@ function Auth({ onLogin }: { onLogin: (u: User) => void }) {
 
 export function App() {
   const [user, setUser] = useState<User | null>(null),
-    [ready, setReady] = useState(false);
+    [ready, setReady] = useState(false),
+    [sessionNotice, setSessionNotice] = useState("");
+  useEffect(() => {
+    if (!user) return;
+    const expired = () => {
+      csrf("");
+      history.replaceState(null, "", "#/fleet");
+      setSessionNotice("Your session expired. Sign in again.");
+      setUser(null);
+    };
+    window.addEventListener(sessionExpiredEvent, expired);
+    return () => window.removeEventListener(sessionExpiredEvent, expired);
+  }, [user]);
   useEffect(() => {
     let alive = true;
     api<{ user: User; csrfToken: string }>("/api/session")
@@ -357,7 +381,16 @@ export function App() {
         <p>Loading secure session…</p>
       </main>
     );
-  if (!user) return <Auth onLogin={setUser} />;
+  if (!user)
+    return (
+      <Auth
+        notice={sessionNotice}
+        onLogin={(next) => {
+          setSessionNotice("");
+          setUser(next);
+        }}
+      />
+    );
   // Each authenticated mount owns its data; late responses from an unmounted
   // session cannot populate a later account's dashboard.
   return (
@@ -439,6 +472,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
     [sourceErrors, setSourceErrors] = useState<Record<string, string>>({}),
     [sourceLoaded, setSourceLoaded] = useState<Record<string, boolean>>({}),
     [detailError, setDetailError] = useState(""),
+    [deniedDetail, setDeniedDetail] = useState<string | null>(null),
     [modalError, setModalError] = useState(""),
     [notice, setNotice] = useState(""),
     [search, setSearch] = useState(""),
@@ -510,6 +544,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
     request: () => Promise<T>,
     apply: (value: T) => void,
     invalidate?: () => void,
+    clear?: () => void,
   ) {
     const version = (versions.current[name] =
       (versions.current[name] || 0) + 1);
@@ -530,9 +565,12 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
       if (!mounted.current || versions.current[name] !== version) return;
       setSourceErrors((previous) => ({
         ...previous,
-        [name]: (e as Error).message,
+        [name]: accessLost(e)
+          ? "Access unavailable; previously loaded results cleared"
+          : (e as Error).message,
       }));
-      invalidate?.();
+      if (accessLost(e)) clear?.();
+      else invalidate?.();
     }
   }
   function readers() {
@@ -545,6 +583,10 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
           () => api<{ hosts: Host[] }>("/api/hosts"),
           (value) => setHosts(value.hosts),
           () => setHosts((previous) => previous.map(unavailableHost)),
+          () => {
+            setHosts([]);
+            setDetail(null);
+          },
         ),
       () =>
         readSource(
@@ -559,9 +601,24 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                 freshness: source.collectedAt ? "stale" : "unknown",
               })),
             })),
+          () => setCanary({ sources: [], mappings: [], now: Date.now() }),
         ),
-      () => readSource("Jobs", () => api<Job[]>("/api/jobs"), setJobs),
-      () => readSource("Activity", () => api<Audit[]>("/api/audit"), setAudit),
+      () =>
+        readSource(
+          "Jobs",
+          () => api<Job[]>("/api/jobs"),
+          setJobs,
+          undefined,
+          () => setJobs([]),
+        ),
+      () =>
+        readSource(
+          "Activity",
+          () => api<Audit[]>("/api/audit"),
+          setAudit,
+          undefined,
+          () => setAudit([]),
+        ),
     ];
   }
   async function refresh() {
@@ -584,6 +641,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
   }, [user]);
   useEffect(() => {
     setDetailError("");
+    setDeniedDetail(null);
     if (!selected) {
       setDetail(null);
       return;
@@ -598,19 +656,45 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
         if (alive && version === versions.current.Detail) {
           setDetail(d);
           setDetailError("");
+          setDeniedDetail(null);
         }
       } catch (e) {
         if (alive && version === versions.current.Detail) {
           setDetailError((e as Error).message);
-          setDetail(
-            (previous) =>
-              previous && { ...previous, host: unavailableHost(previous.host) },
-          );
-          setHosts((previous) =>
-            previous.map((host) =>
-              host.id === selected ? unavailableHost(host) : host,
-            ),
-          );
+          if (accessLost(e)) {
+            setDeniedDetail(selected || null);
+            setDetail(null);
+            setHosts((previous) =>
+              previous.filter((host) => host.id !== selected),
+            );
+            setJobs((previous) =>
+              previous.filter((job) => job.hostId !== selected),
+            );
+            setAudit((previous) =>
+              previous.filter((event) => event.hostId !== selected),
+            );
+            setCanary((previous) => ({
+              ...previous,
+              mappings: previous.mappings.filter(
+                (mapping) => mapping.hostId !== selected,
+              ),
+            }));
+            for (const source of ["Hosts", "Jobs", "Activity", "Canary"])
+              versions.current[source] = (versions.current[source] || 0) + 1;
+          } else {
+            setDetail(
+              (previous) =>
+                previous && {
+                  ...previous,
+                  host: unavailableHost(previous.host),
+                },
+            );
+            setHosts((previous) =>
+              previous.map((host) =>
+                host.id === selected ? unavailableHost(host) : host,
+              ),
+            );
+          }
         }
       }
       if (alive && version === versions.current.Detail)
@@ -690,6 +774,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
       } catch (error) {
         if (!(error instanceof ApiError) || error.status !== 401) throw error;
       }
+      if (!mounted.current) return;
       csrf("");
       navigate({ view: "fleet" }, { replace: true, force: true });
       onLogout();
@@ -752,9 +837,12 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
     </nav>
   );
   const selectedDetail = detail?.host.id === selected ? detail : null;
-  const current = selectedDetail
-      ? ageHost(selectedDetail.host, now)
-      : hosts.find((h) => h.id === selected),
+  const current =
+      deniedDetail === selected
+        ? undefined
+        : selectedDetail
+          ? ageHost(selectedDetail.host, now)
+          : hosts.find((h) => h.id === selected),
     reading = current?.latest;
   const retainedReading = !!reading && current?.freshness !== "fresh";
   const hostPermissions = !detailError
@@ -3228,7 +3316,7 @@ function Access({ hosts, onVerify }: { hosts: Host[]; onVerify: () => void }) {
       <details ref={createRef} className="disclosure account-create">
         <summary>
           <strong>
-            {secret ? "Finish account setup" : "Create an account"}
+            {secret ? "Authenticator key handoff" : "Create an account"}
           </strong>
           <span>
             {secret
@@ -3308,6 +3396,10 @@ function Access({ hosts, onVerify }: { hosts: Host[]; onVerify: () => void }) {
                 with this key: 6 digits, SHA1, 30 seconds.
               </p>
               <SetupKey key={secret} value={secret} accountName={createdName} />
+              <p>
+                Storing this key does not verify the owner’s authenticator.
+                Next, the owner signs in with their password and a current code.
+              </p>
               <label className="check">
                 <input
                   type="checkbox"
@@ -3328,7 +3420,7 @@ function Access({ hosts, onVerify }: { hosts: Host[]; onVerify: () => void }) {
                   createRef.current?.querySelector("summary")?.focus();
                 }}
               >
-                Finish setup
+                Finish key handoff
               </button>
             </div>
           )}

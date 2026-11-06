@@ -3142,6 +3142,9 @@ textarea:disabled {
   font-size: 20px;
 }
 .account-setup .check {
+  display: flex;
+  gap: 8px;
+  width: 100%;
   min-height: 44px;
   margin: 12px 0;
 }

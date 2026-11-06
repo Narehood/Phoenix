@@ -1,14 +1,16 @@
-# syntax=docker/dockerfile:1.7
-FROM node:24.22.1-bookworm-slim AS web
+# syntax=docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+FROM node:26.13.0-trixie-slim@sha256:5adad64f9a1fca2d51972caa65983634c8a774eb300d72b20f7f2a0f60368072 AS web
+RUN apt-get update && apt-get upgrade -y --no-install-recommends && rm -rf /var/lib/apt/lists/*
+RUN npm install --global npm@12.2.2 --ignore-scripts --no-audit --no-fund
 WORKDIR /src/web
 COPY web/package*.json ./
 RUN npm ci --no-audit --no-fund
 COPY web/ ./
 RUN npm run build
 
-FROM golang:1.27.3-bookworm AS go-base
+FROM golang:1.27.3-trixie@sha256:af1bfc2614ebb1dbd31af514b78740fd678850e76498762b425ecee4c5c6ea80 AS go-base
 ENV CGO_ENABLED=1
-RUN apt-get update && apt-get install -y --no-install-recommends python3 && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get upgrade -y --no-install-recommends && apt-get install -y --no-install-recommends python3 && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY --from=web /src/web/dist/ /src/web-dist/
 COPY go.mod go.sum ./
@@ -48,8 +50,8 @@ COPY deploy/server.example.json deploy/agent.example.json deploy/helper.example.
 COPY docs/architecture.md docs/canary.md docs/github.md docs/milestone.md docs/operations.md docs/project-maintenance.md docs/protocol.md docs/testing.md docs/threat-model.md docs/validation.md /docs/
 COPY README.md /README.md
 
-FROM debian:13-slim AS server
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/* \
+FROM debian:13-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS server
+RUN apt-get update && apt-get upgrade -y --no-install-recommends && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /var/lib/phoenix /var/lib/phoenix-identity /etc/phoenix \
     && chown 10001:10001 /var/lib/phoenix /var/lib/phoenix-identity
 COPY --from=smoke /src/bin/phoenix /usr/local/bin/phoenix

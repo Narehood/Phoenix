@@ -160,7 +160,11 @@ function Inventory({
           setLoadError(null);
         }
       } catch (e) {
-        if (alive) setLoadError(e);
+        if (alive) {
+          setLoadError(e);
+          if (e instanceof ApiError && [401, 403, 404].includes(e.status))
+            setProjects(null);
+        }
       }
       if (alive) timer = setTimeout(poll, pollMs);
     }
@@ -632,6 +636,7 @@ function ProjectDetail({
       ]);
       if (!alive.current || n !== seq.current) return;
       adopt(p);
+      setGone(false);
       setCaps(c);
       setLoadError(null);
       // History is secondary evidence. Its failure must not hide successful
@@ -653,7 +658,7 @@ function ProjectDetail({
         });
     } catch (e) {
       if (!alive.current || n !== seq.current) return;
-      if (e instanceof ApiError && e.status === 404) {
+      if (e instanceof ApiError && [401, 403, 404].includes(e.status)) {
         // Absent and no-longer-readable are identical; drop everything retained.
         setGone(true);
         setProject(null);

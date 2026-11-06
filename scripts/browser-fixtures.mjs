@@ -62,7 +62,7 @@ function installFixture(visualCapture = false) {
   };
   const control = window.fixture = { role: "admin", hosts: fixtureHosts, offline: false, htmlFailure: false, logoutFailure: 0, grantWrites: 0, holdHosts: false, releaseHosts: null,
     // Project, GitHub and grant stores start empty: nothing is preseeded in the product.
-    usersFail: true, recent: true, authFailure: 0, githubFail: false, syncStatus: 429, projects: {}, events: {}, githubViews: {}, githubPuts: [], failSources: new Set(), failWrites: new Set(), createdUsers: [], jobs: [], audit: [], canary, hostPermissions: null,
+    usersFail: true, recent: true, authFailure: 0, githubFail: false, syncStatus: 429, projects: {}, events: {}, githubViews: {}, githubPuts: [], failSources: new Set(), failWrites: new Set(), readStatus: {}, createdUsers: [], jobs: [], audit: [], canary, hostPermissions: null,
     grantStore: {
       "operator-fixture": [{ scopeType: "host", scope: "viewer-host", action: "host.read" }, { scopeType: "project", scope: "fixture-project", action: "project.read" }],
       "viewer-fixture": [{ scopeType: "host", scope: "viewer-host", action: "host.read" }],
@@ -200,7 +200,8 @@ function installFixture(visualCapture = false) {
     const url = new URL(typeof input === "string" ? input : input.url, location.href);
     const path = url.pathname, method = init.method || "GET";
     control.requests.push({ role: control.role, method, path, search: url.search });
-    const respond = () => route(path, method, init.body ? JSON.parse(init.body) : undefined);
+    const forcedStatus = method === "GET" ? control.readStatus[path] : 0;
+    const respond = () => forcedStatus ? json({error:"Fixture access unavailable"},forcedStatus) : route(path, method, init.body ? JSON.parse(init.body) : undefined);
     const holdKey = control.hold.has(method + " " + path) ? method + " " + path : path;
     if (control.hold.delete(holdKey)) return new Promise((done) => { control.holds[holdKey] = () => { delete control.holds[holdKey]; done(respond()); }; });
     return respond();
@@ -1261,7 +1262,7 @@ try {
   await wait("document.querySelector('.account-create [role=alert]')?.innerText.includes('Verify identity') && document.querySelector('.account-create input[name=password]').value === 'temporary fixture password'");
   await evaluate("window.fixture.recent = true; document.querySelector('form[aria-label=\"Create an account\"]').requestSubmit()");
   await wait("window.fixture.createdUsers.length === 1 && document.querySelector('.account-create .notice .secret')?.textContent === 'FIXTURE-ONLY-AUTHENTICATOR-SECRET' && !document.querySelector('.account-create form') && document.activeElement === document.querySelector('.account-setup')");
-  assert.ok(await evaluate("document.querySelector('.account-create').innerText.includes('Authenticator setup for temporary-account') && [...document.querySelectorAll('.account-setup button')].find(b => b.textContent === 'Finish setup').disabled && !document.querySelector('.account-create input[name=password]')"), "One-time authenticator setup lacks focused account context, retains a password form or can be dismissed without acknowledgement");
+  assert.ok(await evaluate("document.querySelector('.account-create').innerText.includes('Authenticator setup for temporary-account') && [...document.querySelectorAll('.account-setup button')].find(b => b.textContent === 'Finish key handoff').disabled && !document.querySelector('.account-create input[name=password]')"), "One-time authenticator setup lacks focused account context, retains a password form or can be dismissed without acknowledgement");
   await evaluate(`(() => {
     window.fixture.clipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
     window.fixture.clipboardWrites = [];
@@ -1286,7 +1287,7 @@ try {
   await click("Fleet overview");
   assert.equal(await evaluate("location.hash"), "#/access", "Navigation silently discarded one-time authenticator setup");
   await evaluate("document.querySelector('.account-setup input[type=checkbox]').click()");
-  await click("Finish setup");
+  await click("Finish key handoff");
   await wait("!document.querySelector('.account-create .secret') && !!document.querySelector('.account-create input[name=name]')");
   await evaluate("window.confirm = () => true");
   pass("account setup protects named one-time keys, copies only on request, retains manual fallback and avoids URL or storage exposure");
@@ -1323,6 +1324,61 @@ try {
   await click("Sign out");
   await wait("!!document.querySelector('input[name=code]') && !document.body.innerText.includes('Viewer fixture host')");
   pass("expired session sign-out returns to authentication; unconfirmed server failures remain visible");
+
+  // Fresh temporary fixture context: distinguish denied reads from outages,
+  // and ensure a late old-session 401 cannot expire the next login.
+  await send("Page.reload", {}, sessionId);
+  await wait("document.body.innerText.includes('admin-fixture') && !!document.querySelector('.fleet-table')");
+  await evaluate(`(() => {
+    const at = Date.now();
+    window.fixture.jobs = [{id:'access-job',hostId:'private-host',hostName:'ADMIN-ONLY-HOST',actor:'admin-fixture',action:'logs.read',args:{service:'ACCESS-ONLY-SERVICE'},state:'queued',createdAt:at,expiresAt:at+300000,deadline:0,dispatchedAt:0,finishedAt:0,cancelRequested:false,rebootObserved:false}];
+    window.fixture.audit = [{id:9001,at,actor:'ACCESS-ONLY-ACTOR',hostId:'private-host',jobId:'access-job',action:'logs.read',state:'queued'}];
+  })()`);
+  await click("Remote jobs");
+  await wait("document.querySelector('.jobs-table')?.innerText.includes('ACCESS-ONLY-SERVICE')");
+  await click("Activity & audit");
+  await wait("document.querySelector('.timeline')?.innerText.includes('ACCESS-ONLY')");
+  await click("Uptime Canary");
+  await wait("!!document.querySelector('.canary-table')");
+  await click("Fleet overview");
+  await click("ADMIN-ONLY-HOST");
+  await wait("document.body.innerText.includes('ADMIN-ONLY-PROCESS') && document.activeElement === document.querySelector('#content h1')");
+  await evaluate("window.fixture.hold.add('GET /api/hosts')");
+  await wait("typeof window.fixture.holds['GET /api/hosts'] === 'function'");
+  await evaluate("Object.assign(window.fixture.readStatus, {'/api/jobs':403,'/api/audit':403,'/api/canary':404,'/api/hosts/private-host':403})");
+  await wait("!document.body.innerText.includes('ADMIN-ONLY-PROCESS') && !document.querySelector('.service-requests')");
+  await evaluate("window.fixture.holds['GET /api/hosts']()");
+  await sleep(200);
+  assert.equal(await evaluate("document.body.innerText.includes('ADMIN-ONLY-PROCESS')"),false,"A late inventory response restored a denied host snapshot");
+  pass("authoritative host access denial clears detailed readings and blocks late cached snapshots");
+  await click("Remote jobs");
+  await wait("document.querySelector('.jobs-panel')?.innerText.includes('Job history unavailable') && !document.querySelector('.jobs-table')");
+  await click("Activity & audit");
+  await wait("!document.querySelector('.activity-event') && document.querySelector('.activity-panel')?.innerText.includes('unavailable')");
+  await click("Uptime Canary");
+  await wait("document.body.innerText.includes('Canary readings unavailable') && !document.querySelector('.canary-table')");
+  await click("Fleet overview");
+  await wait("document.body.innerText.includes('Viewer fixture host')");
+  assert.ok(await evaluate("!document.body.innerText.includes('ACCESS-ONLY') && !document.querySelector('.auth')"),"Resource denial retained protected records or unnecessarily expired independent access");
+  pass("denied job, activity and Canary reads clear affected collections while independently authorized hosts remain visible");
+  await evaluate("window.fixture.readStatus = {}; window.fixture.hold.add('GET /api/jobs'); window.fixture.readStatus['/api/jobs'] = 401");
+  await wait("typeof window.fixture.holds['GET /api/jobs'] === 'function'");
+  await evaluate("window.fixture.role = 'signedout'; delete window.fixture.readStatus['/api/jobs']");
+  await wait("!!document.querySelector('.auth input[name=code]') && document.body.innerText.includes('Your session expired') && !document.body.innerText.includes('ADMIN-ONLY') && !document.body.innerText.includes('ACCESS-ONLY')");
+  await evaluate(`(() => { for (const [name,value] of Object.entries({name:'viewer-fixture',password:'fixture password',code:'123456'})) document.querySelector('.auth input[name='+name+']').value=value; document.querySelector('.auth form').requestSubmit(); })()`);
+  await wait("document.body.innerText.includes('viewer-fixture') && document.body.innerText.includes('Viewer fixture host') && !document.querySelector('.auth')");
+  await evaluate("window.fixture.holds['GET /api/jobs']()");
+  await sleep(200);
+  assert.ok(await evaluate("!document.querySelector('.auth') && document.body.innerText.includes('viewer-fixture') && !document.body.innerText.includes('ADMIN-ONLY')"),"A late old-session 401 expired a new login or restored prior-account data");
+  pass("protected 401 responses clear the authenticated interface and late old-session failures cannot expire a new login");
+  await click("Verify identity");
+  await setValue("dialog input[name=password]","temporary fixture password");
+  await setValue("dialog input[name=code]","123456");
+  await evaluate("window.fixture.authFailure=401; document.querySelector('dialog form').requestSubmit()");
+  await wait("document.querySelector('dialog [role=alert]')?.textContent.includes('Fixture verification unavailable')");
+  assert.ok(await evaluate("!document.querySelector('.auth') && !!document.querySelector('dialog[open]')"),"A rejected verification challenge incorrectly expired a valid session");
+  await click("×");
+  pass("rejected authentication challenges retain the valid session and local verification feedback");
   }
   assert.deepEqual(errors, [], "Uncaught browser exceptions");
   writeFileSync(join(evidence, "results.json"), JSON.stringify({ status: "passed", browser: version.product, screenshots, cases, refreshDelays: visual ? "Five-second refresh delays accelerated to one second for synthetic captures only" : "Production timers" }, null, 2));
