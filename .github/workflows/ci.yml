@@ -70,7 +70,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       RELEASE_TAG: ${{ inputs.release_tag }}
       SOURCE_RUN: ${{ inputs.source_run }}
-      DOCKER_CONFIG: ${{ runner.temp }}/phoenix-release-docker
+      DOCKER_CONFIG: ${{ github.workspace }}/.validation/release-docker-config
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
