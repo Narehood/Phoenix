@@ -2004,35 +2004,80 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                     </div>
                     <div className="panel-body">
                       <p>
-                        Measured {stamp(s.measuredAt)} · collected{" "}
-                        {stamp(s.collectedAt)}
+                        Measured <Time value={s.measuredAt} /> · collected{" "}
+                        <Time value={s.collectedAt} />
                       </p>
                       {s.error && <p className="notice">{s.error}</p>}
                       <code>Verified revision {s.revision}</code>
                     </div>
                     <div className="table-scroll">
-                      <table>
-                        <thead>
-                          <tr>
-                            <th>Monitor</th>
-                            <th>Source state</th>
-                            <th>Observing node</th>
-                            <th>Measurement</th>
-                            <th>Maintenance</th>
+                      <table
+                        className="canary-table responsive-table"
+                        role="table"
+                        aria-colcount={5}
+                      >
+                        <caption className="sr-only">
+                          Read-only monitor observations from {s.id}
+                        </caption>
+                        <thead role="rowgroup">
+                          <tr role="row">
+                            <th
+                              role="columnheader"
+                              scope="col"
+                              aria-colindex={1}
+                            >
+                              Monitor
+                            </th>
+                            <th
+                              role="columnheader"
+                              scope="col"
+                              aria-colindex={2}
+                            >
+                              Source state
+                            </th>
+                            <th
+                              role="columnheader"
+                              scope="col"
+                              aria-colindex={3}
+                            >
+                              Observing node
+                            </th>
+                            <th
+                              role="columnheader"
+                              scope="col"
+                              aria-colindex={4}
+                            >
+                              Measurement
+                            </th>
+                            <th
+                              role="columnheader"
+                              scope="col"
+                              aria-colindex={5}
+                            >
+                              Maintenance
+                            </th>
                           </tr>
                         </thead>
-                        <tbody>
+                        <tbody role="rowgroup">
                           {s.monitors.flatMap((m) =>
                             (m.observations?.length
                               ? m.observations
                               : [null]
                             ).map((o, i) => (
-                              <tr key={`${m.monitor.id}-${i}`}>
-                                <td>
+                              <tr role="row" key={`${m.monitor.id}-${i}`}>
+                                <td
+                                  role="cell"
+                                  aria-colindex={1}
+                                  data-label="Monitor"
+                                >
                                   {m.monitor.name}
                                   <small>{m.monitor.id}</small>
                                 </td>
-                                <td>
+                                <td
+                                  role="cell"
+                                  aria-colindex={2}
+                                  data-label="Source state"
+                                >
                                   <Tone
                                     value={
                                       s.freshness === "fresh" &&
@@ -2052,9 +2097,25 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                                     </small>
                                   )}
                                 </td>
-                                <td>{o?.nodeId || "Unknown"}</td>
-                                <td>{stamp(o?.checkedAt || 0)}</td>
-                                <td>
+                                <td
+                                  role="cell"
+                                  aria-colindex={3}
+                                  data-label="Observing node"
+                                >
+                                  {o?.nodeId || "Unknown"}
+                                </td>
+                                <td
+                                  role="cell"
+                                  aria-colindex={4}
+                                  data-label="Measurement"
+                                >
+                                  <Time value={o?.checkedAt || 0} />
+                                </td>
+                                <td
+                                  role="cell"
+                                  aria-colindex={5}
+                                  data-label="Maintenance"
+                                >
                                   {m.maintenanceIds?.join(", ") ||
                                     "None reported"}
                                 </td>
@@ -2558,6 +2619,15 @@ function Jobs({
   const clearFilters = () => {
     changeFilters({ query: "", state: "", action: "" });
   };
+  const compactId = (value: string) =>
+    value.length > 12 ? `${value.slice(0, 8)}…${value.slice(-4)}` : value;
+  const jobReference = (job: Job) =>
+    jobs.some(
+      (other) =>
+        other.id !== job.id && compactId(other.id) === compactId(job.id),
+    )
+      ? job.id
+      : compactId(job.id);
   return (
     <section
       className={`panel jobs-panel${scopeHost ? " host-scoped-jobs" : ""}`}
@@ -2601,7 +2671,7 @@ function Jobs({
         </label>
         <ResponsiveDetails
           className="job-filter-options"
-          label={`State & action${state || action ? " · filtered" : ""}`}
+          label={`State & action${state ? ` · ${state.charAt(0).toUpperCase() + state.slice(1).replaceAll("_", " ")}` : ""}${action ? ` · ${jobAction(action)}` : ""}`}
         >
           <div className="job-filter-fields">
             <label>
@@ -2723,6 +2793,12 @@ function Jobs({
                     {(j.args.service || j.args.diagnostic) && (
                       <small>{j.args.service || j.args.diagnostic}</small>
                     )}
+                    <small className="job-reference">
+                      Job{" "}
+                      <code title={j.id} aria-label={`Job ID ${j.id}`}>
+                        {jobReference(j)}
+                      </code>
+                    </small>
                   </td>
                   {!scopeHost && (
                     <td role="cell" aria-colindex={2} data-label="Host">
@@ -2759,7 +2835,7 @@ function Jobs({
                   >
                     <RouteLink
                       to={{ view: "jobs", id: j.id }}
-                      aria-label={`View outcome for ${jobAction(j.action)}${j.args.service || j.args.diagnostic ? ` (${j.args.service || j.args.diagnostic})` : ""} on ${hostName(j)}, created ${stamp(j.createdAt)}`}
+                      aria-label={`View outcome for job ${j.id}: ${jobAction(j.action)}${j.args.service || j.args.diagnostic ? ` (${j.args.service || j.args.diagnostic})` : ""} on ${hostName(j)}, created ${stamp(j.createdAt)}`}
                     >
                       View outcome →
                     </RouteLink>
@@ -2771,7 +2847,7 @@ function Jobs({
                     )}
                     <JobCancellation
                       job={j}
-                      targetLabel={`${jobAction(j.action)}${j.args.service || j.args.diagnostic ? ` (${j.args.service || j.args.diagnostic})` : ""} on ${hostName(j)}, created ${stamp(j.createdAt)}`}
+                      targetLabel={`job ${j.id}: ${jobAction(j.action)}${j.args.service || j.args.diagnostic ? ` (${j.args.service || j.args.diagnostic})` : ""} on ${hostName(j)}, created ${stamp(j.createdAt)}`}
                       unavailable={unavailable}
                       onChanged={onChanged}
                     />
@@ -3015,13 +3091,22 @@ function Access({ hosts, onVerify }: { hosts: Host[]; onVerify: () => void }) {
     [usersError, setUsersError] = useState<unknown>(null),
     [secret, setSecret] = useState(""),
     [createdName, setCreatedName] = useState(""),
+    [createdRole, setCreatedRole] = useState(""),
+    [keyStored, setKeyStored] = useState(false),
     [createError, setCreateError] = useState<unknown>(null),
     [createNotice, setCreateNotice] = useState(""),
     [draft, setDraft] = useState(false),
     [busy, setBusy] = useState(false);
   const alive = useRef(false),
     loadVersion = useRef(0),
-    createRef = useRef<HTMLDetailsElement>(null);
+    createRef = useRef<HTMLDetailsElement>(null),
+    setupRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!secret) return;
+    if (createRef.current) createRef.current.open = true;
+    setupRef.current?.scrollIntoView({ block: "start" });
+    setupRef.current?.focus({ preventScroll: true });
+  }, [secret]);
   useUnsavedChanges(
     draft || !!secret || busy,
     secret
@@ -3070,6 +3155,8 @@ function Access({ hosts, onVerify }: { hosts: Host[]; onVerify: () => void }) {
       if (!alive.current) return;
       setSecret(value.secret);
       setCreatedName(String(f.get("name")));
+      setCreatedRole(String(f.get("role")));
+      setKeyStored(false);
       setDraft(false);
       form.reset();
       setCreateNotice(
@@ -3101,11 +3188,12 @@ function Access({ hosts, onVerify }: { hosts: Host[]; onVerify: () => void }) {
             if (details) {
               details.open = true;
               details.scrollIntoView({ block: "start" });
-              details.querySelector("input")?.focus();
+              if (secret) setupRef.current?.focus({ preventScroll: true });
+              else details.querySelector("input")?.focus();
             }
           }}
         >
-          Create account
+          {secret ? "Continue authenticator setup" : "Create account"}
         </button>
       </div>
       <section className="panel">
@@ -3139,8 +3227,14 @@ function Access({ hosts, onVerify }: { hosts: Host[]; onVerify: () => void }) {
       </section>
       <details ref={createRef} className="disclosure account-create">
         <summary>
-          <strong>Create an account</strong>
-          <span>Viewer or operator · no grants by default</span>
+          <strong>
+            {secret ? "Finish account setup" : "Create an account"}
+          </strong>
+          <span>
+            {secret
+              ? `${createdName} · ${createdRole} · no grants`
+              : "Viewer or operator · no grants by default"}
+          </span>
         </summary>
         <div className="disclosure-body">
           <ErrorNotice
@@ -3148,64 +3242,93 @@ function Access({ hosts, onVerify }: { hosts: Host[]; onVerify: () => void }) {
             onDismiss={() => setCreateError(null)}
             onVerify={onVerify}
           />
-          <StatusNotice>{createNotice}</StatusNotice>
-          <form
-            className="form"
-            aria-label="Create an account"
-            onSubmit={create}
-            onChange={() => setDraft(true)}
-          >
-            <fieldset
-              className="account-fields"
-              aria-label="Account details"
-              disabled={busy || !!secret}
+          {!secret && <StatusNotice>{createNotice}</StatusNotice>}
+          {!secret && (
+            <form
+              className="form"
+              aria-label="Create an account"
+              onSubmit={create}
+              onChange={() => setDraft(true)}
             >
-              <label>
-                Name
-                <input name="name" autoComplete="off" required />
-              </label>
-              <label>
-                Role
-                <select name="role">
-                  <option value="viewer">Viewer</option>
-                  <option value="operator">Operator</option>
-                </select>
-              </label>
-              <label>
-                Initial password
-                <input
-                  name="password"
-                  type="password"
-                  autoComplete="new-password"
-                  minLength={14}
-                  maxLength={72}
-                  aria-describedby="account-password-help"
-                  required
-                />
-                <small id="account-password-help">
-                  Use at least 14 characters and no more than 72 bytes. Letters,
-                  numbers and basic symbols use one byte each.
-                </small>
-              </label>
-            </fieldset>
-            <button className="primary" disabled={busy || !!secret}>
-              {busy ? "Working…" : "Create account"}
-            </button>
-          </form>
+              <fieldset
+                className="account-fields"
+                aria-label="Account details"
+                disabled={busy || !!secret}
+              >
+                <label>
+                  Name
+                  <input name="name" autoComplete="off" required />
+                </label>
+                <label>
+                  Role
+                  <select name="role">
+                    <option value="viewer">Viewer</option>
+                    <option value="operator">Operator</option>
+                  </select>
+                </label>
+                <label>
+                  Initial password
+                  <input
+                    name="password"
+                    type="password"
+                    autoComplete="new-password"
+                    minLength={14}
+                    maxLength={72}
+                    aria-describedby="account-password-help"
+                    required
+                  />
+                  <small id="account-password-help">
+                    Use at least 14 characters and no more than 72 bytes.
+                    Letters, numbers and basic symbols use one byte each.
+                  </small>
+                </label>
+              </fieldset>
+              <button className="primary" disabled={busy || !!secret}>
+                {busy ? "Working…" : "Create account"}
+              </button>
+            </form>
+          )}
           {secret && (
-            <div className="notice">
+            <div
+              className="notice account-setup"
+              ref={setupRef}
+              tabIndex={-1}
+              aria-labelledby="account-setup-title"
+            >
+              <h2 id="account-setup-title">
+                Authenticator setup for {createdName}
+              </h2>
               <p>
-                Authenticator setup for {createdName}. Share this secret through
-                a trusted channel. It is shown once; dismiss it before creating
-                another account.
+                Account created as {createdRole}, with no grants. This key is
+                shown once. Store it safely or share it with the account owner
+                through a trusted channel.
               </p>
               <p>
                 In the account owner’s authenticator, add a time-based account
                 with this key: 6 digits, SHA1, 30 seconds.
               </p>
               <SetupKey key={secret} value={secret} accountName={createdName} />
-              <button type="button" onClick={() => setSecret("")}>
-                Dismiss secret
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={keyStored}
+                  onChange={(event) => setKeyStored(event.target.checked)}
+                />
+                I stored or securely shared this one-time key.
+              </label>
+              <button
+                type="button"
+                disabled={!keyStored || busy}
+                onClick={() => {
+                  setSecret("");
+                  setKeyStored(false);
+                  setCreateNotice(
+                    `Account ${createdName} created with no grants. Select it above to assign access.`,
+                  );
+                  createRef.current?.querySelector("summary")?.focus();
+                }}
+              >
+                Finish setup
               </button>
             </div>
           )}

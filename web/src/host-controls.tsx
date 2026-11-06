@@ -737,6 +737,11 @@ export function ServiceRequests({
             : "Request restart"}
         </button>
       </div>
+      {can("service.restart") && !blocked && (
+        <small className="service-permission-note">
+          Agent checks its allowlist; a restart request may be rejected.
+        </small>
+      )}
       {(!can("logs.read") || !can("service.restart")) && (
         <small className="service-permission-note">
           {!permissions

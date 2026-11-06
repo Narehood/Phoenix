@@ -3132,6 +3132,56 @@ textarea:disabled {
 .account-create .form {
   max-width: 560px;
 }
+.account-setup {
+  max-width: 720px;
+  margin: 0;
+  scroll-margin-top: 90px;
+}
+.account-setup h2 {
+  margin: 0 0 12px;
+  font-size: 20px;
+}
+.account-setup .check {
+  min-height: 44px;
+  margin: 12px 0;
+}
+.project-search {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.project-search label {
+  display: grid;
+  gap: 6px;
+  flex: 1 1 240px;
+  max-width: 420px;
+}
+.project-search > span {
+  font-size: 13px;
+  padding-bottom: 10px;
+}
+.repository-refresh {
+  display: grid;
+  gap: 6px;
+  max-width: 270px;
+  white-space: normal;
+}
+.repository-refresh small {
+  margin: 0;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+.canary-table :is(td, small) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.job-reference code {
+  font-size: inherit;
+  color: var(--text-2);
+}
 .form .account-fields {
   display: grid;
   gap: 16px;
@@ -3152,6 +3202,9 @@ textarea:disabled {
   }
 }
 @media (max-width: 720px) {
+  .canary-table td[data-label="Maintenance"] {
+    grid-column: 1 / -1;
+  }
   .project-table td[data-label="Updated"] {
     grid-column: 1 / -1;
     flex-direction: row;

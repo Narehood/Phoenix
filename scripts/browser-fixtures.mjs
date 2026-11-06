@@ -784,6 +784,7 @@ try {
   assert.ok(await evaluate("document.querySelector('.job-filter-count').innerText.includes('1 of 2') && document.querySelector('.jobs-panel .panel-heading').innerText.includes('Within latest 200')"), "Job filters hide their bounded scope or fail to combine target, action and state");
   await click("Clear filters");
   await wait("document.querySelectorAll('.jobs-table tbody tr').length === 2");
+  assert.ok(await evaluate("(() => { const ids = [...document.querySelectorAll('.jobs-table .job-reference code')]; return ids.length === 2 && new Set(ids.map(n => n.textContent)).size === 2 && ids.every(n => n.getAttribute('aria-label') === 'Job ID ' + n.title); })()"), "Similar jobs lack distinct visible references or full accessible identities");
   pass("job search and combined state/action filters narrow authorized loaded history and distinguish no matches from no history");
   await send("Emulation.setDeviceMetricsOverride", {width:390,height:844,deviceScaleFactor:1,mobile:true}, sessionId);
   await evaluate("new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)))");
@@ -802,6 +803,18 @@ try {
   const scopedHeaders = node => node ? [node.role?.value === "columnheader" && !node.ignored ? String(node.name?.value || "").trim().toLowerCase() : null,...(node.childIds || []).flatMap(id => scopedHeaders(scopedJobMap.get(id)))].filter(Boolean) : [];
   assert.deepEqual(scopedHeaders(scopedJobTable), ["action","state","created","outcome"], "Host-scoped jobs lost their accessible target, state, creation or outcome headers");
   pass("mobile host and global job rows expose scoped targets and actions without overflow and preserve accessibility-tree headers");
+  await evaluate("document.querySelector('.mobile-navigation').open = true");
+  await click("Uptime Canary");
+  await wait("!!document.querySelector('.canary-table')");
+  assert.ok(await evaluate("document.documentElement.scrollWidth <= innerWidth && [...document.querySelectorAll('.canary-table')].every(t => t.parentElement.scrollWidth <= t.parentElement.clientWidth)"), "Read-only mobile Canary observations require sideways scrolling");
+  const canaryHeaders = (await send("Accessibility.getFullAXTree", {}, sessionId)).nodes.filter(n => !n.ignored && n.role?.value === "columnheader").map(n => String(n.name?.value || "").trim().toLowerCase());
+  for (const label of ["monitor","source state","observing node","measurement","maintenance"]) assert.ok(canaryHeaders.includes(label),`Mobile Canary observations lost the accessible ${label} header`);
+  await evaluate("document.querySelector('.mobile-navigation').open = true");
+  await click("Fleet overview");
+  await wait("!!document.querySelector('.fleet-table')");
+  await click("ADMIN-ONLY-HOST");
+  await wait("!!document.querySelector('.service-requests')");
+  pass("read-only Canary observations retain source, node, time and maintenance headers on mobile without sideways scrolling");
   pass("host and global job lists withhold cancellation when the effective host grant is missing");
   await evaluate("window.fixture.hostPermissions = null");
   await wait("!document.querySelector('.service-requests button:nth-child(2)').disabled");
@@ -1104,6 +1117,33 @@ try {
   assert.equal(await evaluate(`(() => { const t = ${JSON.stringify(token)}; const stores = [localStorage, sessionStorage].flatMap(s => Object.keys(s).map(k => k + s.getItem(k))); return window.fixture.requests.some(r => (r.path + r.search).includes(t)) || stores.some(v => v.includes(t)) || document.documentElement.outerHTML.includes(t) || location.href.includes(t); })()`), false, "GitHub token leaked into a URL, storage or the document");
   pass("GitHub setup is recent-MFA gated, keeps input on failure and clears the token without URL or storage exposure");
 
+  // A token rotation must not restore collection disabled by another administrator.
+  await setValue("input[data-secret=github-token]", token);
+  await evaluate("Object.assign(window.fixture.githubViews['fixture-project'], {revision:2,enabled:false})");
+  await submit("GitHub source settings");
+  await wait("!!document.querySelector('.settings .notice.conflict') && document.querySelector('form[aria-label=\"GitHub source settings\"] fieldset').disabled");
+  await click("Reapply my changes for review");
+  await wait("!document.querySelector('.settings .notice.conflict') && !document.querySelector('form[aria-label=\"GitHub source settings\"] input[type=checkbox]').checked");
+  assert.equal(await evaluate("window.fixture.githubPuts.length"),1,"Source reconciliation saved before separate review");
+  assert.equal(await evaluate("document.querySelector('input[data-secret=github-token]').value"),token,"Same-repository reconciliation discarded the draft token");
+  await submit("GitHub source settings");
+  await wait("window.fixture.githubPuts.length === 2 && document.querySelector('input[data-secret=github-token]').value === ''");
+  assert.deepEqual(await evaluate("window.fixture.githubPuts[1]"),{repository:"fixture-owner/fixture-repo",enabled:false,revision:2,tokenLength:token.length},"Token rotation restored an unrelated stale collection setting");
+  // A token intended for the earlier repository must not follow a new target.
+  await setValue("input[data-secret=github-token]",token);
+  await evaluate("Object.assign(window.fixture.githubViews['fixture-project'], {revision:4,repository:'fixture-owner/other-repo'})");
+  await submit("GitHub source settings");
+  await wait("!!document.querySelector('.settings .notice.conflict')");
+  await click("Reapply my changes for review");
+  await wait("document.querySelector('input[name=repository]').value === 'fixture-owner/other-repo' && document.querySelector('input[data-secret=github-token]').value === '' && !document.querySelector('.settings .notice.conflict')");
+  assert.equal(await evaluate("window.fixture.githubPuts.length"),2,"Repository target reconciliation submitted or reused a token without review");
+  await evaluate("window.confirm = () => true");
+  await click("← All projects");
+  await wait("!document.querySelector('input[name=repository]')");
+  await click("Fixture project renamed");
+  await wait("!!document.querySelector('.github')");
+  pass("repository conflict reconciliation preserves untouched collection settings, requires a separate save and clears a token when its target changes");
+
   await evaluate("window.fixture.githubViews['fixture-project'] = window.fixture.freshView('fixture-owner/fixture-repo')");
   await wait(`${goodChips} >= 3 && document.body.innerText.includes('Bump fixture-lib') && document.body.innerText.includes('Dependency update PRs') && !document.body.innerText.includes('Retained observation')`);
   await capture("07-github-fresh");
@@ -1128,12 +1168,19 @@ try {
   pass("GitHub refresh shows pending feedback and rejects repeated submission before a response");
   assert.ok(await evaluate("[...document.querySelectorAll('.github-feedback [role=status]')].some(s => s.innerText.includes('Refresh is cooling down'))"), "Refresh feedback is outside its status region");
   assert.ok(await evaluate("window.fixture.requests.some(r => r.method === 'POST' && r.path === '/api/projects/fixture-project/github/sync')"));
+  await evaluate("window.fixture.githubViews['fixture-project'].nextAttemptAt = Date.now() + 900000; window.dispatchEvent(new Event('focus'))");
+  await wait("document.querySelector('.repository-refresh small')?.innerText.includes('Eligible at') && document.querySelector('.repository-refresh button').disabled");
   pass("retained, partial, unreadable and truncated GitHub data stay explicit; refresh cooldown is reported");
 
   // A late response for a previously opened project cannot populate another project.
   await evaluate("window.fixture.seedProject('alpha-project', 'ALPHA-ONLY-PROJECT', ['dependencies']); window.fixture.githubViews['alpha-project'] = window.fixture.freshView('alpha-owner/ALPHA-ONLY-REPO'); window.fixture.hold.add('/api/projects/alpha-project/github')");
   await click("← All projects");
   await wait("document.body.innerText.includes('ALPHA-ONLY-PROJECT')");
+  await setValue("input[name=projectSearch]","alpha-owner-no-match");
+  await wait("document.body.innerText.includes('No matching projects') && !document.querySelector('.project-table')");
+  await setValue("input[name=projectSearch]","ALPHA-ONLY");
+  await wait("document.querySelectorAll('.project-table tbody tr').length === 1");
+  await click("Clear search");
   await click("ALPHA-ONLY-PROJECT");
   await wait("typeof window.fixture.holds['/api/projects/alpha-project/github'] === 'function'");
   await click("← All projects");
@@ -1219,8 +1266,8 @@ try {
   await evaluate("window.fixture.recent = false; document.querySelector('form[aria-label=\"Create an account\"]').requestSubmit()");
   await wait("document.querySelector('.account-create [role=alert]')?.innerText.includes('Verify identity') && document.querySelector('.account-create input[name=password]').value === 'temporary fixture password'");
   await evaluate("window.fixture.recent = true; document.querySelector('form[aria-label=\"Create an account\"]').requestSubmit()");
-  await wait("window.fixture.createdUsers.length === 1 && document.querySelector('.account-create .notice .secret')?.textContent === 'FIXTURE-ONLY-AUTHENTICATOR-SECRET' && document.querySelector('.account-create input[name=password]').value === '' && document.querySelector('.account-create form button').textContent === 'Create account'");
-  assert.ok(await evaluate("document.querySelector('.account-create').innerText.includes('Authenticator setup for temporary-account') && document.querySelector('.account-create form button').disabled"), "One-time authenticator setup lacks account context or can be overwritten");
+  await wait("window.fixture.createdUsers.length === 1 && document.querySelector('.account-create .notice .secret')?.textContent === 'FIXTURE-ONLY-AUTHENTICATOR-SECRET' && !document.querySelector('.account-create form') && document.activeElement === document.querySelector('.account-setup')");
+  assert.ok(await evaluate("document.querySelector('.account-create').innerText.includes('Authenticator setup for temporary-account') && [...document.querySelectorAll('.account-setup button')].find(b => b.textContent === 'Finish setup').disabled && !document.querySelector('.account-create input[name=password]')"), "One-time authenticator setup lacks focused account context, retains a password form or can be dismissed without acknowledgement");
   await evaluate(`(() => {
     window.fixture.clipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
     window.fixture.clipboardWrites = [];
@@ -1244,7 +1291,9 @@ try {
   await evaluate("window.confirm = () => false");
   await click("Fleet overview");
   assert.equal(await evaluate("location.hash"), "#/access", "Navigation silently discarded one-time authenticator setup");
-  await click("Dismiss secret");
+  await evaluate("document.querySelector('.account-setup input[type=checkbox]').click()");
+  await click("Finish setup");
+  await wait("!document.querySelector('.account-create .secret') && !!document.querySelector('.account-create input[name=name]')");
   await evaluate("window.confirm = () => true");
   pass("account setup protects named one-time keys, copies only on request, retains manual fallback and avoids URL or storage exposure");
   await click("Fleet overview");

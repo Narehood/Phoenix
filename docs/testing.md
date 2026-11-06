@@ -73,9 +73,14 @@ effective host-action permissions, compact mobile summaries, and populated CPU
 history with gaps and missing values. Chrome accessibility-tree checks retain
 responsive table roles and column headers; these are not a screen-reader
 acceptance test.
+The dedicated read-only Canary list has the same mobile header checks. Repository
+conflict fixtures preserve untouched collection settings during token rotation,
+clear a draft token when its repository target changes, and require a separate save.
 Authenticator-copy checks use a temporary clipboard stub and never touch the
 test machine's clipboard. Actual browser permissions and account-owner handoff
-still require manual acceptance.
+still require manual acceptance. Account creation foregrounds the one-time key
+and requires an explicit stored/shared acknowledgement before clearing it; this
+acknowledgement does not establish that the owner completed TOTP verification.
 The smoke uses real APIs but does not drive a browser. Neither substitutes for
 manual end-to-end browser acceptance. Container systemd service/log inspection
 may be unavailable; the smoke never installs or executes the root helper.

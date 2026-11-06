@@ -147,7 +147,8 @@ function Inventory({
   const [projects, setProjects] = useState<Project[] | null>(null),
     [loadError, setLoadError] = useState<unknown>(null),
     [registering, setRegistering] = useState(false),
-    [showArchived, setShowArchived] = useState(false);
+    [showArchived, setShowArchived] = useState(false),
+    [query, setQuery] = useState("");
   useEffect(() => {
     let alive = true;
     let timer: ReturnType<typeof setTimeout>;
@@ -170,7 +171,13 @@ function Inventory({
     };
   }, []);
   const admin = user.role === "admin";
-  const visible = (projects || []).filter((p) => showArchived || !p.archived);
+  const visible = (projects || []).filter(
+    (p) =>
+      (showArchived || !p.archived) &&
+      `${p.name} ${p.description} ${p.id}`
+        .toLowerCase()
+        .includes(query.trim().toLowerCase()),
+  );
   return (
     <>
       <div className="page-heading">
@@ -221,6 +228,33 @@ function Inventory({
               : ""}
           </label>
         </div>
+        {!!projects?.length && (
+          <form
+            className="project-search"
+            role="search"
+            aria-label="Filter projects"
+            onSubmit={(event) => event.preventDefault()}
+          >
+            <label>
+              Search projects
+              <input
+                type="search"
+                name="projectSearch"
+                value={query}
+                placeholder="Name, description or ID…"
+                onChange={(event) => setQuery(event.target.value)}
+              />
+            </label>
+            <span className="muted" role="status">
+              {visible.length} of {projects.length} · within 100 projects
+            </span>
+            {query && (
+              <button type="button" onClick={() => setQuery("")}>
+                Clear search
+              </button>
+            )}
+          </form>
+        )}
         {!projects ? (
           <Empty>
             {loadError ? "Inventory unavailable." : "Loading projects…"}
@@ -240,7 +274,11 @@ function Inventory({
             )}
           </Empty>
         ) : !visible.length ? (
-          <Empty>All projects in view are archived.</Empty>
+          <Empty>
+            {query
+              ? "No matching projects in this inventory."
+              : "All projects in view are archived."}
+          </Empty>
         ) : (
           <div className="table-scroll">
             <table

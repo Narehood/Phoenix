@@ -16,6 +16,7 @@ import type {
   WorkflowRun,
 } from "./types";
 import {
+  ChangeComparison,
   Empty,
   ErrorNotice,
   Metric,
@@ -772,29 +773,35 @@ export function GitHubPanel({
             </button>
           )}
           {canSync && view?.configured && (
-            <button
-              onClick={() => void sync()}
-              aria-busy={busy}
-              disabled={
-                busy ||
-                !view.enabled ||
-                view.state === "disabled" ||
-                !moduleOn ||
-                project.archived ||
-                cooling
-              }
-              title={
-                cooling
-                  ? `Cooling down until ${stamp(view.nextAttemptAt)}`
-                  : undefined
-              }
-            >
-              {busy
-                ? "Requesting refresh…"
-                : cooling
-                  ? "Refresh cooling down"
-                  : "Request refresh"}
-            </button>
+            <div className="repository-refresh">
+              <button
+                onClick={() => void sync()}
+                aria-busy={busy}
+                disabled={
+                  busy ||
+                  !view.enabled ||
+                  view.state === "disabled" ||
+                  !moduleOn ||
+                  project.archived ||
+                  cooling
+                }
+                aria-describedby={
+                  cooling ? `refresh-eligibility-${project.id}` : undefined
+                }
+              >
+                {busy
+                  ? "Requesting refresh…"
+                  : cooling
+                    ? "Refresh cooling down"
+                    : "Request refresh"}
+              </button>
+              {cooling && (
+                <small id={`refresh-eligibility-${project.id}`}>
+                  Eligible at {stamp(view.nextAttemptAt)}. Collection time is
+                  not guaranteed.
+                </small>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -871,6 +878,10 @@ function GitHubSettings({
       view ? view.enabled || !view.configured : true,
     ),
     [base, setBase] = useState(view?.revision ?? -1),
+    [baseline, setBaseline] = useState({
+      repository: view?.repository || "",
+      enabled: view ? view.enabled || !view.configured : true,
+    }),
     [touched, setTouched] = useState(false),
     [error, setError] = useState<unknown>(null),
     [notice, setNotice] = useState(""),
@@ -892,10 +903,43 @@ function GitHubSettings({
     setRepository(view.repository);
     setEnabled(view.configured ? view.enabled : true);
     setBase(view.revision);
+    setBaseline({
+      repository: view.repository,
+      enabled: view.configured ? view.enabled : true,
+    });
   }, [view?.revision, view?.repository, view?.enabled, touched]);
   const conflict = !!view && touched && base !== view.revision;
   useUnsavedChanges(touched, "repository settings");
   const ready = !!view && usable && base >= 0;
+  const latest = {
+    repository: view?.repository || "",
+    enabled: view ? view.enabled || !view.configured : true,
+  };
+  const reapplied = {
+    repository:
+      repository !== baseline.repository ? repository : latest.repository,
+    enabled: enabled !== baseline.enabled ? enabled : latest.enabled,
+  };
+  const draftTokenEntered = !!token.current?.value;
+  const tokenTargetChanged =
+    reapplied.repository.toLowerCase() !== repository.toLowerCase();
+
+  function reconcile() {
+    if (!view || busy) return;
+    const changedTarget =
+      reapplied.repository.toLowerCase() !== repository.toLowerCase();
+    if (changedTarget && token.current) token.current.value = "";
+    setRepository(reapplied.repository);
+    setEnabled(reapplied.enabled);
+    setBaseline(latest);
+    setBase(view.revision);
+    setError(null);
+    setNotice(
+      changedTarget
+        ? "Reapplied your changes. The repository target changed, so the draft token was cleared. Review the repository and credentials before saving separately."
+        : "Reapplied your changes, preserving newer untouched fields. Review the result, then save separately.",
+    );
+  }
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -1025,23 +1069,60 @@ function GitHubSettings({
               Source revision {view.revision} replaced revision {base}.
             </b>
             <p>
-              Current: {view.configured ? view.repository : "not configured"}
-              {view.configured && ` · ${view.enabled ? "enabled" : "disabled"}`}
-              . Your input: {repository || "(empty)"} ·{" "}
-              {enabled ? "enabled" : "disabled"}.
+              Your earlier draft is kept. Reapply only your edited fields,
+              preserving other saved changes, then review before saving.
+            </p>
+            <ChangeComparison
+              label="Repository source reconciliation"
+              rows={[
+                {
+                  key: "repository",
+                  label: "Repository",
+                  saved: latest.repository || "Not configured",
+                  proposed: reapplied.repository || "Not configured",
+                  changed: latest.repository !== reapplied.repository,
+                },
+                {
+                  key: "enabled",
+                  label: "Automatic collection",
+                  saved: latest.enabled ? "Enabled" : "Disabled",
+                  proposed: reapplied.enabled ? "Enabled" : "Disabled",
+                  changed: latest.enabled !== reapplied.enabled,
+                },
+                {
+                  key: "token",
+                  label: "Read-only token",
+                  saved: view.configured
+                    ? "Stored token (hidden)"
+                    : "No stored token",
+                  proposed: tokenTargetChanged
+                    ? "Clear draft token; review credentials"
+                    : draftTokenEntered
+                      ? "Use entered replacement (hidden)"
+                      : "Keep stored token",
+                  changed: draftTokenEntered || tokenTargetChanged,
+                },
+              ]}
+            />
+            <p className="muted">
+              A draft token is retained only for the same repository target; it
+              is never shown in the comparison.
             </p>
             <div className="button-row">
-              <button type="button" onClick={() => setBase(view.revision)}>
-                Keep my input on revision {view.revision}
+              <button type="button" disabled={busy} onClick={reconcile}>
+                Reapply my changes for review
               </button>
               <button
                 type="button"
+                disabled={busy}
                 onClick={() => {
                   if (token.current) token.current.value = "";
+                  setError(null);
+                  setNotice("");
                   setTouched(false);
                 }}
               >
-                Discard my input
+                Discard my draft and load latest
               </button>
             </div>
           </div>
@@ -1051,7 +1132,7 @@ function GitHubSettings({
           onSubmit={submit}
           aria-label="GitHub source settings"
         >
-          <fieldset disabled={!ready || busy}>
+          <fieldset disabled={!ready || busy || conflict}>
             <legend>
               {view?.configured
                 ? `Connected · revision ${view.revision}`
