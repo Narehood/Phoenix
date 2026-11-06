@@ -1328,7 +1328,7 @@ try {
   // Fresh temporary fixture context: distinguish denied reads from outages,
   // and ensure a late old-session 401 cannot expire the next login.
   await send("Page.reload", {}, sessionId);
-  await wait("document.body.innerText.includes('admin-fixture') && !!document.querySelector('.fleet-table')");
+  await wait("document.body?.innerText.includes('admin-fixture') && !!document.querySelector('.fleet-table')");
   await evaluate(`(() => {
     const at = Date.now();
     window.fixture.jobs = [{id:'access-job',hostId:'private-host',hostName:'ADMIN-ONLY-HOST',actor:'admin-fixture',action:'logs.read',args:{service:'ACCESS-ONLY-SERVICE'},state:'queued',createdAt:at,expiresAt:at+300000,deadline:0,dispatchedAt:0,finishedAt:0,cancelRequested:false,rebootObserved:false}];
